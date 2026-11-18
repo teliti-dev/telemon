@@ -8,9 +8,9 @@ use tokio::sync::{mpsc, watch};
 use tokio::time::{Instant, MissedTickBehavior, interval};
 
 use crate::events::{Detector, Event};
-use crate::poller::poll_once;
+use crate::poller::poll_once_status;
 use crate::router::{Error, RouterApi, ppp_active, ppp_profiles, ppp_secrets};
-use crate::store::{RetentionPolicy, Store};
+use crate::store::{RetentionPolicy, RouterStatus, Store};
 
 /// Akses ke Store dibagi antar tugas; kunci hanya dipegang sebentar dan tidak melewati `await`.
 pub type SharedStore = Arc<Mutex<Store>>;
@@ -30,10 +30,19 @@ fn now_ms() -> i64 {
 pub async fn sync_router(api: &impl RouterApi, store: &SharedStore, router_id: &str) -> Result<(), Error> {
     let (secrets, profiles, active) = (ppp_secrets(api).await?, ppp_profiles(api).await?, ppp_active(api).await?);
     let now = now_ms();
+    {
+        let mut s = store.lock().expect("store lock");
+        // Galat basis data tidak boleh mematikan pemantau; dilaporkan sebagai galat fatal untuk dicatat pemanggil.
+        s.sync_profiles(router_id, now, &profiles).map_err(|e| Error::Fatal(format!("simpan profile: {e}")))?;
+        s.sync_users(router_id, now, &secrets, &active).map_err(|e| Error::Fatal(format!("simpan user: {e}")))?;
+    }
+    // Model dan versi: pelengkap, kegagalannya tidak menggagalkan sinkronisasi.
+    let (model, version) = match api.print("/system/resource").await {
+        Ok(rows) => rows.first().map(|r| (r.get("board-name").cloned().unwrap_or_default(), r.get("version").cloned().unwrap_or_default())).unwrap_or_default(),
+        Err(_) => Default::default(),
+    };
     let mut s = store.lock().expect("store lock");
-    // Galat basis data tidak boleh mematikan pemantau; dilaporkan sebagai galat fatal untuk dicatat pemanggil.
-    s.sync_profiles(router_id, now, &profiles).map_err(|e| Error::Fatal(format!("simpan profile: {e}")))?;
-    s.sync_users(router_id, now, &secrets, &active).map_err(|e| Error::Fatal(format!("simpan user: {e}")))?;
+    let _ = s.set_router_info(router_id, &model, &version, now);
     Ok(())
 }
 
@@ -72,7 +81,18 @@ pub async fn run_router(
             last_sync = Some(Instant::now());
         }
 
-        let events = poll_once(&api, &mut det, now_ms()).await;
+        let now = now_ms();
+        let (events, result) = poll_once_status(&api, &mut det, now).await;
+        {
+            let mut s = store.lock().expect("store lock");
+            // Tidak terjangkau = offline; router menjawab tetapi menolak (hak akses, perintah) = error.
+            let (status, err) = match &result {
+                Ok(()) => (RouterStatus::Online, None),
+                Err(e @ (Error::Trap(_) | Error::Rejected(_))) => (RouterStatus::Error, Some(e.to_string())),
+                Err(e) => (RouterStatus::Offline, Some(e.to_string())),
+            };
+            let _ = s.set_router_state(&router_id, status, err.as_deref(), now);
+        }
         if events.is_empty() {
             continue;
         }
@@ -132,6 +152,7 @@ mod tests {
                     row(&[(".id", "*2"), ("name", "sari"), ("profile", "20M"), ("disabled", "false")]),
                 ],
                 "/ppp/profile" => vec![row(&[(".id", "*9"), ("name", "10M"), ("rate-limit", "10M/10M")])],
+                "/system/resource" => vec![row(&[("board-name", "RB4011iGS+"), ("version", "7.15 (stable)")])],
                 "/ppp/active" => {
                     let mut q = self.active.lock().unwrap();
                     if q.len() > 1 { q.pop_front().unwrap() } else { q.front().cloned().unwrap_or_default() }
@@ -181,6 +202,55 @@ mod tests {
 
         // Event juga diteruskan ke UI.
         assert!(rx.try_recv().is_ok());
+    }
+
+    #[tokio::test]
+    async fn status_router_online_dengan_info_dan_offline_saat_gagal() {
+        use crate::store::{NewRouter, RouterStatus};
+        let mut st = Store::open_in_memory().unwrap();
+        let r = st.add_router(&NewRouter { name: "pusat".into(), host: "h".into(), port: 8728, tls_pin: None, username: "api".into(), can_write: false }, 1).unwrap();
+        let store: SharedStore = Arc::new(Mutex::new(st));
+        let cfg = MonitorConfig { poll_every: Duration::from_millis(10), sync_every: None };
+
+        let api = Fake { active: Mutex::new(VecDeque::from(vec![vec![]])) };
+        let (stop_tx, stop_rx) = watch::channel(false);
+        let h = tokio::spawn(run_router(api, store.clone(), r.id.clone(), cfg, None, stop_rx));
+        wait_until(|| store.lock().unwrap().get_router(&r.id).unwrap().unwrap().status == RouterStatus::Online).await;
+        stop_tx.send(true).unwrap();
+        h.await.unwrap();
+        let g = store.lock().unwrap().get_router(&r.id).unwrap().unwrap();
+        assert_eq!((g.model.as_str(), g.version.as_str()), ("RB4011iGS+", "7.15 (stable)"));
+        assert!(g.last_poll_at.is_some() && g.last_import_at.is_some());
+
+        // Router tidak terjangkau: offline dengan pesan, waktu polling berhasil terakhir tetap.
+        struct Down;
+        impl RouterApi for Down {
+            async fn print(&self, _: &str) -> Result<Vec<Row>, Error> {
+                Err(Error::Fatal("timeout".into()))
+            }
+        }
+        let before = g.last_poll_at;
+        let (stop_tx, stop_rx) = watch::channel(false);
+        let h = tokio::spawn(run_router(Down, store.clone(), r.id.clone(), cfg, None, stop_rx));
+        wait_until(|| store.lock().unwrap().get_router(&r.id).unwrap().unwrap().status == RouterStatus::Offline).await;
+        stop_tx.send(true).unwrap();
+        h.await.unwrap();
+        let g = store.lock().unwrap().get_router(&r.id).unwrap().unwrap();
+        assert!(g.error.as_deref().unwrap().contains("timeout"));
+        assert_eq!(g.last_poll_at, before);
+
+        // Router menjawab tetapi menolak (hak akses): status error, bukan offline.
+        struct Denied;
+        impl RouterApi for Denied {
+            async fn print(&self, _: &str) -> Result<Vec<Row>, Error> {
+                Err(Error::Trap("not enough permissions".into()))
+            }
+        }
+        let (stop_tx, stop_rx) = watch::channel(false);
+        let h = tokio::spawn(run_router(Denied, store.clone(), r.id.clone(), cfg, None, stop_rx));
+        wait_until(|| store.lock().unwrap().get_router(&r.id).unwrap().unwrap().status == RouterStatus::Error).await;
+        stop_tx.send(true).unwrap();
+        h.await.unwrap();
     }
 
     #[tokio::test]

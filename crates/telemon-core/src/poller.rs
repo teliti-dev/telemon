@@ -33,9 +33,14 @@ fn now_ms() -> i64 {
 
 /// Satu putaran: baca router lalu jalankan detektor. Galat jaringan menjadi event RouterDown.
 pub async fn poll_once(api: &impl RouterApi, det: &mut Detector, now_ms: i64) -> Vec<Event> {
+    poll_once_status(api, det, now_ms).await.0
+}
+
+/// Seperti [`poll_once`], dan mengembalikan juga hasil bacaan (untuk memperbarui status router).
+pub async fn poll_once_status(api: &impl RouterApi, det: &mut Detector, now_ms: i64) -> (Vec<Event>, Result<(), Error>) {
     match fetch(api).await {
-        Ok((active, log)) => det.step(now_ms, active, log),
-        Err(e) => det.on_error(now_ms, &e.to_string()),
+        Ok((active, log)) => (det.step(now_ms, active, log), Ok(())),
+        Err(e) => (det.on_error(now_ms, &e.to_string()), Err(e)),
     }
 }
 

@@ -101,6 +101,23 @@ CREATE TABLE vault_meta (
   k TEXT PRIMARY KEY,
   v BLOB NOT NULL
 );
+", "
+CREATE TABLE routers (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  host TEXT NOT NULL,
+  port INTEGER NOT NULL,
+  tls_pin TEXT,
+  username TEXT NOT NULL,
+  can_write INTEGER NOT NULL DEFAULT 0,
+  model TEXT NOT NULL DEFAULT '',
+  version TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'offline',
+  error TEXT,
+  last_poll_at INTEGER,
+  last_import_at INTEGER,
+  created_at INTEGER NOT NULL
+);
 "];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -245,6 +262,172 @@ fn decode_changes(s: &str) -> Vec<Change> {
         })
         .collect()
 }
+
+// ---------------- router ----------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RouterStatus {
+    Online,
+    Offline,
+    Error,
+}
+
+impl RouterStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RouterStatus::Online => "online",
+            RouterStatus::Offline => "offline",
+            RouterStatus::Error => "error",
+        }
+    }
+    fn parse(s: &str) -> Self {
+        match s {
+            "online" => RouterStatus::Online,
+            "error" => RouterStatus::Error,
+            _ => RouterStatus::Offline,
+        }
+    }
+}
+
+/// Konfigurasi router. Kata sandi API **tidak** ada di sini: disimpan di keyring OS oleh aplikasi
+/// (kunci `router:<id>`). `tls_pin` ada = api-ssl dengan sertifikat di-pin; kosong = API biasa.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RouterRecord {
+    pub id: String,
+    pub name: String,
+    pub host: String,
+    pub port: u16,
+    /// Sidik jari SHA-256 `AA:BB:...` (huruf besar).
+    pub tls_pin: Option<String>,
+    pub username: String,
+    /// Akun API punya hak write dan pemilik mengizinkan edit dari Telemon.
+    pub can_write: bool,
+    pub model: String,
+    pub version: String,
+    pub status: RouterStatus,
+    pub error: Option<String>,
+    pub last_poll_at: Option<i64>,
+    pub last_import_at: Option<i64>,
+    pub created_at: i64,
+}
+
+impl RouterRecord {
+    pub fn addr(&self) -> String {
+        format!("{}:{}", self.host, self.port)
+    }
+
+    /// Mode sambungan untuk `MikrotikClient::connect_with`.
+    #[cfg(feature = "tls")]
+    pub fn tls_mode(&self) -> crate::router::TlsMode {
+        match self.tls_pin.as_deref().and_then(crate::tls::Fingerprint::parse) {
+            Some(fp) => crate::router::TlsMode::Pinned(fp),
+            None => crate::router::TlsMode::Plain,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewRouter {
+    pub name: String,
+    pub host: String,
+    pub port: u16,
+    pub tls_pin: Option<String>,
+    pub username: String,
+    pub can_write: bool,
+}
+
+/// `Some(None)` pada `tls_pin` = kembali ke API biasa; `None` = tidak diubah.
+#[derive(Debug, Clone, Default)]
+pub struct RouterPatch {
+    pub name: Option<String>,
+    pub host: Option<String>,
+    pub port: Option<u16>,
+    pub tls_pin: Option<Option<String>>,
+    pub username: Option<String>,
+    pub can_write: Option<bool>,
+}
+
+#[derive(Debug)]
+pub enum RouterError {
+    /// Validasi gagal; pesan siap tampil.
+    Invalid(String),
+    NotFound,
+    Db(rusqlite::Error),
+}
+
+impl std::fmt::Display for RouterError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RouterError::Invalid(m) => f.write_str(m),
+            RouterError::NotFound => f.write_str("router tidak ditemukan"),
+            RouterError::Db(e) => write!(f, "basis data: {e}"),
+        }
+    }
+}
+
+impl std::error::Error for RouterError {}
+
+impl From<rusqlite::Error> for RouterError {
+    fn from(e: rusqlite::Error) -> Self {
+        RouterError::Db(e)
+    }
+}
+
+/// Data yang ikut terhapus bersama router. Riwayat perubahan sengaja dipertahankan.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct RouterRemoved {
+    pub events: u64,
+    pub users: u64,
+    pub profiles: u64,
+}
+
+/// `AA:BB:..` huruf besar dari 64 digit heksa (dengan atau tanpa pemisah); None bila tidak valid.
+pub fn normalize_fingerprint(s: &str) -> Option<String> {
+    let hex: String = s.chars().filter(|c| !matches!(c, ':' | ' ' | '-')).collect();
+    if hex.len() != 64 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    let up = hex.to_ascii_uppercase();
+    Some(up.as_bytes().chunks(2).map(|c| std::str::from_utf8(c).unwrap()).collect::<Vec<_>>().join(":"))
+}
+
+fn check_router_fields(name: &str, host: &str, port: u16, username: &str) -> std::result::Result<(), RouterError> {
+    let bad = |m: &str| Err(RouterError::Invalid(m.into()));
+    if name.trim().is_empty() || name.trim().chars().count() > 40 {
+        return bad("nama router 1-40 karakter");
+    }
+    if host.trim().is_empty() || host.trim().chars().any(char::is_whitespace) || host.contains('/') {
+        return bad("host tidak valid");
+    }
+    if port == 0 {
+        return bad("port harus 1-65535");
+    }
+    if username.trim().is_empty() {
+        return bad("username API wajib diisi");
+    }
+    Ok(())
+}
+
+fn router_from_row(r: &rusqlite::Row<'_>) -> Result<RouterRecord> {
+    Ok(RouterRecord {
+        id: r.get(0)?,
+        name: r.get(1)?,
+        host: r.get(2)?,
+        port: r.get::<_, i64>(3)?.clamp(1, 65535) as u16,
+        tls_pin: r.get(4)?,
+        username: r.get(5)?,
+        can_write: r.get::<_, i64>(6)? != 0,
+        model: r.get(7)?,
+        version: r.get(8)?,
+        status: RouterStatus::parse(&r.get::<_, String>(9)?),
+        error: r.get(10)?,
+        last_poll_at: r.get(11)?,
+        last_import_at: r.get(12)?,
+        created_at: r.get(13)?,
+    })
+}
+
+const ROUTER_COLS: &str = "id, name, host, port, tls_pin, username, can_write, model, version, status, error, last_poll_at, last_import_at, created_at";
 
 fn status_str(s: UserStatus) -> &'static str {
     match s {
@@ -553,6 +736,100 @@ impl Store {
             })
         })?;
         rows.collect()
+    }
+
+    // ---------------- router ----------------
+
+    pub fn add_router(&mut self, n: &NewRouter, now_ms: i64) -> std::result::Result<RouterRecord, RouterError> {
+        check_router_fields(&n.name, &n.host, n.port, &n.username)?;
+        let pin = match &n.tls_pin {
+            Some(p) => Some(normalize_fingerprint(p).ok_or_else(|| RouterError::Invalid("sidik jari sertifikat tidak valid".into()))?),
+            None => None,
+        };
+        let id = format!("r-{}", crate::vault::generate_key().map_err(|_| RouterError::Invalid("gagal membuat id".into()))?.iter().take(6).map(|b| format!("{b:02x}")).collect::<String>());
+        match self.conn.execute(
+            "INSERT INTO routers (id, name, host, port, tls_pin, username, can_write, created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+            params![id, n.name.trim(), n.host.trim(), i64::from(n.port), pin, n.username.trim(), n.can_write, now_ms],
+        ) {
+            Ok(_) => {}
+            Err(rusqlite::Error::SqliteFailure(e, _)) if e.code == rusqlite::ErrorCode::ConstraintViolation => {
+                return Err(RouterError::Invalid(format!("nama router {} sudah dipakai", n.name.trim())));
+            }
+            Err(e) => return Err(e.into()),
+        }
+        self.get_router(&id)?.ok_or(RouterError::NotFound)
+    }
+
+    pub fn get_router(&self, id: &str) -> Result<Option<RouterRecord>> {
+        self.conn.query_row(&format!("SELECT {ROUTER_COLS} FROM routers WHERE id = ?1"), [id], router_from_row).optional()
+    }
+
+    pub fn list_routers(&self) -> Result<Vec<RouterRecord>> {
+        let mut stmt = self.conn.prepare(&format!("SELECT {ROUTER_COLS} FROM routers ORDER BY name COLLATE NOCASE"))?;
+        stmt.query_map([], router_from_row)?.collect()
+    }
+
+    pub fn update_router(&mut self, id: &str, p: &RouterPatch) -> std::result::Result<RouterRecord, RouterError> {
+        let cur = self.get_router(id)?.ok_or(RouterError::NotFound)?;
+        let name = p.name.clone().unwrap_or(cur.name.clone());
+        let host = p.host.clone().unwrap_or(cur.host.clone());
+        let port = p.port.unwrap_or(cur.port);
+        let username = p.username.clone().unwrap_or(cur.username.clone());
+        check_router_fields(&name, &host, port, &username)?;
+        let pin = match &p.tls_pin {
+            None => cur.tls_pin.clone(),
+            Some(None) => None,
+            Some(Some(x)) => Some(normalize_fingerprint(x).ok_or_else(|| RouterError::Invalid("sidik jari sertifikat tidak valid".into()))?),
+        };
+        match self.conn.execute(
+            "UPDATE routers SET name=?2, host=?3, port=?4, tls_pin=?5, username=?6, can_write=?7 WHERE id=?1",
+            params![id, name.trim(), host.trim(), i64::from(port), pin, username.trim(), p.can_write.unwrap_or(cur.can_write)],
+        ) {
+            Ok(_) => {}
+            Err(rusqlite::Error::SqliteFailure(e, _)) if e.code == rusqlite::ErrorCode::ConstraintViolation => {
+                return Err(RouterError::Invalid(format!("nama router {} sudah dipakai", name.trim())));
+            }
+            Err(e) => return Err(e.into()),
+        }
+        self.get_router(id)?.ok_or(RouterError::NotFound)
+    }
+
+    /// Hapus router beserta event, user, profile, catatan lokal, dan password tersalinnya.
+    /// Riwayat perubahan dipertahankan (jejak apa yang pernah dilakukan ke router itu).
+    pub fn remove_router(&mut self, id: &str) -> std::result::Result<RouterRemoved, RouterError> {
+        let tx = self.conn.transaction()?;
+        if tx.execute("DELETE FROM routers WHERE id = ?1", [id])? == 0 {
+            return Err(RouterError::NotFound);
+        }
+        let prefix = format!("{id}:");
+        let like = "user_id LIKE ?1 || '%' ESCAPE '\\'";
+        let esc = prefix.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+        for table in ["user_meta", "user_secrets"] {
+            tx.execute(&format!("DELETE FROM {table} WHERE {like}"), [&esc])?;
+        }
+        let out = RouterRemoved {
+            events: tx.execute("DELETE FROM events WHERE router_id = ?1", [id])? as u64,
+            users: tx.execute("DELETE FROM users WHERE router_id = ?1", [id])? as u64,
+            profiles: tx.execute("DELETE FROM profiles WHERE router_id = ?1", [id])? as u64,
+        };
+        tx.commit()?;
+        Ok(out)
+    }
+
+    /// Hasil polling terakhir: online (dengan waktu) atau offline/error (dengan pesan).
+    pub fn set_router_state(&mut self, id: &str, status: RouterStatus, error: Option<&str>, now_ms: i64) -> Result<()> {
+        if status == RouterStatus::Online {
+            self.conn.execute("UPDATE routers SET status = 'online', error = NULL, last_poll_at = ?2 WHERE id = ?1", params![id, now_ms])?;
+        } else {
+            self.conn.execute("UPDATE routers SET status = ?2, error = ?3 WHERE id = ?1", params![id, status.as_str(), error])?;
+        }
+        Ok(())
+    }
+
+    /// Model dan versi dari `/system/resource`, dan waktu import terakhir.
+    pub fn set_router_info(&mut self, id: &str, model: &str, version: &str, imported_at: i64) -> Result<()> {
+        self.conn.execute("UPDATE routers SET model = ?2, version = ?3, last_import_at = ?4 WHERE id = ?1", params![id, model, version, imported_at])?;
+        Ok(())
     }
 
     // ---------------- password terenkripsi (ADR 0009) ----------------
@@ -1152,6 +1429,128 @@ mod tests {
         s.purge(now, &policy(None, 1000, Some(30))).unwrap();
         assert!(!s.has_user_password("r1:lama").unwrap());
         assert!(s.has_user_password("r1:hidup").unwrap());
+    }
+
+    fn new_router(name: &str) -> NewRouter {
+        NewRouter { name: name.into(), host: "10.0.0.1".into(), port: 8728, tls_pin: None, username: "api".into(), can_write: false }
+    }
+
+    #[test]
+    fn router_tambah_validasi_dan_unik() {
+        let mut s = Store::open_in_memory().unwrap();
+        let bad = |s: &mut Store, f: &dyn Fn(&mut NewRouter)| {
+            let mut n = new_router("x");
+            f(&mut n);
+            match s.add_router(&n, 1) {
+                Err(RouterError::Invalid(m)) => m,
+                other => panic!("harusnya Invalid, dapat {other:?}"),
+            }
+        };
+        assert!(bad(&mut s, &|n| n.name = "  ".into()).contains("nama"));
+        assert!(bad(&mut s, &|n| n.host = "a b".into()).contains("host"));
+        assert!(bad(&mut s, &|n| n.host = "http://x/".into()).contains("host"));
+        assert!(bad(&mut s, &|n| n.port = 0).contains("port"));
+        assert!(bad(&mut s, &|n| n.username = "".into()).contains("username"));
+        assert!(bad(&mut s, &|n| n.tls_pin = Some("AA:BB".into())).contains("sidik jari"));
+
+        let pin_lower = "ab".repeat(32);
+        let r = s.add_router(&NewRouter { tls_pin: Some(pin_lower), can_write: true, ..new_router("Pusat") }, 100).unwrap();
+        assert!(r.id.starts_with("r-") && r.id.len() == 14);
+        assert_eq!(r.tls_pin.as_deref(), Some(&*["AB"; 32].join(":")));
+        assert_eq!((r.addr().as_str(), r.can_write, r.status, r.created_at), ("10.0.0.1:8728", true, RouterStatus::Offline, 100));
+        // Nama unik tanpa membedakan huruf besar kecil.
+        match s.add_router(&new_router("pusat"), 1) {
+            Err(RouterError::Invalid(m)) => assert!(m.contains("sudah dipakai")),
+            other => panic!("{other:?}"),
+        }
+        let b = s.add_router(&new_router("Cabang"), 2).unwrap();
+        assert_ne!(r.id, b.id);
+        assert_eq!(s.list_routers().unwrap().iter().map(|x| x.name.as_str()).collect::<Vec<_>>(), vec!["Cabang", "Pusat"]);
+        assert_eq!(s.get_router("tidak-ada").unwrap(), None);
+    }
+
+    #[cfg(feature = "tls")]
+    #[test]
+    fn router_tls_mode_dari_pin() {
+        use crate::router::TlsMode;
+        let mut s = Store::open_in_memory().unwrap();
+        let plain = s.add_router(&new_router("a"), 1).unwrap();
+        assert_eq!(plain.tls_mode(), TlsMode::Plain);
+        let pinned = s.add_router(&NewRouter { tls_pin: Some("cd".repeat(32)), port: 8729, ..new_router("b") }, 1).unwrap();
+        match pinned.tls_mode() {
+            TlsMode::Pinned(fp) => assert_eq!(fp.to_hex(), pinned.tls_pin.clone().unwrap()),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn router_ubah() {
+        let mut s = Store::open_in_memory().unwrap();
+        let a = s.add_router(&NewRouter { tls_pin: Some("11".repeat(32)), ..new_router("a") }, 1).unwrap();
+        let b = s.add_router(&new_router("b"), 1).unwrap();
+        // Tanpa perubahan kolom lain: pin tetap.
+        let u = s.update_router(&a.id, &RouterPatch { name: Some("a2".into()), port: Some(8729), can_write: Some(true), ..Default::default() }).unwrap();
+        assert_eq!((u.name.as_str(), u.port, u.can_write, u.tls_pin.clone()), ("a2", 8729, true, a.tls_pin.clone()));
+        // Kembali ke API biasa, lalu pin baru.
+        assert_eq!(s.update_router(&a.id, &RouterPatch { tls_pin: Some(None), ..Default::default() }).unwrap().tls_pin, None);
+        let p = s.update_router(&a.id, &RouterPatch { tls_pin: Some(Some("22".repeat(32))), ..Default::default() }).unwrap();
+        assert_eq!(p.tls_pin.as_deref(), Some(&*["22"; 32].join(":")));
+        // Validasi dan nama ganda.
+        assert!(matches!(s.update_router(&a.id, &RouterPatch { port: Some(0), ..Default::default() }), Err(RouterError::Invalid(_))));
+        assert!(matches!(s.update_router(&a.id, &RouterPatch { tls_pin: Some(Some("zz".into())), ..Default::default() }), Err(RouterError::Invalid(_))));
+        assert!(matches!(s.update_router(&a.id, &RouterPatch { name: Some("B".into()), ..Default::default() }), Err(RouterError::Invalid(_))));
+        assert!(matches!(s.update_router("nope", &RouterPatch::default()), Err(RouterError::NotFound)));
+        assert_eq!(s.get_router(&b.id).unwrap().unwrap().name, "b");
+    }
+
+    #[test]
+    fn router_hapus_menghapus_datanya_tapi_riwayat_tetap() {
+        let mut s = Store::open_in_memory().unwrap();
+        s.unlock(&key()).unwrap();
+        let r1 = s.add_router(&new_router("satu"), 1).unwrap();
+        let r2 = s.add_router(&new_router("dua"), 1).unwrap();
+        for r in [&r1.id, &r2.id] {
+            s.sync_users(r, 1, &[secret_pw("budi", Some("rahasia123"))], &[]).unwrap();
+            s.insert_events(r, &[ev(5, EventKind::Connected, Some("budi"))]).unwrap();
+            s.set_user_meta(&format!("{r}:budi"), &UserMeta { note: Some("n".into()), updated_at: 1, ..Default::default() }).unwrap();
+            let mut a = audit(9, "admin", "budi", true);
+            a.router_id = r.clone();
+            s.record_audit(&a).unwrap();
+        }
+        let out = s.remove_router(&r1.id).unwrap();
+        assert_eq!(out, RouterRemoved { events: 1, users: 1, profiles: 0 });
+        assert_eq!(s.get_router(&r1.id).unwrap(), None);
+        assert!(!s.has_user_password(&format!("{}:budi", r1.id)).unwrap());
+        assert_eq!(s.get_user_meta(&format!("{}:budi", r1.id)).unwrap(), None);
+        // Router lain utuh, dan riwayat perubahan router yang dihapus masih ada.
+        assert!(s.has_user_password(&format!("{}:budi", r2.id)).unwrap());
+        assert_eq!(s.list_users(Some(&r2.id), false).unwrap().len(), 1);
+        assert_eq!(s.list_audit(&AuditQuery { limit: 10, ..Default::default() }).unwrap().len(), 2);
+        assert!(matches!(s.remove_router(&r1.id), Err(RouterError::NotFound)));
+    }
+
+    #[test]
+    fn router_status_dan_info() {
+        let mut s = Store::open_in_memory().unwrap();
+        let r = s.add_router(&new_router("a"), 1).unwrap();
+        s.set_router_state(&r.id, RouterStatus::Online, None, 500).unwrap();
+        s.set_router_info(&r.id, "RB4011", "7.15 (stable)", 600).unwrap();
+        let g = s.get_router(&r.id).unwrap().unwrap();
+        assert_eq!((g.status, g.last_poll_at, g.last_import_at, g.model.as_str(), g.version.as_str()), (RouterStatus::Online, Some(500), Some(600), "RB4011", "7.15 (stable)"));
+        s.set_router_state(&r.id, RouterStatus::Offline, Some("timeout"), 700).unwrap();
+        let g = s.get_router(&r.id).unwrap().unwrap();
+        // Waktu polling terakhir yang BERHASIL tidak ikut berubah saat gagal.
+        assert_eq!((g.status, g.error.as_deref(), g.last_poll_at), (RouterStatus::Offline, Some("timeout"), Some(500)));
+        s.set_router_state(&r.id, RouterStatus::Online, None, 800).unwrap();
+        assert_eq!(s.get_router(&r.id).unwrap().unwrap().error, None);
+    }
+
+    #[test]
+    fn normalisasi_sidik_jari() {
+        assert_eq!(normalize_fingerprint(&"ab".repeat(32)).unwrap().len(), 95);
+        assert_eq!(normalize_fingerprint(&format!(" {} ", ["aB"; 32].join("-"))), Some(["AB"; 32].join(":")));
+        assert_eq!(normalize_fingerprint("AA:BB"), None);
+        assert_eq!(normalize_fingerprint(&"gg".repeat(32)), None);
     }
 
     #[test]
