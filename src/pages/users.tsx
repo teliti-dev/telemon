@@ -35,9 +35,10 @@ type ViewMode = "list" | "grid"
 const VIEW_KEY = "telemon.users.view"
 function loadView(): ViewMode {
   try {
-    return localStorage.getItem(VIEW_KEY) === "grid" ? "grid" : "list"
+    // Bawaan grid; bila pernah memilih, pakai pilihan terakhir.
+    return localStorage.getItem(VIEW_KEY) === "list" ? "list" : "grid"
   } catch {
-    return "list"
+    return "grid"
   }
 }
 function saveView(v: ViewMode) {
