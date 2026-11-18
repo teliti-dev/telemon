@@ -14,7 +14,12 @@ import type {
   ProfileInput,
   ProfilePatch,
   RouterInfo,
+  AccountSummary,
+  LoginResult,
+  SessionDevice,
+  SessionInfo,
   ShareState,
+  TwoFactorSetup,
   UserMeta,
   UserInput,
   UserMetaInput,
@@ -209,6 +214,54 @@ function makeMetas(users: PppUser[], now: number): Record<string, UserMeta> {
   return metas
 }
 
+// ---- Akun jarak jauh tiruan. Kredensial di bawah hanya untuk data contoh, bukan rahasia. ----
+const DEMO_PASSWORD = "demo-telemon"
+const DEMO_TOTP = "123456"
+const SESSION_KEY = "telemon.mock.account"
+const B32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+const CODE_CHARS = "abcdefghjkmnpqrstuvwxyz23456789"
+
+interface MockAccount {
+  id: string
+  username: string
+  displayName: string
+  password: string
+  totp: boolean
+  pendingSecret?: string
+  recovery: string[]
+  disabled: boolean
+  createdAt: number
+  lastLoginAt?: number
+}
+
+interface MockSession {
+  id: string
+  accountId: string
+  device: string
+  ip: string
+  createdAt: number
+  lastSeenAt: number
+}
+
+const newSecret = () => Array.from({ length: 16 }, () => B32[Math.floor(rand() * B32.length)]).join("")
+const codePart = () => Array.from({ length: 5 }, () => CODE_CHARS[Math.floor(rand() * CODE_CHARS.length)]).join("")
+const newRecoveryCodes = () => Array.from({ length: 8 }, () => `${codePart()}-${codePart()}`)
+
+function makeAccounts(now: number): MockAccount[] {
+  return [
+    { id: "a1", username: "admin", displayName: "Gilang", password: DEMO_PASSWORD, totp: true, recovery: newRecoveryCodes(), disabled: false, createdAt: now - 30 * 86400_000, lastLoginAt: now - 3 * 3600_000 },
+    { id: "a2", username: "operator", displayName: "Operator NOC", password: DEMO_PASSWORD, totp: false, recovery: [], disabled: false, createdAt: now - 12 * 86400_000, lastLoginAt: now - 2 * 86400_000 },
+    { id: "a3", username: "tamu", displayName: "Tamu (nonaktif)", password: DEMO_PASSWORD, totp: false, recovery: [], disabled: true, createdAt: now - 5 * 86400_000 },
+  ]
+}
+
+function makeSessions(now: number): MockSession[] {
+  return [
+    { id: "s-old1", accountId: "a1", device: "Chrome · Windows", ip: "10.10.3.193", createdAt: now - 2 * 86400_000, lastSeenAt: now - 3 * 3600_000 },
+    { id: "s-old2", accountId: "a1", device: "Safari · iPhone", ip: "10.10.3.54", createdAt: now - 6 * 86400_000, lastSeenAt: now - 26 * 3600_000 },
+  ]
+}
+
 const TUNNEL_WORDS = ["quiet", "river", "amber", "solar", "maple", "harbor", "nickel", "violet", "canyon", "pixel", "meadow", "tango"]
 
 export class MockApi implements TelemonApi {
@@ -221,8 +274,14 @@ export class MockApi implements TelemonApi {
   private metas: Record<string, UserMeta>
   private share: ShareState = {
     lan: { enabled: false, bind: "lan", port: 7878 },
-    publik: { status: "off", pinSet: false, durationHours: 8 },
+    publik: { status: "off", durationHours: 8 },
+    auth: { require2fa: false },
   }
+  private accounts: MockAccount[]
+  private sessions: MockSession[]
+  private currentSessionId?: string
+  private challenges = new Map<string, { accountId: string; expires: number }>()
+  private failures = new Map<string, { n: number; until: number }>()
   private listeners = new Set<(u: LiveUpdate) => void>()
   private timer?: ReturnType<typeof setInterval>
   private expiryTimer?: ReturnType<typeof setTimeout>
@@ -234,6 +293,8 @@ export class MockApi implements TelemonApi {
     this.profiles = makeProfiles(this.routers)
     this.events = makeHistory(this.routers, this.users, now)
     this.metas = makeMetas(this.users, now)
+    this.accounts = makeAccounts(now)
+    this.sessions = makeSessions(now)
   }
 
   async snapshot(): Promise<Snapshot> {
@@ -325,6 +386,295 @@ export class MockApi implements TelemonApi {
     this.routers.push(router)
     this.emit({ kind: "router", router: { ...router } })
     return router
+  }
+
+  // ---- Login akses non-desktop ----
+
+  private info(a: MockAccount, sid: string): SessionInfo {
+    return { id: sid, userId: a.id, username: a.username, displayName: a.displayName, twoFactor: a.totp }
+  }
+
+  private openSession(a: MockAccount, touch = true): SessionInfo {
+    const now = Date.now()
+    const s: MockSession = {
+      id: `s${now.toString(36)}`, accountId: a.id, device: "Browser ini", ip: "10.10.3.193", createdAt: now, lastSeenAt: now,
+    }
+    this.sessions.push(s)
+    this.currentSessionId = s.id
+    if (touch) a.lastLoginAt = now
+    try {
+      sessionStorage.setItem(SESSION_KEY, a.id)
+    } catch {
+      /* abaikan */
+    }
+    return this.info(a, s.id)
+  }
+
+  private current(): { a: MockAccount; s: MockSession } {
+    const s = this.sessions.find((x) => x.id === this.currentSessionId)
+    const a = s && this.accounts.find((x) => x.id === s.accountId && !x.disabled)
+    if (!s || !a) throw new Error("Belum login")
+    return { a, s }
+  }
+
+  private fail(key: string) {
+    const f = this.failures.get(key) ?? { n: 0, until: 0 }
+    f.n++
+    if (f.n >= 5) {
+      f.until = Date.now() + 5 * 60_000
+      f.n = 0
+    }
+    this.failures.set(key, f)
+  }
+
+  private newChallenge(a: MockAccount) {
+    const id = `c${Date.now().toString(36)}${Math.floor(rand() * 1e6).toString(36)}`
+    this.challenges.set(id, { accountId: a.id, expires: Date.now() + 5 * 60_000 })
+    return id
+  }
+
+  private takeChallenge(id: string) {
+    const c = this.challenges.get(id)
+    const a = c && this.accounts.find((x) => x.id === c.accountId)
+    if (!c || !a || c.expires < Date.now()) throw new Error("Sesi login kedaluwarsa. Masuk ulang")
+    return a
+  }
+
+  private otpauth(a: MockAccount, secret: string) {
+    return `otpauth://totp/Telemon:${a.username}?secret=${secret}&issuer=Telemon`
+  }
+
+  private checkPassword(a: MockAccount, password: string) {
+    if (a.password !== password) throw new Error("Password salah")
+  }
+
+  async session(): Promise<SessionInfo | null> {
+    await delay(200)
+    if (!this.currentSessionId) {
+      let id: string | null = null
+      try {
+        id = sessionStorage.getItem(SESSION_KEY)
+      } catch {
+        /* abaikan */
+      }
+      const a = this.accounts.find((x) => x.id === id && !x.disabled)
+      return a ? this.openSession(a, false) : null
+    }
+    const { a, s } = this.current()
+    return this.info(a, s.id)
+  }
+
+  async login(username: string, password: string): Promise<LoginResult> {
+    await delay(500)
+    const key = username.trim().toLowerCase()
+    const f = this.failures.get(key)
+    if (f && f.until > Date.now()) {
+      throw new Error(`Terlalu banyak percobaan. Coba lagi dalam ${Math.ceil((f.until - Date.now()) / 60_000)} menit`)
+    }
+    const a = this.accounts.find((x) => x.username === key)
+    if (!a || a.password !== password) {
+      this.fail(key)
+      throw new Error("Username atau password salah")
+    }
+    if (a.disabled) throw new Error("Akun dinonaktifkan. Hubungi pemilik Telemon")
+    this.failures.delete(key)
+    if (a.totp) return { status: "2fa_required", challengeId: this.newChallenge(a) }
+    if (this.share.auth.require2fa || this.share.publik.status === "on") {
+      const secret = newSecret()
+      a.pendingSecret = secret
+      return { status: "2fa_setup_required", challengeId: this.newChallenge(a), secret, otpauthUrl: this.otpauth(a, secret) }
+    }
+    return { status: "ok", session: this.openSession(a) }
+  }
+
+  async verify2fa(challengeId: string, code: string, opts?: { recovery?: boolean }): Promise<SessionInfo> {
+    await delay(400)
+    const a = this.takeChallenge(challengeId)
+    const clean = code.replace(/\s/g, "").toLowerCase()
+    let ok = false
+    if (opts?.recovery) {
+      const i = a.recovery.indexOf(clean)
+      if (i >= 0) {
+        a.recovery.splice(i, 1)
+        ok = true
+      }
+    } else {
+      ok = clean === DEMO_TOTP
+    }
+    if (!ok) {
+      this.fail(a.username)
+      throw new Error(opts?.recovery ? "Kode pemulihan salah atau sudah dipakai" : "Kode salah")
+    }
+    this.challenges.delete(challengeId)
+    return this.openSession(a)
+  }
+
+  async complete2faSetup(challengeId: string, code: string) {
+    await delay(500)
+    const a = this.takeChallenge(challengeId)
+    if (code.replace(/\s/g, "") !== DEMO_TOTP) throw new Error("Kode salah")
+    this.challenges.delete(challengeId)
+    a.totp = true
+    a.pendingSecret = undefined
+    a.recovery = newRecoveryCodes()
+    return { session: this.openSession(a), recoveryCodes: [...a.recovery] }
+  }
+
+  async logout() {
+    await delay(150)
+    this.sessions = this.sessions.filter((x) => x.id !== this.currentSessionId)
+    this.currentSessionId = undefined
+    try {
+      sessionStorage.removeItem(SESSION_KEY)
+    } catch {
+      /* abaikan */
+    }
+  }
+
+  async updateMyProfile(input: { displayName: string }) {
+    await delay(300)
+    const { a, s } = this.current()
+    const name = input.displayName.trim()
+    if (!name || name.length > 60) throw new Error("Nama 1-60 karakter")
+    a.displayName = name
+    return this.info(a, s.id)
+  }
+
+  async changeMyPassword(current: string, next: string) {
+    await delay(500)
+    const { a } = this.current()
+    this.checkPassword(a, current)
+    if (next.length < 8) throw new Error("Password baru minimal 8 karakter")
+    if (next === current) throw new Error("Password baru harus berbeda")
+    a.password = next
+  }
+
+  async start2faSetup(): Promise<TwoFactorSetup> {
+    await delay(300)
+    const { a } = this.current()
+    if (a.totp) throw new Error("2FA sudah aktif")
+    const secret = newSecret()
+    a.pendingSecret = secret
+    return { secret, otpauthUrl: this.otpauth(a, secret) }
+  }
+
+  async confirm2faSetup(code: string) {
+    await delay(500)
+    const { a } = this.current()
+    if (!a.pendingSecret) throw new Error("Mulai pendaftaran 2FA terlebih dulu")
+    if (code.replace(/\s/g, "") !== DEMO_TOTP) throw new Error("Kode salah")
+    a.totp = true
+    a.pendingSecret = undefined
+    a.recovery = newRecoveryCodes()
+    return { recoveryCodes: [...a.recovery] }
+  }
+
+  async disable2fa(password: string) {
+    await delay(500)
+    const { a } = this.current()
+    this.checkPassword(a, password)
+    if (this.share.auth.require2fa) throw new Error("2FA diwajibkan oleh pemilik Telemon")
+    a.totp = false
+    a.recovery = []
+  }
+
+  async regenerateRecoveryCodes(password: string) {
+    await delay(500)
+    const { a } = this.current()
+    this.checkPassword(a, password)
+    if (!a.totp) throw new Error("Aktifkan 2FA terlebih dulu")
+    a.recovery = newRecoveryCodes()
+    return [...a.recovery]
+  }
+
+  async listMySessions(): Promise<SessionDevice[]> {
+    await delay(250)
+    const { a } = this.current()
+    return this.sessions
+      .filter((x) => x.accountId === a.id)
+      .map((x) => ({ id: x.id, device: x.device, ip: x.ip, createdAt: x.createdAt, lastSeenAt: x.lastSeenAt, current: x.id === this.currentSessionId }))
+      .sort((x, y) => Number(y.current) - Number(x.current) || y.lastSeenAt - x.lastSeenAt)
+  }
+
+  async revokeSession(id: string) {
+    await delay(300)
+    if (id === this.currentSessionId) throw new Error("Gunakan Keluar untuk sesi ini")
+    this.sessions = this.sessions.filter((x) => x.id !== id)
+  }
+
+  // ---- Kelola akun (aplikasi desktop) ----
+
+  private summary(a: MockAccount): AccountSummary {
+    return { id: a.id, username: a.username, displayName: a.displayName, twoFactor: a.totp, disabled: a.disabled, createdAt: a.createdAt, lastLoginAt: a.lastLoginAt }
+  }
+
+  private accountOrThrow(id: string) {
+    const a = this.accounts.find((x) => x.id === id)
+    if (!a) throw new Error("Akun tidak ditemukan")
+    return a
+  }
+
+  async listAccounts() {
+    await delay(250)
+    return this.accounts.map((a) => this.summary(a))
+  }
+
+  async createAccount(input: { username: string; displayName: string; password: string }) {
+    await delay(500)
+    const username = input.username.trim().toLowerCase()
+    if (!/^[a-z0-9._-]{3,30}$/.test(username)) throw new Error("Username 3-30 karakter: huruf kecil, angka, titik, garis bawah, atau strip")
+    if (this.accounts.some((a) => a.username === username)) throw new Error("Username sudah dipakai")
+    if (!input.displayName.trim()) throw new Error("Nama wajib diisi")
+    if (input.password.length < 8) throw new Error("Password minimal 8 karakter")
+    const a: MockAccount = {
+      id: `a${Date.now().toString(36)}`, username, displayName: input.displayName.trim(), password: input.password,
+      totp: false, recovery: [], disabled: false, createdAt: Date.now(),
+    }
+    this.accounts.push(a)
+    return this.summary(a)
+  }
+
+  async resetAccountPassword(id: string, password: string) {
+    await delay(400)
+    if (password.length < 8) throw new Error("Password minimal 8 karakter")
+    const a = this.accountOrThrow(id)
+    a.password = password
+    this.sessions = this.sessions.filter((x) => x.accountId !== id)
+  }
+
+  async setAccountDisabled(id: string, disabled: boolean) {
+    await delay(300)
+    const a = this.accountOrThrow(id)
+    a.disabled = disabled
+    if (disabled) this.sessions = this.sessions.filter((x) => x.accountId !== id)
+    return this.summary(a)
+  }
+
+  async resetAccount2fa(id: string) {
+    await delay(300)
+    const a = this.accountOrThrow(id)
+    a.totp = false
+    a.recovery = []
+    this.sessions = this.sessions.filter((x) => x.accountId !== id)
+    return this.summary(a)
+  }
+
+  async deleteAccount(id: string) {
+    await delay(300)
+    const a = this.accountOrThrow(id)
+    const rest = this.accounts.filter((x) => x.id !== a.id && !x.disabled)
+    if (rest.length === 0 && this.share.publik.status === "on") {
+      throw new Error("Akses publik sedang aktif; matikan dulu sebelum menghapus akun terakhir")
+    }
+    this.accounts = this.accounts.filter((x) => x.id !== id)
+    this.sessions = this.sessions.filter((x) => x.accountId !== id)
+  }
+
+  async setRequire2fa(required: boolean) {
+    await delay(300)
+    if (!required && this.share.publik.status === "on") throw new Error("Wajib selama akses publik aktif")
+    this.share.auth.require2fa = required
+    return this.shareChanged()
   }
 
   // ---- Tulis ke router (data contoh: router "menjawab" setelah jeda) ----
@@ -601,10 +951,6 @@ export class MockApi implements TelemonApi {
     return s
   }
 
-  private newToken() {
-    return Array.from({ length: 4 }, () => Math.floor(rand() * 0xffffff).toString(36)).join("")
-  }
-
   async setLanShare(opts: { enabled: boolean; bind: "lan" | "localhost"; port: number }) {
     await delay(400)
     const lan = this.share.lan
@@ -612,31 +958,12 @@ export class MockApi implements TelemonApi {
     lan.port = opts.port
     lan.enabled = opts.enabled
     if (opts.enabled) {
-      lan.token = this.newToken()
       const host = opts.bind === "lan" ? "192.168.1.23" : "127.0.0.1"
-      lan.url = `http://${host}:${opts.port}/?t=${lan.token}`
+      lan.url = `http://${host}:${opts.port}/`
     } else {
       lan.url = undefined
-      lan.token = undefined
       this.stopPublic()
     }
-    return this.shareChanged()
-  }
-
-  async regenerateToken() {
-    await delay(200)
-    const lan = this.share.lan
-    if (lan.enabled && lan.url) {
-      lan.token = this.newToken()
-      lan.url = lan.url.replace(/\?t=.*/, `?t=${lan.token}`)
-    }
-    return this.shareChanged()
-  }
-
-  async setPublicPin(pin: string) {
-    await delay(300)
-    if (!/^\d{6,12}$/.test(pin)) throw new Error("PIN harus 6-12 digit angka")
-    this.share.publik.pinSet = true
     return this.shareChanged()
   }
 
@@ -654,7 +981,8 @@ export class MockApi implements TelemonApi {
       return this.shareChanged()
     }
     if (!this.share.lan.enabled) throw new Error("Nyalakan Serve ke browser terlebih dulu")
-    if (!p.pinSet) throw new Error("Atur PIN terlebih dulu")
+    if (this.accounts.every((a) => a.disabled)) throw new Error("Buat minimal satu akun jarak jauh terlebih dulu")
+    this.share.auth.require2fa = true
     p.status = "connecting"
     p.error = undefined
     this.shareChanged()

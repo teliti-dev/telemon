@@ -80,7 +80,7 @@ export function UsersPage({
   params: URLSearchParams
   onOpenUser: (id: string) => void
 }) {
-  const { users, routers, routerById, metas, api } = useStore()
+  const { users, routers, routerById, metas, access } = useStore()
   const now = useNow(15_000)
 
   const [query, setQuery] = React.useState(params.get("q") ?? "")
@@ -119,14 +119,14 @@ export function UsersPage({
   const shown = filtered.slice(0, limit)
   const [adding, setAdding] = React.useState(false)
   const [importing, setImporting] = React.useState(false)
-  const canWriteAny = api.kind !== "http" && routers.some((r) => r.canWrite)
+  const canWriteAny = access === "desktop" && routers.some((r) => r.canWrite)
 
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
         <UsersSectionNav page="user" />
         <div className="ml-auto flex gap-2">
-          <Button variant="outline" onClick={() => setImporting(true)} disabled={api.kind === "http"}>
+          <Button variant="outline" onClick={() => setImporting(true)} disabled={access === "remote"}>
             <DownloadIcon />
             <span className="hidden sm:inline">Import dari Mikrotik</span>
             <span className="sm:hidden">Import</span>

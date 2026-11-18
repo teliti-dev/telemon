@@ -49,7 +49,7 @@ import { useStore } from "@/lib/store-context"
 import type { RouterInfo } from "@/lib/types"
 
 export function RoutersPage() {
-  const { routers, liveUsers: users, api } = useStore()
+  const { routers, liveUsers: users, api, access } = useStore()
   const now = useNow(10_000)
   const [adding, setAdding] = React.useState(false)
   const [removing, setRemoving] = React.useState<RouterInfo | null>(null)
@@ -109,7 +109,7 @@ export function RoutersPage() {
                         <UsersIcon /> Lihat user
                       </DropdownMenuItem>
                       <DropdownMenuItem
-                        disabled={r.status !== "online" || api.kind === "http"}
+                        disabled={r.status !== "online" || access === "remote"}
                         onSelect={() => setImportFor(r)}
                       >
                         <DownloadIcon /> Import dari Mikrotik

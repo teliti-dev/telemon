@@ -1,20 +1,23 @@
-import { isNavActive, NAV } from "@/components/nav-items"
+import { isNavActive, navFor } from "@/components/nav-items"
 import { useNavBadges } from "@/hooks/use-nav-badges"
 import { href, useRoute } from "@/lib/route"
+import { useStore } from "@/lib/store-context"
 import { cn } from "@/lib/utils"
 
 /** Menu utama di bawah layar untuk HP (< 768px). */
 export function BottomNav() {
   const { page } = useRoute()
   const badges = useNavBadges()
+  const { access } = useStore()
+  const items = navFor(access)
 
   return (
     <nav
       aria-label="Menu utama"
       className="fixed inset-x-0 bottom-0 z-30 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur supports-[backdrop-filter]:bg-background/85 md:hidden"
     >
-      <ul className="grid grid-cols-5">
-        {NAV.map((item) => {
+      <ul className="grid" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
+        {items.map((item) => {
           const active = isNavActive(item.page, page)
           const n = badges[item.page]
           return (

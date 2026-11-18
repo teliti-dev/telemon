@@ -141,16 +141,58 @@ export interface ShareState {
     bind: ShareBind
     port: number
     url?: string
-    token?: string
   }
   publik: {
     status: "off" | "connecting" | "on" | "error"
     url?: string
-    pinSet: boolean
     durationHours: number
     expiresAt?: number
     error?: string
   }
+  auth: ShareAuth
+}
+
+export interface ShareAuth {
+  /** Wajib 2FA untuk semua akun jarak jauh (otomatis wajib saat akses Publik aktif). */
+  require2fa: boolean
+}
+
+/** Akun untuk akses non-desktop (browser lewat Serve LAN dan Publik). Semua akun hanya baca. */
+export interface AccountSummary {
+  id: string
+  username: string
+  displayName: string
+  twoFactor: boolean
+  disabled: boolean
+  createdAt: number
+  lastLoginAt?: number
+}
+
+export interface SessionInfo {
+  id: string
+  userId: string
+  username: string
+  displayName: string
+  twoFactor: boolean
+}
+
+export interface SessionDevice {
+  id: string
+  device: string
+  ip: string
+  createdAt: number
+  lastSeenAt: number
+  current: boolean
+}
+
+export type LoginResult =
+  | { status: "ok"; session: SessionInfo }
+  | { status: "2fa_required"; challengeId: string }
+  | { status: "2fa_setup_required"; challengeId: string; secret: string; otpauthUrl: string }
+
+export interface TwoFactorSetup {
+  secret: string
+  otpauthUrl: string
 }
 
 export interface NewRouter {

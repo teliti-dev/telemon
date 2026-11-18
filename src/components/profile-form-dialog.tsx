@@ -59,7 +59,7 @@ function ProfileForm({
   defaultRouterId,
   onClose,
 }: Omit<Props, "open" | "onOpenChange"> & { onClose: () => void }) {
-  const { routers, routerById, api } = useStore()
+  const { routers, routerById, api, access } = useStore()
   const editing = mode === "edit" && !!profile
 
   const writable = routers.filter((r) => r.canWrite)
@@ -82,7 +82,7 @@ function ProfileForm({
   const [error, setError] = React.useState<string | null>(null)
 
   const router = routerById.get(routerId)
-  const blocked = writeBlockReason(router, api.kind)
+  const blocked = writeBlockReason(router, access)
   const rateOk = !rateLimit.trim() || RATE.test(rateLimit.trim())
 
   const patch: ProfilePatch = {}

@@ -1,7 +1,7 @@
 import * as React from "react"
 
-import type { LiveUpdate, Snapshot, TelemonApi } from "./data/api"
-import { MockApi } from "./data/mock"
+import { useApi } from "./api-context"
+import type { LiveUpdate, Snapshot } from "./data/api"
 import { StoreContext, type StoreState } from "./store-context"
 
 const MAX_EVENTS = 1000
@@ -97,13 +97,8 @@ const initial: StoreState = {
   metas: {},
 }
 
-/** Adapter Tauri dan HTTP belum ada; sementara semua lingkungan memakai data contoh. */
-function createApi(): TelemonApi {
-  return new MockApi()
-}
-
 export function StoreProvider({ children }: { children: React.ReactNode }) {
-  const [api] = React.useState(createApi)
+  const { api, access } = useApi()
   const [state, dispatch] = React.useReducer(reducer, initial)
   const [attempt, setAttempt] = React.useState(0)
 
@@ -138,8 +133,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const liveUsers = React.useMemo(() => state.users.filter((u) => !u.deletedAt), [state.users])
 
   const value = React.useMemo(
-    () => ({ ...state, api, routerById, liveUsers, reload }),
-    [state, api, routerById, liveUsers, reload]
+    () => ({ ...state, api, access, routerById, liveUsers, reload }),
+    [state, api, access, routerById, liveUsers, reload]
   )
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>

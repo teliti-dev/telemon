@@ -69,7 +69,7 @@ function ImportBody({
   defaultRouterId?: string
   onClose: () => void
 }) {
-  const { routers, routerById, api } = useStore()
+  const { routers, routerById, api, access } = useStore()
   const now = useNow(30_000)
   const online = routers.filter((r) => r.status === "online")
   const [target, setTarget] = React.useState(
@@ -160,7 +160,7 @@ function ImportBody({
         <Button variant="outline" onClick={onClose} disabled={busy}>
           {results && !busy ? "Tutup" : "Batal"}
         </Button>
-        <Button onClick={run} disabled={busy || online.length === 0 || api.kind === "http"}>
+        <Button onClick={run} disabled={busy || online.length === 0 || access === "remote"}>
           {busy ? "Membaca router…" : results ? "Import lagi" : "Import"}
         </Button>
       </DialogFooter>

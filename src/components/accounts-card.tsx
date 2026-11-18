@@ -1,0 +1,404 @@
+import * as React from "react"
+import {
+  DicesIcon,
+  KeyRoundIcon,
+  MoreVerticalIcon,
+  PlusIcon,
+  ShieldCheckIcon,
+  ShieldOffIcon,
+  Trash2Icon,
+  UserCheckIcon,
+  UserXIcon,
+} from "lucide-react"
+import { toast } from "sonner"
+
+import { ConfirmDialog } from "@/components/confirm-dialog"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
+import { useNow } from "@/hooks/use-now"
+import { useApi } from "@/lib/api-context"
+import { formatRelative } from "@/lib/format"
+import { randomPassword } from "@/lib/random"
+import { useStore } from "@/lib/store-context"
+import type { AccountSummary } from "@/lib/types"
+
+const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e))
+
+type Dialog_ =
+  | null
+  | { kind: "add" }
+  | { kind: "reset-password"; account: AccountSummary }
+  | { kind: "reset-2fa" | "delete"; account: AccountSummary }
+
+/** Akun untuk akses lewat browser (Serve LAN dan Publik). Semua akun hanya baca. */
+export function AccountsCard() {
+  const { api } = useApi()
+  const { share } = useStore()
+  const now = useNow(60_000)
+  const [accounts, setAccounts] = React.useState<AccountSummary[] | null>(null)
+  const [dialog, setDialog] = React.useState<Dialog_>(null)
+
+  const load = React.useCallback(() => {
+    api
+      .listAccounts()
+      .then(setAccounts)
+      .catch((e: unknown) => toast.error(errMsg(e)))
+  }, [api])
+
+  React.useEffect(() => {
+    load()
+  }, [load])
+
+  const publicOn = share?.publik.status === "on"
+  const require2fa = !!share?.auth.require2fa
+
+  async function toggleDisabled(a: AccountSummary) {
+    try {
+      await api.setAccountDisabled(a.id, !a.disabled)
+      toast.success(a.disabled ? `${a.username} diaktifkan` : `${a.username} dinonaktifkan`)
+      load()
+    } catch (e) {
+      toast.error(errMsg(e))
+    }
+  }
+
+  return (
+    <Card className="xl:col-span-2">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <KeyRoundIcon className="size-4" /> Akun jarak jauh
+        </CardTitle>
+        <CardDescription>
+          Untuk masuk lewat browser (LAN dan publik). Semua akun hanya bisa melihat data, tidak
+          bisa mengubah router. Aplikasi desktop ini tidak memakai login.
+        </CardDescription>
+        <CardAction>
+          <Button onClick={() => setDialog({ kind: "add" })}>
+            <PlusIcon /> <span className="hidden sm:inline">Tambah akun</span>
+            <span className="sm:hidden">Tambah</span>
+          </Button>
+        </CardAction>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        <div className="flex items-center justify-between gap-4 rounded-lg border p-2.5">
+          <div className="grid gap-0.5">
+            <Label htmlFor="req2fa">Wajib 2FA untuk semua akun</Label>
+            <p className="text-xs text-muted-foreground">
+              {publicOn
+                ? "Selalu wajib selama akses publik aktif."
+                : "Akun tanpa 2FA diminta mendaftarkannya saat masuk."}
+            </p>
+          </div>
+          <Switch
+            id="req2fa"
+            checked={require2fa}
+            disabled={publicOn}
+            onCheckedChange={async (v) => {
+              try {
+                await api.setRequire2fa(v)
+              } catch (e) {
+                toast.error(errMsg(e))
+              }
+            }}
+          />
+        </div>
+
+        {accounts === null ? (
+          <p className="text-sm text-muted-foreground">Memuat…</p>
+        ) : accounts.length === 0 ? (
+          <Alert>
+            <AlertDescription>Belum ada akun. Buat satu akun supaya Serve ke browser bisa dipakai.</AlertDescription>
+          </Alert>
+        ) : (
+          <ul className="divide-y rounded-lg border">
+            {accounts.map((a) => (
+              <li key={a.id} className="flex items-center gap-3 px-3 py-2 text-[13px]">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className="font-mono font-medium">{a.username}</span>
+                    <span className="text-muted-foreground">{a.displayName}</span>
+                  </div>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                    {a.twoFactor ? (
+                      <span className="inline-flex items-center gap-1">
+                        <ShieldCheckIcon className="size-3.5 text-good" /> 2FA aktif
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1">
+                        <ShieldOffIcon className="size-3.5" /> Tanpa 2FA
+                      </span>
+                    )}
+                    <span>· {a.lastLoginAt ? `masuk ${formatRelative(a.lastLoginAt, now)}` : "belum pernah masuk"}</span>
+                  </div>
+                </div>
+                {a.disabled && <Badge variant="outline">Nonaktif</Badge>}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon-sm" aria-label={`Aksi ${a.username}`}>
+                      <MoreVerticalIcon />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onSelect={() => setDialog({ kind: "reset-password", account: a })}>
+                      <KeyRoundIcon /> Reset password
+                    </DropdownMenuItem>
+                    <DropdownMenuItem disabled={!a.twoFactor} onSelect={() => setDialog({ kind: "reset-2fa", account: a })}>
+                      <ShieldOffIcon /> Reset 2FA
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => void toggleDisabled(a)}>
+                      {a.disabled ? <UserCheckIcon /> : <UserXIcon />} {a.disabled ? "Aktifkan" : "Nonaktifkan"}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem variant="destructive" onSelect={() => setDialog({ kind: "delete", account: a })}>
+                      <Trash2Icon /> Hapus
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+
+      <AddAccountDialog open={dialog?.kind === "add"} onOpenChange={(o) => !o && setDialog(null)} onDone={load} />
+      <ResetPasswordDialog
+        account={dialog?.kind === "reset-password" ? dialog.account : null}
+        onOpenChange={(o) => !o && setDialog(null)}
+      />
+      <ConfirmDialog
+        open={dialog?.kind === "reset-2fa"}
+        onOpenChange={(o) => !o && setDialog(null)}
+        title={`Reset 2FA ${dialog && "account" in dialog ? dialog.account.username : ""}?`}
+        description={<p>2FA dinonaktifkan dan semua sesi akun ini dikeluarkan. Akun harus mendaftarkan 2FA lagi bila diwajibkan.</p>}
+        confirmLabel="Reset 2FA"
+        destructive
+        onConfirm={async () => {
+          if (dialog && "account" in dialog) {
+            await api.resetAccount2fa(dialog.account.id)
+            toast.success("2FA direset")
+            load()
+          }
+        }}
+      />
+      <ConfirmDialog
+        open={dialog?.kind === "delete"}
+        onOpenChange={(o) => !o && setDialog(null)}
+        title={`Hapus akun ${dialog && "account" in dialog ? dialog.account.username : ""}?`}
+        description={<p>Akun dan semua sesinya dihapus permanen. Data pemantauan tidak terpengaruh.</p>}
+        confirmLabel="Hapus"
+        destructive
+        onConfirm={async () => {
+          if (dialog && "account" in dialog) {
+            await api.deleteAccount(dialog.account.id)
+            toast.success("Akun dihapus")
+            load()
+          }
+        }}
+      />
+    </Card>
+  )
+}
+
+function PasswordField({
+  id,
+  value,
+  onChange,
+}: {
+  id: string
+  value: string
+  onChange: (v: string) => void
+}) {
+  return (
+    <div className="flex gap-1.5">
+      <Input
+        id={id}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        autoComplete="off"
+        spellCheck={false}
+        className="font-mono"
+        aria-invalid={value.length > 0 && value.length < 8}
+      />
+      <Button type="button" variant="outline" size="icon" aria-label="Buat password acak" title="Buat password acak" onClick={() => onChange(randomPassword())}>
+        <DicesIcon />
+      </Button>
+    </div>
+  )
+}
+
+function AddAccountDialog({
+  open,
+  onOpenChange,
+  onDone,
+}: {
+  open: boolean
+  onOpenChange: (o: boolean) => void
+  onDone: () => void
+}) {
+  const { api } = useApi()
+  const [username, setUsername] = React.useState("")
+  const [displayName, setDisplayName] = React.useState("")
+  const [password, setPassword] = React.useState("")
+  const [busy, setBusy] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) {
+          setUsername("")
+          setDisplayName("")
+          setPassword("")
+          setError(null)
+        }
+        onOpenChange(o)
+      }}
+    >
+      <DialogContent className="sm:max-w-md">
+        <form
+          className="grid gap-3"
+          onSubmit={async (e) => {
+            e.preventDefault()
+            setBusy(true)
+            setError(null)
+            try {
+              const a = await api.createAccount({ username, displayName, password })
+              toast.success(`Akun ${a.username} dibuat`)
+              onDone()
+              onOpenChange(false)
+            } catch (err) {
+              setError(errMsg(err))
+            } finally {
+              setBusy(false)
+            }
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Tambah akun</DialogTitle>
+            <DialogDescription>
+              Berikan username dan password ini ke orangnya lewat jalur aman. Akun hanya bisa melihat data.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="grid gap-1.5">
+              <Label htmlFor="ac-user">Username</Label>
+              <Input id="ac-user" value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} autoComplete="off" spellCheck={false} className="font-mono" placeholder="noc.budi" autoFocus />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="ac-name">Nama</Label>
+              <Input id="ac-name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={60} placeholder="Budi (NOC)" />
+            </div>
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="ac-pass">Password awal</Label>
+            <PasswordField id="ac-pass" value={password} onChange={setPassword} />
+            <p className="text-xs text-muted-foreground">Minimal 8 karakter. Orangnya bisa menggantinya sendiri setelah masuk.</p>
+          </div>
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
+              Batal
+            </Button>
+            <Button type="submit" disabled={busy || !username.trim() || !displayName.trim() || password.length < 8}>
+              {busy ? "Membuat…" : "Buat akun"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function ResetPasswordDialog({
+  account,
+  onOpenChange,
+}: {
+  account: AccountSummary | null
+  onOpenChange: (o: boolean) => void
+}) {
+  const { api } = useApi()
+  const [password, setPassword] = React.useState("")
+  const [busy, setBusy] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+
+  return (
+    <Dialog
+      open={!!account}
+      onOpenChange={(o) => {
+        if (!o) {
+          setPassword("")
+          setError(null)
+        }
+        onOpenChange(o)
+      }}
+    >
+      <DialogContent className="sm:max-w-md">
+        <form
+          className="grid gap-3"
+          onSubmit={async (e) => {
+            e.preventDefault()
+            if (!account) return
+            setBusy(true)
+            setError(null)
+            try {
+              await api.resetAccountPassword(account.id, password)
+              toast.success("Password direset; sesi akun dikeluarkan")
+              onOpenChange(false)
+            } catch (err) {
+              setError(errMsg(err))
+            } finally {
+              setBusy(false)
+            }
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Reset password {account?.username}</DialogTitle>
+            <DialogDescription>Semua sesi akun ini dikeluarkan.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-1.5">
+            <Label htmlFor="rp-pass">Password baru</Label>
+            <PasswordField id="rp-pass" value={password} onChange={setPassword} />
+          </div>
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
+              Batal
+            </Button>
+            <Button type="submit" disabled={busy || password.length < 8}>
+              {busy ? "Menyimpan…" : "Reset"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}

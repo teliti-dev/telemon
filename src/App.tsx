@@ -1,18 +1,19 @@
 import * as React from "react"
 import { Loader2Icon, TriangleAlertIcon } from "lucide-react"
 
-import { AppSidebar } from "@/components/app-sidebar"
+import { AuthGate } from "@/components/auth-gate"
 import { BottomNav } from "@/components/bottom-nav"
 import { SiteHeader } from "@/components/site-header"
 import { UserDetailSheet } from "@/components/user-detail-sheet"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { ApiProvider } from "@/lib/api-provider"
 import { useRoute, type Page } from "@/lib/route"
 import { StoreProvider } from "@/lib/store"
 import { useStore } from "@/lib/store-context"
+import { AccountPage } from "@/pages/account"
 import { EventsPage } from "@/pages/events"
 import { OverviewPage } from "@/pages/overview"
 import { ProfilesPage } from "@/pages/profiles"
@@ -27,6 +28,7 @@ const TITLES: Record<Page, string> = {
   event: "Event",
   router: "Router",
   berbagi: "Berbagi",
+  akun: "Akun saya",
 }
 
 function Content() {
@@ -67,31 +69,33 @@ function Content() {
       event: <EventsPage key={hash} params={params} onOpenUser={setOpenUser} />,
       router: <RoutersPage />,
       berbagi: <SharePage />,
+      akun: <AccountPage />,
     }[page]
   }
 
   return (
-    <>
+    <div className="flex min-h-svh flex-col">
       <SiteHeader title={TITLES[page]} />
-      <main className="flex-1 p-3 pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:p-4">{body}</main>
+      <main className="mx-auto w-full max-w-screen-2xl flex-1 p-3 pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:p-4">
+        {body}
+      </main>
+      <BottomNav />
       <UserDetailSheet userId={openUser} onOpenChange={(o) => !o && setOpenUser(null)} />
-    </>
+    </div>
   )
 }
 
 export function App() {
   return (
     <TooltipProvider>
-      <StoreProvider>
-        <SidebarProvider defaultOpen={false}>
-          <AppSidebar />
-          <SidebarInset className="min-w-0">
+      <ApiProvider>
+        <AuthGate>
+          <StoreProvider>
             <Content />
-          </SidebarInset>
-          <BottomNav />
-        </SidebarProvider>
-        <Toaster position="top-center" />
-      </StoreProvider>
+            <Toaster position="top-center" />
+          </StoreProvider>
+        </AuthGate>
+      </ApiProvider>
     </TooltipProvider>
   )
 }

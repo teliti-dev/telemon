@@ -1,13 +1,13 @@
-import type { ApiKind } from "@/lib/data/api"
+import type { Access } from "@/lib/access"
 import { useStore } from "@/lib/store-context"
 import type { RouterInfo } from "@/lib/types"
 
 /** Alasan router tidak bisa ditulis dari Telemon; null bila boleh. */
 export function writeBlockReason(
   router: RouterInfo | undefined,
-  apiKind: ApiKind
+  access: Access
 ): string | null {
-  if (apiKind === "http") return "Hanya bisa diubah dari aplikasi desktop"
+  if (access === "remote") return "Hanya bisa diubah dari aplikasi desktop"
   if (!router) return "Pilih router terlebih dulu"
   if (!router.canWrite) return `Akun API ${router.name} tidak punya hak write`
   if (router.status !== "online") {
@@ -17,7 +17,7 @@ export function writeBlockReason(
 }
 
 export function useWriteGate() {
-  const { routerById, api } = useStore()
+  const { routerById, access } = useStore()
   return (routerId?: string) =>
-    writeBlockReason(routerId ? routerById.get(routerId) : undefined, api.kind)
+    writeBlockReason(routerId ? routerById.get(routerId) : undefined, access)
 }

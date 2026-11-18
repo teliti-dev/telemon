@@ -426,7 +426,7 @@ export function UserDetailSheet({
   userId: string | null
   onOpenChange: (open: boolean) => void
 }) {
-  const { users, events, routerById, metas, api } = useStore()
+  const { users, events, routerById, metas, api, access } = useStore()
   const now = useNow(5_000)
   const gate = useWriteGate()
   const [editing, setEditing] = React.useState(false)
@@ -516,7 +516,7 @@ export function UserDetailSheet({
                   <HistoryTab history={history} now={now} />
                 </TabsContent>
                 <TabsContent value="catatan">
-                  <NotesTab userId={user.id} meta={meta} canEdit={api.kind !== "http"} />
+                  <NotesTab userId={user.id} meta={meta} canEdit={access === "desktop"} />
                 </TabsContent>
               </ScrollArea>
             </Tabs>

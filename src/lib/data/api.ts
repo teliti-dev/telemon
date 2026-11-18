@@ -1,5 +1,10 @@
 import type {
+  AccountSummary,
   ImportResult,
+  LoginResult,
+  SessionDevice,
+  SessionInfo,
+  TwoFactorSetup,
   NewRouter,
   PppProfile,
   ProfileInput,
@@ -66,6 +71,34 @@ export interface TelemonApi {
   restoreProfile(id: string): Promise<PppProfile>
   /** Baca /ppp/secret dan /ppp/profile router lalu samakan salinan Telemon (router menang). */
   importFromRouter(routerId: string): Promise<ImportResult>
+  // ---- Login akses non-desktop (Serve LAN dan Publik). Aplikasi desktop tidak memakainya. ----
+  /** Sesi saat ini, atau null bila belum login. */
+  session(): Promise<SessionInfo | null>
+  login(username: string, password: string): Promise<LoginResult>
+  verify2fa(challengeId: string, code: string, opts?: { recovery?: boolean }): Promise<SessionInfo>
+  /** Pendaftaran 2FA yang diwajibkan saat login; mengembalikan kode pemulihan. */
+  complete2faSetup(
+    challengeId: string,
+    code: string
+  ): Promise<{ session: SessionInfo; recoveryCodes: string[] }>
+  logout(): Promise<void>
+  // Akun sendiri
+  updateMyProfile(input: { displayName: string }): Promise<SessionInfo>
+  changeMyPassword(current: string, next: string): Promise<void>
+  start2faSetup(): Promise<TwoFactorSetup>
+  confirm2faSetup(code: string): Promise<{ recoveryCodes: string[] }>
+  disable2fa(password: string): Promise<void>
+  regenerateRecoveryCodes(password: string): Promise<string[]>
+  listMySessions(): Promise<SessionDevice[]>
+  revokeSession(id: string): Promise<void>
+  // Kelola akun (hanya aplikasi desktop)
+  listAccounts(): Promise<AccountSummary[]>
+  createAccount(input: { username: string; displayName: string; password: string }): Promise<AccountSummary>
+  resetAccountPassword(id: string, password: string): Promise<void>
+  setAccountDisabled(id: string, disabled: boolean): Promise<AccountSummary>
+  resetAccount2fa(id: string): Promise<AccountSummary>
+  deleteAccount(id: string): Promise<void>
+  setRequire2fa(required: boolean): Promise<ShareState>
   /** Menyimpan catatan lokal. Tidak menulis apa pun ke router. */
   saveUserMeta(userId: string, meta: UserMetaInput): Promise<UserMeta>
   setLanShare(opts: {
@@ -73,8 +106,6 @@ export interface TelemonApi {
     bind: ShareBind
     port: number
   }): Promise<ShareState>
-  regenerateToken(): Promise<ShareState>
-  setPublicPin(pin: string): Promise<ShareState>
   setPublicShare(opts: {
     enabled: boolean
     durationHours: number
@@ -83,7 +114,3 @@ export interface TelemonApi {
 
 export type ApiKind = "mock" | "tauri" | "http"
 
-/** Lingkungan tempat UI berjalan (bukan sumber datanya). */
-export function detectRuntime(): "tauri" | "browser" {
-  return "__TAURI_INTERNALS__" in window ? "tauri" : "browser"
-}

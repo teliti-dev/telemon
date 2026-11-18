@@ -51,7 +51,7 @@ import type { PppProfile } from "@/lib/types"
 type View = "active" | "deleted"
 
 export function ProfilesPage({ params }: { params: URLSearchParams }) {
-  const { profiles, liveUsers, routers, routerById, api } = useStore()
+  const { profiles, liveUsers, routers, routerById, api, access } = useStore()
   const gate = useWriteGate()
 
   const [query, setQuery] = React.useState(params.get("q") ?? "")
@@ -88,7 +88,7 @@ export function ProfilesPage({ params }: { params: URLSearchParams }) {
       .sort((a, b) => a.name.localeCompare(b.name, "id", { numeric: true }) || a.routerId.localeCompare(b.routerId))
   }, [profiles, query, routerId, view])
 
-  const canWriteAny = api.kind !== "http" && routers.some((r) => r.canWrite)
+  const canWriteAny = access === "desktop" && routers.some((r) => r.canWrite)
   const deletedCount = profiles.filter((p) => !!p.deletedAt).length
 
   async function restore(p: PppProfile) {
@@ -139,7 +139,7 @@ export function ProfilesPage({ params }: { params: URLSearchParams }) {
       <div className="flex flex-wrap items-center gap-2">
         <UsersSectionNav page="profile" />
         <div className="ml-auto flex gap-2">
-          <Button variant="outline" onClick={() => setImporting(true)} disabled={api.kind === "http"}>
+          <Button variant="outline" onClick={() => setImporting(true)} disabled={access === "remote"}>
             <DownloadIcon />
             <span className="hidden sm:inline">Import dari Mikrotik</span>
             <span className="sm:hidden">Import</span>

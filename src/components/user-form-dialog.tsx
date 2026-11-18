@@ -24,16 +24,11 @@ import {
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { writeBlockReason } from "@/hooks/use-write-gate"
+import { randomPassword } from "@/lib/random"
 import { useStore } from "@/lib/store-context"
 import type { PppUser, UserPatch } from "@/lib/types"
 
 const dash = (v?: string) => (v && v.trim() ? v.trim() : "-")
-
-function randomPassword() {
-  const chars = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789"
-  const bytes = crypto.getRandomValues(new Uint8Array(12))
-  return Array.from(bytes, (b) => chars[b % chars.length]).join("")
-}
 
 interface Props {
   open: boolean
@@ -61,7 +56,7 @@ function UserForm({
   defaultRouterId,
   onClose,
 }: Omit<Props, "open" | "onOpenChange"> & { onClose: () => void }) {
-  const { routers, profiles, routerById, api } = useStore()
+  const { routers, profiles, routerById, api, access } = useStore()
   const editing = mode === "edit" && !!user
 
   const writable = routers.filter((r) => r.canWrite)
@@ -86,7 +81,7 @@ function UserForm({
   const [error, setError] = React.useState<string | null>(null)
 
   const router = routerById.get(routerId)
-  const blocked = writeBlockReason(router, api.kind)
+  const blocked = writeBlockReason(router, access)
   const routerProfiles = profiles.filter((p) => p.routerId === routerId && !p.deletedAt)
   const profileOptions =
     profile && !routerProfiles.some((p) => p.name === profile)

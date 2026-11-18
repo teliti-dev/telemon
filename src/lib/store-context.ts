@@ -1,5 +1,6 @@
 import * as React from "react"
 
+import type { Access } from "./access"
 import type { TelemonApi } from "./data/api"
 import type { PppEvent, PppProfile, PppUser, RouterInfo, ShareState, UserMeta } from "./types"
 
@@ -17,6 +18,7 @@ export interface StoreState {
 
 export interface StoreValue extends StoreState {
   api: TelemonApi
+  access: Access
   /** User yang belum di-soft delete. */
   liveUsers: PppUser[]
   routerById: Map<string, RouterInfo>
