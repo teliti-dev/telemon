@@ -31,10 +31,9 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {}
 
 /// Baca-saja untuk saat ini. Penulisan (ADR 0004) menyusul dengan tinjauan perubahan.
-#[allow(async_fn_in_trait)]
-pub trait RouterApi {
+pub trait RouterApi: Sync {
     /// Menjalankan `<path>/print` dan mengumpulkan semua baris.
-    async fn print(&self, path: &str) -> Result<Vec<Row>, Error>;
+    fn print(&self, path: &str) -> impl std::future::Future<Output = Result<Vec<Row>, Error>> + Send;
 }
 
 pub async fn ppp_active(api: &impl RouterApi) -> Result<Vec<PppActive>, Error> {
