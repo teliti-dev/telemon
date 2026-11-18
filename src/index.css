@@ -126,13 +126,6 @@
     --sidebar-ring: oklch(0.556 0 0);
 }
 
-/* Teks dasar lebih kecil di layar lebar; HP tetap 14px agar mudah dibaca. */
-@media (min-width: 768px) {
-  html {
-    font-size: 13px;
-  }
-}
-
 @layer base {
   * {
     @apply border-border outline-ring/50;

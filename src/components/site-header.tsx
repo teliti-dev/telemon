@@ -3,6 +3,7 @@ import { GlobeIcon, WifiIcon, ZapIcon } from "lucide-react"
 import { AccountMenu } from "@/components/account-menu"
 import { isNavActive, navFor } from "@/components/nav-items"
 import { PreviewSwitch } from "@/components/preview-switch"
+import { ScaleMenu } from "@/components/scale-menu"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Badge } from "@/components/ui/badge"
 import { useNavBadges } from "@/hooks/use-nav-badges"
@@ -96,6 +97,7 @@ export function SiteHeader({ title }: { title: string }) {
             <span className="hidden sm:inline">Live</span>
           </span>
           <PreviewSwitch />
+          <ScaleMenu />
           <ThemeToggle />
           <AccountMenu />
         </div>

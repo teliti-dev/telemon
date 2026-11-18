@@ -2,6 +2,7 @@ import * as React from "react"
 import { EyeIcon, EyeOffIcon, Loader2Icon, LockKeyholeIcon, MonitorIcon, ZapIcon } from "lucide-react"
 
 import { RecoveryCodes } from "@/components/recovery-codes"
+import { ScaleMenu } from "@/components/scale-menu"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { TotpSetup } from "@/components/totp-setup"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -87,7 +88,10 @@ export function LoginPage({ onAuthed }: { onAuthed: (s: SessionInfo) => void }) 
 
   return (
     <div className="relative flex min-h-svh flex-col items-center justify-start bg-muted/30 px-4 pt-10 pb-8 sm:justify-center sm:pt-8">
-      <ThemeToggle className="absolute top-3 right-3" />
+      <div className="absolute top-3 right-3 flex items-center gap-1">
+        <ScaleMenu />
+        <ThemeToggle />
+      </div>
 
       <div className="grid w-full max-w-sm gap-4">
         <div className="grid justify-items-center gap-2 text-center">
