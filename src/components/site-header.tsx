@@ -11,8 +11,11 @@ import { useStore } from "@/lib/store-context"
 import { cn } from "@/lib/utils"
 
 /**
- * Header dua baris. Baris atas: logo dan nama, lalu status Live, Appearance, dan Profile.
- * Baris bawah (desktop): menu utama. Di HP menu ada di bawah layar dan judul halaman tampil di sini.
+ * Dua bagian yang langsung menjadi anak kolom halaman (bukan dibungkus satu header),
+ * supaya sticky bekerja pada bagian yang tepat:
+ * - Baris atas (logo, Live, Appearance, Profile): di desktop ikut tergulir hilang;
+ *   di HP tetap menempel karena menu utama ada di bawah layar.
+ * - Baris menu (desktop): selalu menempel di atas.
  */
 export function SiteHeader({ title }: { title: string }) {
   const { share, status, access } = useStore()
@@ -20,9 +23,9 @@ export function SiteHeader({ title }: { title: string }) {
   const badges = useNavBadges()
 
   return (
-    <header className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-      <div className={PAGE_CONTAINER}>
-        <div className="flex h-12 items-center gap-2 md:h-14">
+    <>
+      <div className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:static md:border-b-0 md:bg-background md:backdrop-blur-none">
+        <div className={cn(PAGE_CONTAINER, "flex h-12 items-center gap-2 md:h-14")}>
           <a
             href={href("ringkasan")}
             aria-label="Telemon, ke Ringkasan"
@@ -74,8 +77,10 @@ export function SiteHeader({ title }: { title: string }) {
             <AccountMenu />
           </div>
         </div>
+      </div>
 
-        <nav aria-label="Menu utama" className="-mb-px hidden h-9 items-end gap-0.5 md:flex">
+      <div className="sticky top-0 z-20 hidden border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:block">
+        <nav aria-label="Menu utama" className={cn(PAGE_CONTAINER, "-mb-px flex h-9 items-end gap-0.5")}>
           {navFor(access).map((item) => {
             const active = isNavActive(item.page, page)
             const n = badges[item.page]
@@ -107,6 +112,6 @@ export function SiteHeader({ title }: { title: string }) {
           })}
         </nav>
       </div>
-    </header>
+    </>
   )
 }
