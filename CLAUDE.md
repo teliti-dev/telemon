@@ -27,4 +27,6 @@ Aplikasi desktop **Tauri v2** (Windows dan Linux, tanpa deploy). Lihat ADR 0001-
 - `lib/route.ts`: routing hash (`#/user?status=active`), sama di Tauri dan mode serve.
 - `pages/`: ringkasan, user, profile, event, router, berbagi. Users dan Profile satu menu sidebar (segmen di atas halaman); sidebar tetap 5 menu. `components/status.tsx`: label/ikon status dan event.
 - Warna status (`--status-good|warning|serious|critical` di `index.css`) hanya untuk titik/ikon, selalu dengan label; teks memakai token teks.
+- Navigasi: sidebar di desktop (bawaan mode ikon) dan **menu bawah** di HP (< 768px, `components/bottom-nav.tsx`); daftar menu dan angka lencana satu sumber (`components/nav-items.ts`, `hooks/use-nav-badges.ts`). Halaman memberi ruang bawah untuk menu itu (`pb-[calc(4.5rem+env(safe-area-inset-bottom))]`).
+- Kepadatan: kontrol (`Button`, `Input`, `Select`, `Toggle`, `Tabs`) 36 px di HP dan 28 px di md ke atas; teks dasar 13 px di md ke atas, 14 px di HP. Pakai varian `md:` bila menambah kontrol baru, jangan mengecilkan di HP (area ketuk).
 - Dev dari HP/laptop lain: `bun run dev --host`.

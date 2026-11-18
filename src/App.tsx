@@ -2,6 +2,7 @@ import * as React from "react"
 import { Loader2Icon, TriangleAlertIcon } from "lucide-react"
 
 import { AppSidebar } from "@/components/app-sidebar"
+import { BottomNav } from "@/components/bottom-nav"
 import { SiteHeader } from "@/components/site-header"
 import { UserDetailSheet } from "@/components/user-detail-sheet"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -72,7 +73,7 @@ function Content() {
   return (
     <>
       <SiteHeader title={TITLES[page]} />
-      <main className="flex-1 p-3 md:p-4">{body}</main>
+      <main className="flex-1 p-3 pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:p-4">{body}</main>
       <UserDetailSheet userId={openUser} onOpenChange={(o) => !o && setOpenUser(null)} />
     </>
   )
@@ -82,11 +83,12 @@ export function App() {
   return (
     <TooltipProvider>
       <StoreProvider>
-        <SidebarProvider>
+        <SidebarProvider defaultOpen={false}>
           <AppSidebar />
           <SidebarInset className="min-w-0">
             <Content />
           </SidebarInset>
+          <BottomNav />
         </SidebarProvider>
         <Toaster position="top-center" />
       </StoreProvider>

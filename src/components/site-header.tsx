@@ -18,8 +18,8 @@ export function SiteHeader({ title }: { title: string }) {
 
   return (
     <header className="sticky top-0 z-10 flex h-12 shrink-0 items-center gap-2 border-b bg-background/95 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:px-4">
-      <SidebarTrigger className="-ml-1" />
-      <Separator orientation="vertical" className="mr-1 data-[orientation=vertical]:h-4" />
+      <SidebarTrigger className="-ml-1 hidden md:inline-flex" />
+      <Separator orientation="vertical" className="mr-1 hidden data-[orientation=vertical]:h-4 md:block" />
       <h1 className="truncate text-sm font-medium">{title}</h1>
 
       <div className="ml-auto flex items-center gap-1.5">
@@ -32,9 +32,9 @@ export function SiteHeader({ title }: { title: string }) {
           </Badge>
         )}
         {share?.publik.status === "on" && (
-          <Badge variant="outline" asChild className="gap-1.5">
+          <Badge variant="outline" asChild className="gap-1.5 border-warning/70">
             <a href={href("berbagi")} title="Akses publik aktif">
-              <GlobeIcon className="size-3.5 text-warning" />
+              <GlobeIcon className="size-3.5" />
               <span className="hidden sm:inline">Publik</span>
             </a>
           </Badge>

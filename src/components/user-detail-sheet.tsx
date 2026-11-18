@@ -73,7 +73,7 @@ function Field({
             aria-label={`Salin ${label}`}
             title={`Salin ${label}`}
             onClick={() => copyText(copy, `${label} disalin`)}
-            className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="shrink-0 rounded p-1 text-muted-foreground md:p-0.5 hover:bg-muted hover:text-foreground"
           >
             <CopyIcon className="size-3.5" />
           </button>
