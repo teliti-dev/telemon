@@ -459,7 +459,7 @@ export function UserDetailSheet({
   return (
     <>
     <Sheet open={!!user} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full gap-0 sm:max-w-md">
+      <SheetContent className="gap-0 data-[side=right]:w-full pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
         {user && (
           <>
             <SheetHeader className="gap-1 border-b px-3 py-2.5 pr-12">

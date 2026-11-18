@@ -84,7 +84,7 @@ export function AppearanceDrawer({ iconOnly }: { iconOnly?: boolean }) {
           {!iconOnly && <span className="hidden sm:inline">Appearance</span>}
         </Button>
       </SheetTrigger>
-      <SheetContent className="w-full gap-0 sm:max-w-sm">
+      <SheetContent className="gap-0 data-[side=right]:w-full pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
         <SheetHeader className="border-b px-4 py-3 pr-12">
           <SheetTitle>Appearance</SheetTitle>
           <SheetDescription>Tema dan ukuran tampilan. Pilihan disimpan di browser ini.</SheetDescription>
