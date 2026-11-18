@@ -22,14 +22,14 @@ export function SiteHeader({ title }: { title: string }) {
   return (
     <header className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
       <div className={PAGE_CONTAINER}>
-        <div className="flex h-12 items-center gap-2">
+        <div className="flex h-14 items-center gap-2">
           <a
             href={href("ringkasan")}
             aria-label="Telemon, ke Ringkasan"
             className="flex shrink-0 items-center gap-2 rounded-md font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
           >
-            <span className="flex size-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <ZapIcon className="size-3.5" />
+            <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+              <ZapIcon className="size-4" />
             </span>
             <span className="hidden sm:inline">Telemon</span>
           </a>
@@ -75,7 +75,7 @@ export function SiteHeader({ title }: { title: string }) {
           </div>
         </div>
 
-        <nav aria-label="Menu utama" className="-mb-px hidden h-10 items-end gap-1 md:flex">
+        <nav aria-label="Menu utama" className="-mb-px hidden h-12 items-end gap-1 md:flex">
           {navFor(access).map((item) => {
             const active = isNavActive(item.page, page)
             const n = badges[item.page]
@@ -85,7 +85,7 @@ export function SiteHeader({ title }: { title: string }) {
                 href={href(item.page)}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "inline-flex h-10 items-center gap-1.5 border-b-2 px-2.5 text-sm font-medium transition-colors outline-none focus-visible:bg-muted",
+                  "inline-flex h-12 items-center gap-1.5 border-b-2 px-3 text-sm font-medium transition-colors outline-none focus-visible:bg-muted",
                   item.end && "ml-auto",
                   active
                     ? "border-primary text-foreground"
