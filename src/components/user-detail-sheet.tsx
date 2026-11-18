@@ -12,7 +12,7 @@ import { toast } from "sonner"
 
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { UserFormDialog } from "@/components/user-form-dialog"
-import { useWriteGate } from "@/hooks/use-write-gate"
+import { useUpdateGate, useWriteGate } from "@/hooks/use-write-gate"
 import {
   EVENT_META,
   EventIcon,
@@ -426,9 +426,10 @@ export function UserDetailSheet({
   userId: string | null
   onOpenChange: (open: boolean) => void
 }) {
-  const { users, events, routerById, metas, api, access } = useStore()
+  const { users, events, routerById, metas, api } = useStore()
   const now = useNow(5_000)
-  const gate = useWriteGate()
+  const gate = useWriteGate("user")
+  const noteGate = useUpdateGate("user")
   const [editing, setEditing] = React.useState(false)
   const [removing, setRemoving] = React.useState(false)
   const user = userId ? users.find((u) => u.id === userId) : undefined
@@ -516,7 +517,7 @@ export function UserDetailSheet({
                   <HistoryTab history={history} now={now} />
                 </TabsContent>
                 <TabsContent value="catatan">
-                  <NotesTab userId={user.id} meta={meta} canEdit={access === "desktop"} />
+                  <NotesTab userId={user.id} meta={meta} canEdit={!noteGate()} />
                 </TabsContent>
               </ScrollArea>
             </Tabs>

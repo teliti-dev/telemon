@@ -44,12 +44,15 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { useNow } from "@/hooks/use-now"
 import { formatRelative } from "@/lib/format"
+import { useUpdateGate } from "@/hooks/use-write-gate"
 import { navigate } from "@/lib/route"
 import { useStore } from "@/lib/store-context"
 import type { RouterInfo } from "@/lib/types"
 
 export function RoutersPage() {
   const { routers, liveUsers: users, api, access } = useStore()
+  const importReason = useUpdateGate("router")()
+  const desktop = access === "desktop"
   const now = useNow(10_000)
   const [adding, setAdding] = React.useState(false)
   const [removing, setRemoving] = React.useState<RouterInfo | null>(null)
@@ -61,7 +64,7 @@ export function RoutersPage() {
         <p className="text-sm text-muted-foreground">
           Mikrotik adalah source of truth; Telemon membaca dan (bila diizinkan) menulis lewat RouterOS API.
         </p>
-        <Button onClick={() => setAdding(true)}>
+        <Button onClick={() => setAdding(true)} disabled={!desktop} title={desktop ? undefined : "Tambah router hanya dari aplikasi desktop"}>
           <PlusIcon />
           <span className="hidden sm:inline">Tambah router</span>
           <span className="sm:hidden">Tambah</span>
@@ -109,13 +112,13 @@ export function RoutersPage() {
                         <UsersIcon /> Lihat user
                       </DropdownMenuItem>
                       <DropdownMenuItem
-                        disabled={r.status !== "online" || access === "remote"}
+                        disabled={r.status !== "online" || !!importReason}
                         onSelect={() => setImportFor(r)}
                       >
                         <DownloadIcon /> Import dari Mikrotik
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem variant="destructive" onSelect={() => setRemoving(r)}>
+                      <DropdownMenuItem variant="destructive" disabled={!desktop} onSelect={() => setRemoving(r)}>
                         <Trash2Icon /> Hapus dari Telemon
                       </DropdownMenuItem>
                     </DropdownMenuContent>

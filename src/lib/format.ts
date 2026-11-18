@@ -45,3 +45,15 @@ export function formatDuration(ms: number) {
   if (m > 0) return `${m}m`
   return `${s}d`
 }
+
+/** Ukuran berkas: "2,4 MB". */
+export function formatBytes(n: number) {
+  const units = ["B", "KB", "MB", "GB", "TB"]
+  let v = n
+  let i = 0
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024
+    i++
+  }
+  return `${new Intl.NumberFormat("id-ID", { maximumFractionDigits: i === 0 ? 0 : 1 }).format(v)} ${units[i]}`
+}

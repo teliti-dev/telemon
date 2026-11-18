@@ -271,7 +271,11 @@ export function LoginPage({ onAuthed }: { onAuthed: (s: SessionInfo) => void }) 
                   <span className="font-mono text-foreground">123456</span>
                 </li>
                 <li>
-                  <span className="font-mono text-foreground">operator</span> / <span className="font-mono text-foreground">demo-telemon</span>, tanpa 2FA
+                  <span className="font-mono text-foreground">operator</span> / <span className="font-mono text-foreground">demo-telemon</span>: peran Ubah,
+                  wajib daftar 2FA saat masuk (kode <span className="font-mono text-foreground">123456</span>)
+                </li>
+                <li>
+                  <span className="font-mono text-foreground">pantau</span> / <span className="font-mono text-foreground">demo-telemon</span>: peran Monitor, tanpa 2FA
                 </li>
                 <li>
                   <span className="font-mono text-foreground">tamu</span>: akun nonaktif

@@ -34,6 +34,7 @@ import { FilterSelect } from "@/components/filter-select"
 import { ImportDialog } from "@/components/import-dialog"
 import { UserFormDialog } from "@/components/user-form-dialog"
 import { UsersSectionNav } from "@/components/users-section-nav"
+import { useUpdateGate } from "@/hooks/use-write-gate"
 import { useStore } from "@/lib/store-context"
 import { cn } from "@/lib/utils"
 import type { PppUser, UserStatus } from "@/lib/types"
@@ -81,7 +82,9 @@ export function UsersPage({
   params: URLSearchParams
   onOpenUser: (id: string) => void
 }) {
-  const { users, routers, routerById, metas, access } = useStore()
+  const { users, routers, routerById, metas } = useStore()
+  const userReason = useUpdateGate("user")()
+  const importReason = useUpdateGate("router")()
   const now = useNow(15_000)
 
   const [query, setQuery] = React.useState(params.get("q") ?? "")
@@ -120,7 +123,7 @@ export function UsersPage({
   const shown = filtered.slice(0, limit)
   const [adding, setAdding] = React.useState(false)
   const [importing, setImporting] = React.useState(false)
-  const canWriteAny = access === "desktop" && routers.some((r) => r.canWrite)
+  const canWriteAny = !userReason && routers.some((r) => r.canWrite)
 
   const onStatus = (v: string) => {
     setStatus(v as StatusFilter)
@@ -165,7 +168,7 @@ export function UsersPage({
       <div className="flex flex-wrap items-center gap-2">
         <UsersSectionNav page="user" />
         <div className="ml-auto flex gap-2">
-          <Button variant="outline" onClick={() => setImporting(true)} disabled={access === "remote"}>
+          <Button variant="outline" onClick={() => setImporting(true)} disabled={!!importReason} title={importReason ?? undefined}>
             <DownloadIcon />
             <span className="hidden sm:inline">Import dari Mikrotik</span>
             <span className="sm:hidden">Import</span>
@@ -173,7 +176,7 @@ export function UsersPage({
           <Button
             onClick={() => setAdding(true)}
             disabled={!canWriteAny}
-            title={canWriteAny ? undefined : "Tidak ada router dengan hak write, atau mode hanya baca"}
+            title={canWriteAny ? undefined : (userReason ?? "Tidak ada router dengan hak write")}
           >
             <PlusIcon />
             <span className="hidden sm:inline">Tambah user</span>

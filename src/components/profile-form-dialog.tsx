@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { writeBlockReason } from "@/hooks/use-write-gate"
+import { useWriteGate } from "@/hooks/use-write-gate"
 import { useStore } from "@/lib/store-context"
 import type { OnlyOne, PppProfile, ProfilePatch } from "@/lib/types"
 
@@ -59,7 +59,8 @@ function ProfileForm({
   defaultRouterId,
   onClose,
 }: Omit<Props, "open" | "onOpenChange"> & { onClose: () => void }) {
-  const { routers, routerById, api, access } = useStore()
+  const { routers, routerById, api } = useStore()
+  const gate = useWriteGate("profile")
   const editing = mode === "edit" && !!profile
 
   const writable = routers.filter((r) => r.canWrite)
@@ -82,7 +83,7 @@ function ProfileForm({
   const [error, setError] = React.useState<string | null>(null)
 
   const router = routerById.get(routerId)
-  const blocked = writeBlockReason(router, access)
+  const blocked = gate(routerId)
   const rateOk = !rateLimit.trim() || RATE.test(rateLimit.trim())
 
   const patch: ProfilePatch = {}

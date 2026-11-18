@@ -15,7 +15,14 @@ import type {
   ProfilePatch,
   RouterInfo,
   AccountSummary,
+  AppSettings,
   LoginResult,
+  Permissions,
+  PurgeCounts,
+  Resource,
+  Role,
+  RoleInput,
+  StorageInfo,
   SessionDevice,
   SessionInfo,
   ShareState,
@@ -26,6 +33,8 @@ import type {
   UserPatch,
   UserStatus,
 } from "../types"
+import { DEFAULT_ROLES, DEFAULT_SETTINGS } from "../defaults"
+import { hasUpdate, RESOURCES } from "../permissions"
 import type { LiveUpdate, Snapshot, TelemonApi } from "./api"
 
 function mulberry32(seed: number) {
@@ -221,10 +230,19 @@ const SESSION_KEY = "telemon.mock.account"
 const B32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
 const CODE_CHARS = "abcdefghjkmnpqrstuvwxyz23456789"
 
+interface MockRole {
+  id: string
+  name: string
+  description?: string
+  permissions: Permissions
+  builtin: boolean
+}
+
 interface MockAccount {
   id: string
   username: string
   displayName: string
+  roleId: string
   password: string
   totp: boolean
   pendingSecret?: string
@@ -237,6 +255,8 @@ interface MockAccount {
 interface MockSession {
   id: string
   accountId: string
+  /** Asal sesi: dipakai untuk menolak tulis lewat akses publik bila dimatikan. */
+  via: "lan" | "publik"
   device: string
   ip: string
   createdAt: number
@@ -249,16 +269,17 @@ const newRecoveryCodes = () => Array.from({ length: 8 }, () => `${codePart()}-${
 
 function makeAccounts(now: number): MockAccount[] {
   return [
-    { id: "a1", username: "admin", displayName: "Gilang", password: DEMO_PASSWORD, totp: true, recovery: newRecoveryCodes(), disabled: false, createdAt: now - 30 * 86400_000, lastLoginAt: now - 3 * 3600_000 },
-    { id: "a2", username: "operator", displayName: "Operator NOC", password: DEMO_PASSWORD, totp: false, recovery: [], disabled: false, createdAt: now - 12 * 86400_000, lastLoginAt: now - 2 * 86400_000 },
-    { id: "a3", username: "tamu", displayName: "Tamu (nonaktif)", password: DEMO_PASSWORD, totp: false, recovery: [], disabled: true, createdAt: now - 5 * 86400_000 },
+    { id: "a1", username: "admin", displayName: "Gilang", roleId: "role-admin", password: DEMO_PASSWORD, totp: true, recovery: newRecoveryCodes(), disabled: false, createdAt: now - 30 * 86400_000, lastLoginAt: now - 3 * 3600_000 },
+    { id: "a2", username: "operator", displayName: "Operator NOC", roleId: "role-operator", password: DEMO_PASSWORD, totp: false, recovery: [], disabled: false, createdAt: now - 12 * 86400_000, lastLoginAt: now - 2 * 86400_000 },
+    { id: "a4", username: "pantau", displayName: "Layar Pantau", roleId: "role-monitor", password: DEMO_PASSWORD, totp: false, recovery: [], disabled: false, createdAt: now - 3 * 86400_000, lastLoginAt: now - 86400_000 },
+    { id: "a3", username: "tamu", displayName: "Tamu (nonaktif)", roleId: "role-viewer", password: DEMO_PASSWORD, totp: false, recovery: [], disabled: true, createdAt: now - 5 * 86400_000 },
   ]
 }
 
 function makeSessions(now: number): MockSession[] {
   return [
-    { id: "s-old1", accountId: "a1", device: "Chrome · Windows", ip: "10.10.3.193", createdAt: now - 2 * 86400_000, lastSeenAt: now - 3 * 3600_000 },
-    { id: "s-old2", accountId: "a1", device: "Safari · iPhone", ip: "10.10.3.54", createdAt: now - 6 * 86400_000, lastSeenAt: now - 26 * 3600_000 },
+    { id: "s-old1", accountId: "a1", via: "lan", device: "Chrome · Windows", ip: "10.10.3.193", createdAt: now - 2 * 86400_000, lastSeenAt: now - 3 * 3600_000 },
+    { id: "s-old2", accountId: "a1", via: "lan", device: "Safari · iPhone", ip: "10.10.3.54", createdAt: now - 6 * 86400_000, lastSeenAt: now - 26 * 3600_000 },
   ]
 }
 
@@ -275,9 +296,11 @@ export class MockApi implements TelemonApi {
   private share: ShareState = {
     lan: { enabled: false, bind: "lan", port: 7878 },
     publik: { status: "off", durationHours: 8 },
-    auth: { require2fa: false },
+    auth: { require2fa: false, allowPublicWrite: DEFAULT_SETTINGS.remote.allowPublicWrite },
   }
   private accounts: MockAccount[]
+  private roles: MockRole[] = DEFAULT_ROLES.map((r) => ({ ...r, permissions: { ...r.permissions }, builtin: true }))
+  private settings: AppSettings = structuredClone(DEFAULT_SETTINGS)
   private sessions: MockSession[]
   private currentSessionId?: string
   private challenges = new Map<string, { accountId: string; expires: number }>()
@@ -299,12 +322,14 @@ export class MockApi implements TelemonApi {
 
   async snapshot(): Promise<Snapshot> {
     await delay(300)
+    const perms = this.currentSessionId ? this.roleOf(this.current().a).permissions : null
+    const can = (r: Resource) => !perms || perms[r] !== "none"
     return {
       routers: this.routers.map((r) => ({ ...r })),
-      users: this.users.map((u) => ({ ...u })),
-      profiles: this.profiles.map((p) => ({ ...p })),
-      events: [...this.events],
-      metas: structuredClone(this.metas),
+      users: can("user") ? this.users.map((u) => ({ ...u })) : [],
+      profiles: can("profile") ? this.profiles.map((p) => ({ ...p })) : [],
+      events: can("event") ? [...this.events] : [],
+      metas: can("user") ? structuredClone(this.metas) : {},
       share: structuredClone(this.share),
     }
   }
@@ -367,6 +392,7 @@ export class MockApi implements TelemonApi {
   }
 
   async addRouter(input: NewRouter): Promise<RouterInfo> {
+    this.authorize("desktop")
     await delay(900)
     if (!input.username || !input.password) {
       throw new Error("Username dan password API wajib diisi")
@@ -390,14 +416,43 @@ export class MockApi implements TelemonApi {
 
   // ---- Login akses non-desktop ----
 
+  private roleOf(a: MockAccount): MockRole {
+    return this.roles.find((r) => r.id === a.roleId) ?? this.roles[this.roles.length - 1]
+  }
+
   private info(a: MockAccount, sid: string): SessionInfo {
-    return { id: sid, userId: a.id, username: a.username, displayName: a.displayName, twoFactor: a.totp }
+    const role = this.roleOf(a)
+    return {
+      id: sid, userId: a.id, username: a.username, displayName: a.displayName,
+      roleName: role.name, permissions: { ...role.permissions }, twoFactor: a.totp,
+      via: this.sessions.find((x) => x.id === sid)?.via ?? "lan",
+    }
+  }
+
+  /** 2FA wajib: pengaturan pemilik, akses publik aktif, atau peran dengan izin Ubah. */
+  private must2fa(a: MockAccount) {
+    return this.share.auth.require2fa || this.share.publik.status === "on" || hasUpdate(this.roleOf(a).permissions)
+  }
+
+  /**
+   * Meniru penegakan di server. Tanpa sesi = aplikasi desktop (boleh semua).
+   * Sesi jarak jauh: butuh izin Ubah pada menu terkait, dan tulis lewat akses publik
+   * ditolak bila dimatikan. "desktop" = hanya aplikasi desktop.
+   */
+  private authorize(resource: Resource | "desktop") {
+    if (!this.currentSessionId) return
+    const { a, s } = this.current()
+    if (resource === "desktop") throw new Error("Hanya bisa dilakukan dari aplikasi desktop")
+    if (this.roleOf(a).permissions[resource] !== "update") throw new Error("Peran Anda tidak boleh mengubah data ini")
+    if (s.via === "publik" && !this.share.auth.allowPublicWrite) {
+      throw new Error("Tulis lewat akses publik dimatikan oleh pemilik Telemon")
+    }
   }
 
   private openSession(a: MockAccount, touch = true): SessionInfo {
     const now = Date.now()
     const s: MockSession = {
-      id: `s${now.toString(36)}`, accountId: a.id, device: "Browser ini", ip: "10.10.3.193", createdAt: now, lastSeenAt: now,
+      id: `s${now.toString(36)}`, accountId: a.id, via: this.share.publik.status === "on" ? "publik" : "lan", device: "Browser ini", ip: "10.10.3.193", createdAt: now, lastSeenAt: now,
     }
     this.sessions.push(s)
     this.currentSessionId = s.id
@@ -420,8 +475,8 @@ export class MockApi implements TelemonApi {
   private fail(key: string) {
     const f = this.failures.get(key) ?? { n: 0, until: 0 }
     f.n++
-    if (f.n >= 5) {
-      f.until = Date.now() + 5 * 60_000
+    if (f.n >= this.settings.remote.maxFailures) {
+      f.until = Date.now() + this.settings.remote.lockMinutes * 60_000
       f.n = 0
     }
     this.failures.set(key, f)
@@ -479,7 +534,7 @@ export class MockApi implements TelemonApi {
     if (a.disabled) throw new Error("Akun dinonaktifkan. Hubungi pemilik Telemon")
     this.failures.delete(key)
     if (a.totp) return { status: "2fa_required", challengeId: this.newChallenge(a) }
-    if (this.share.auth.require2fa || this.share.publik.status === "on") {
+    if (this.must2fa(a)) {
       const secret = newSecret()
       a.pendingSecret = secret
       return { status: "2fa_setup_required", challengeId: this.newChallenge(a), secret, otpauthUrl: this.otpauth(a, secret) }
@@ -573,7 +628,7 @@ export class MockApi implements TelemonApi {
     await delay(500)
     const { a } = this.current()
     this.checkPassword(a, password)
-    if (this.share.auth.require2fa) throw new Error("2FA diwajibkan oleh pemilik Telemon")
+    if (this.must2fa(a)) throw new Error("2FA diwajibkan untuk akun ini")
     a.totp = false
     a.recovery = []
   }
@@ -605,7 +660,10 @@ export class MockApi implements TelemonApi {
   // ---- Kelola akun (aplikasi desktop) ----
 
   private summary(a: MockAccount): AccountSummary {
-    return { id: a.id, username: a.username, displayName: a.displayName, twoFactor: a.totp, disabled: a.disabled, createdAt: a.createdAt, lastLoginAt: a.lastLoginAt }
+    return {
+      id: a.id, username: a.username, displayName: a.displayName, roleId: a.roleId, roleName: this.roleOf(a).name,
+      twoFactor: a.totp, disabled: a.disabled, createdAt: a.createdAt, lastLoginAt: a.lastLoginAt,
+    }
   }
 
   private accountOrThrow(id: string) {
@@ -615,19 +673,22 @@ export class MockApi implements TelemonApi {
   }
 
   async listAccounts() {
+    this.authorize("desktop")
     await delay(250)
     return this.accounts.map((a) => this.summary(a))
   }
 
-  async createAccount(input: { username: string; displayName: string; password: string }) {
+  async createAccount(input: { username: string; displayName: string; password: string; roleId: string }) {
+    this.authorize("desktop")
     await delay(500)
+    if (!this.roles.some((r) => r.id === input.roleId)) throw new Error("Pilih peran untuk akun ini")
     const username = input.username.trim().toLowerCase()
     if (!/^[a-z0-9._-]{3,30}$/.test(username)) throw new Error("Username 3-30 karakter: huruf kecil, angka, titik, garis bawah, atau strip")
     if (this.accounts.some((a) => a.username === username)) throw new Error("Username sudah dipakai")
     if (!input.displayName.trim()) throw new Error("Nama wajib diisi")
     if (input.password.length < 8) throw new Error("Password minimal 8 karakter")
     const a: MockAccount = {
-      id: `a${Date.now().toString(36)}`, username, displayName: input.displayName.trim(), password: input.password,
+      id: `a${Date.now().toString(36)}`, username, displayName: input.displayName.trim(), roleId: input.roleId, password: input.password,
       totp: false, recovery: [], disabled: false, createdAt: Date.now(),
     }
     this.accounts.push(a)
@@ -635,6 +696,7 @@ export class MockApi implements TelemonApi {
   }
 
   async resetAccountPassword(id: string, password: string) {
+    this.authorize("desktop")
     await delay(400)
     if (password.length < 8) throw new Error("Password minimal 8 karakter")
     const a = this.accountOrThrow(id)
@@ -643,6 +705,7 @@ export class MockApi implements TelemonApi {
   }
 
   async setAccountDisabled(id: string, disabled: boolean) {
+    this.authorize("desktop")
     await delay(300)
     const a = this.accountOrThrow(id)
     a.disabled = disabled
@@ -651,6 +714,7 @@ export class MockApi implements TelemonApi {
   }
 
   async resetAccount2fa(id: string) {
+    this.authorize("desktop")
     await delay(300)
     const a = this.accountOrThrow(id)
     a.totp = false
@@ -660,6 +724,7 @@ export class MockApi implements TelemonApi {
   }
 
   async deleteAccount(id: string) {
+    this.authorize("desktop")
     await delay(300)
     const a = this.accountOrThrow(id)
     const rest = this.accounts.filter((x) => x.id !== a.id && !x.disabled)
@@ -671,10 +736,169 @@ export class MockApi implements TelemonApi {
   }
 
   async setRequire2fa(required: boolean) {
+    this.authorize("desktop")
     await delay(300)
     if (!required && this.share.publik.status === "on") throw new Error("Wajib selama akses publik aktif")
     this.share.auth.require2fa = required
     return this.shareChanged()
+  }
+
+  // ---- Peran, pengaturan, dan penyimpanan (hanya aplikasi desktop) ----
+
+  private toRole(r: MockRole): Role {
+    return {
+      id: r.id, name: r.name, description: r.description, permissions: { ...r.permissions }, builtin: r.builtin,
+      accountCount: this.accounts.filter((a) => a.roleId === r.id).length,
+    }
+  }
+
+  private validateRole(input: RoleInput, ignoreId?: string) {
+    const name = input.name.trim()
+    if (name.length < 2 || name.length > 30) throw new Error("Nama peran 2-30 karakter")
+    if (this.roles.some((r) => r.id !== ignoreId && r.name.toLowerCase() === name.toLowerCase())) {
+      throw new Error("Nama peran sudah dipakai")
+    }
+    for (const res of RESOURCES) {
+      if (!res.levels.includes(input.permissions[res.key])) throw new Error(`Izin untuk ${res.label} tidak valid`)
+    }
+    return name
+  }
+
+  async listRoles(): Promise<Role[]> {
+    this.authorize("desktop")
+    await delay(200)
+    return this.roles.map((r) => this.toRole(r))
+  }
+
+  async createRole(input: RoleInput): Promise<Role> {
+    this.authorize("desktop")
+    await delay(400)
+    const name = this.validateRole(input)
+    const role: MockRole = {
+      id: `role-${Date.now().toString(36)}`, name, description: input.description?.trim() || undefined,
+      permissions: { ...input.permissions }, builtin: false,
+    }
+    this.roles.push(role)
+    return this.toRole(role)
+  }
+
+  async updateRole(id: string, input: RoleInput): Promise<Role> {
+    this.authorize("desktop")
+    await delay(400)
+    const role = this.roles.find((r) => r.id === id)
+    if (!role) throw new Error("Peran tidak ditemukan")
+    role.name = this.validateRole(input, id)
+    role.description = input.description?.trim() || undefined
+    role.permissions = { ...input.permissions }
+    return this.toRole(role)
+  }
+
+  async deleteRole(id: string) {
+    this.authorize("desktop")
+    await delay(300)
+    const role = this.roles.find((r) => r.id === id)
+    if (!role) throw new Error("Peran tidak ditemukan")
+    if (role.builtin) throw new Error("Peran bawaan tidak bisa dihapus")
+    const used = this.accounts.filter((a) => a.roleId === id).length
+    if (used > 0) throw new Error(`Peran masih dipakai ${used} akun; pindahkan akun-nya dulu`)
+    this.roles = this.roles.filter((r) => r.id !== id)
+  }
+
+  async setAccountRole(id: string, roleId: string) {
+    this.authorize("desktop")
+    await delay(300)
+    const a = this.accountOrThrow(id)
+    if (!this.roles.some((r) => r.id === roleId)) throw new Error("Peran tidak ditemukan")
+    a.roleId = roleId
+    return this.summary(a)
+  }
+
+  private checkRange(label: string, v: number | null, min: number, max: number, nullable = false) {
+    if (v === null) {
+      if (nullable) return
+      throw new Error(`${label} wajib diisi`)
+    }
+    if (!Number.isInteger(v) || v < min || v > max) throw new Error(`${label} harus ${min}-${max}`)
+  }
+
+  async getSettings(): Promise<AppSettings> {
+    this.authorize("desktop")
+    await delay(200)
+    return structuredClone(this.settings)
+  }
+
+  async saveSettings(next: AppSettings): Promise<AppSettings> {
+    this.authorize("desktop")
+    await delay(400)
+    const { retention: r, polling: p, remote: m } = next
+    this.checkRange("Simpan event (hari)", r.eventDays, 1, 3650, true)
+    this.checkRange("Maksimum event", r.maxEvents, 1000, 5_000_000)
+    this.checkRange("Hapus permanen item terhapus (hari)", r.deletedDays, 1, 3650, true)
+    this.checkRange("Simpan riwayat perubahan (hari)", r.auditDays, 30, 3650, true)
+    this.checkRange("Interval sesi aktif (detik)", p.sessionSeconds, 10, 600)
+    this.checkRange("Interval log router (detik)", p.logSeconds, 10, 600)
+    this.checkRange("Import otomatis (jam)", p.autoImportHours, 1, 168, true)
+    this.checkRange("Timeout koneksi (detik)", p.timeoutSeconds, 3, 60)
+    this.checkRange("Percobaan ulang", p.retries, 0, 5)
+    this.checkRange("Masa sesi login (jam)", m.sessionHours, 1, 720)
+    this.checkRange("Batas gagal login", m.maxFailures, 3, 20)
+    this.checkRange("Lama penguncian (menit)", m.lockMinutes, 1, 1440)
+    this.settings = structuredClone(next)
+    this.share.auth.allowPublicWrite = m.allowPublicWrite
+    this.shareChanged()
+    return structuredClone(this.settings)
+  }
+
+  private purgeCounts(): PurgeCounts {
+    const now = Date.now()
+    const r = this.settings.retention
+    let events = 0
+    if (r.eventDays !== null) events = this.events.filter((e) => e.at < now - r.eventDays! * 86400_000).length
+    events += Math.max(0, this.events.length - events - r.maxEvents)
+    const old = (t?: number) => r.deletedDays !== null && t !== undefined && t < now - r.deletedDays * 86400_000
+    return {
+      events,
+      users: this.users.filter((u) => old(u.deletedAt)).length,
+      profiles: this.profiles.filter((p) => old(p.deletedAt)).length,
+    }
+  }
+
+  async getStorageInfo(): Promise<StorageInfo> {
+    this.authorize("desktop")
+    await delay(200)
+    return {
+      path: "<folder data aplikasi>/telemon.db",
+      sizeBytes: 2_400_000 + this.events.length * 420 + this.users.length * 900,
+      events: this.events.length,
+      users: this.users.length,
+      deletedUsers: this.users.filter((u) => u.deletedAt).length,
+      deletedProfiles: this.profiles.filter((p) => p.deletedAt).length,
+      purgeable: this.purgeCounts(),
+    }
+  }
+
+  async purgeNow(): Promise<PurgeCounts> {
+    this.authorize("desktop")
+    await delay(800)
+    const counts = this.purgeCounts()
+    const now = Date.now()
+    const r = this.settings.retention
+    if (r.eventDays !== null) this.events = this.events.filter((e) => e.at >= now - r.eventDays! * 86400_000)
+    this.events = this.events.slice(0, r.maxEvents)
+    const keep = (x: { deletedAt?: number }) => !(r.deletedDays !== null && x.deletedAt !== undefined && x.deletedAt < now - r.deletedDays * 86400_000)
+    const goneUsers = this.users.filter((u) => !keep(u))
+    this.users = this.users.filter(keep)
+    this.profiles = this.profiles.filter(keep)
+    for (const u of goneUsers) delete this.metas[u.id]
+    for (const router of this.routers) {
+      this.emit({
+        kind: "inventory",
+        routerId: router.id,
+        users: this.users.filter((u) => u.routerId === router.id).map((u) => ({ ...u })),
+        profiles: this.profiles.filter((p) => p.routerId === router.id).map((p) => ({ ...p })),
+      })
+    }
+    return counts
   }
 
   // ---- Tulis ke router (data contoh: router "menjawab" setelah jeda) ----
@@ -733,6 +957,7 @@ export class MockApi implements TelemonApi {
   }
 
   async createUser(input: UserInput): Promise<PppUser> {
+    this.authorize("user")
     await delay(800)
     const r = this.writableRouter(input.routerId)
     const username = input.username.trim()
@@ -758,6 +983,7 @@ export class MockApi implements TelemonApi {
   }
 
   async updateUser(id: string, patch: UserPatch): Promise<PppUser> {
+    this.authorize("user")
     await delay(800)
     const u = this.userOrThrow(id)
     if (u.deletedAt) throw new Error("User sudah dihapus; pulihkan dulu")
@@ -779,6 +1005,7 @@ export class MockApi implements TelemonApi {
   }
 
   async softDeleteUser(id: string): Promise<PppUser> {
+    this.authorize("user")
     await delay(700)
     const u = this.userOrThrow(id)
     if (u.deletedAt) return { ...u }
@@ -791,6 +1018,7 @@ export class MockApi implements TelemonApi {
   }
 
   async restoreUser(id: string): Promise<PppUser> {
+    this.authorize("user")
     await delay(700)
     const u = this.userOrThrow(id)
     this.writableRouter(u.routerId)
@@ -801,6 +1029,7 @@ export class MockApi implements TelemonApi {
   }
 
   async createProfile(input: ProfileInput): Promise<PppProfile> {
+    this.authorize("profile")
     await delay(800)
     const r = this.writableRouter(input.routerId)
     const name = input.name.trim()
@@ -826,6 +1055,7 @@ export class MockApi implements TelemonApi {
   }
 
   async updateProfile(id: string, patch: ProfilePatch): Promise<PppProfile> {
+    this.authorize("profile")
     await delay(800)
     const p = this.profileOrThrow(id)
     if (p.deletedAt) throw new Error("Profile sudah dihapus; pulihkan dulu")
@@ -842,6 +1072,7 @@ export class MockApi implements TelemonApi {
   }
 
   async softDeleteProfile(id: string): Promise<PppProfile> {
+    this.authorize("profile")
     await delay(400)
     const p = this.profileOrThrow(id)
     const used = this.users.filter((u) => u.routerId === p.routerId && u.profile === p.name && !u.deletedAt).length
@@ -852,6 +1083,7 @@ export class MockApi implements TelemonApi {
   }
 
   async restoreProfile(id: string): Promise<PppProfile> {
+    this.authorize("profile")
     await delay(400)
     const p = this.profileOrThrow(id)
     p.deletedAt = undefined
@@ -860,6 +1092,7 @@ export class MockApi implements TelemonApi {
   }
 
   async importFromRouter(routerId: string): Promise<ImportResult> {
+    this.authorize("router")
     await delay(1400)
     const r = this.routers.find((x) => x.id === routerId)
     if (!r) throw new Error("Router tidak ditemukan")
@@ -922,6 +1155,7 @@ export class MockApi implements TelemonApi {
   }
 
   async removeRouter(id: string) {
+    this.authorize("desktop")
     await delay(300)
     this.routers = this.routers.filter((r) => r.id !== id)
     this.users = this.users.filter((u) => u.routerId !== id)
@@ -930,6 +1164,7 @@ export class MockApi implements TelemonApi {
   }
 
   async saveUserMeta(userId: string, input: UserMetaInput): Promise<UserMeta> {
+    this.authorize("user")
     await delay(300)
     if (!this.users.some((u) => u.id === userId)) throw new Error("User tidak ditemukan")
     const clean = (v?: string) => v?.trim() || undefined
@@ -952,6 +1187,7 @@ export class MockApi implements TelemonApi {
   }
 
   async setLanShare(opts: { enabled: boolean; bind: "lan" | "localhost"; port: number }) {
+    this.authorize("desktop")
     await delay(400)
     const lan = this.share.lan
     lan.bind = opts.bind
@@ -973,6 +1209,7 @@ export class MockApi implements TelemonApi {
   }
 
   async setPublicShare(opts: { enabled: boolean; durationHours: number }) {
+    this.authorize("desktop")
     const p = this.share.publik
     p.durationHours = opts.durationHours
     if (!opts.enabled) {

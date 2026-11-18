@@ -1,5 +1,10 @@
 import type {
   AccountSummary,
+  AppSettings,
+  PurgeCounts,
+  Role,
+  RoleInput,
+  StorageInfo,
   ImportResult,
   LoginResult,
   SessionDevice,
@@ -93,7 +98,23 @@ export interface TelemonApi {
   revokeSession(id: string): Promise<void>
   // Kelola akun (hanya aplikasi desktop)
   listAccounts(): Promise<AccountSummary[]>
-  createAccount(input: { username: string; displayName: string; password: string }): Promise<AccountSummary>
+  createAccount(input: {
+    username: string
+    displayName: string
+    password: string
+    roleId: string
+  }): Promise<AccountSummary>
+  setAccountRole(id: string, roleId: string): Promise<AccountSummary>
+  // Peran dan izin per menu (hanya aplikasi desktop)
+  listRoles(): Promise<Role[]>
+  createRole(input: RoleInput): Promise<Role>
+  updateRole(id: string, input: RoleInput): Promise<Role>
+  deleteRole(id: string): Promise<void>
+  // Pengaturan (hanya aplikasi desktop)
+  getSettings(): Promise<AppSettings>
+  saveSettings(settings: AppSettings): Promise<AppSettings>
+  getStorageInfo(): Promise<StorageInfo>
+  purgeNow(): Promise<PurgeCounts>
   resetAccountPassword(id: string, password: string): Promise<void>
   setAccountDisabled(id: string, disabled: boolean): Promise<AccountSummary>
   resetAccount2fa(id: string): Promise<AccountSummary>

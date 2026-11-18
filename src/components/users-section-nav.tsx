@@ -1,10 +1,15 @@
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { useAuth } from "@/lib/auth-context"
 import { navigate, type Page } from "@/lib/route"
 import { useStore } from "@/lib/store-context"
 
 /** Users dan Profile satu menu sidebar; pindah lewat segmen ini. */
 export function UsersSectionNav({ page }: { page: Extract<Page, "user" | "profile"> }) {
   const { liveUsers, profiles } = useStore()
+  const { session } = useAuth()
+  const perms = session?.permissions
+  // Akun jarak jauh yang hanya boleh satu bagian tidak perlu segmen.
+  if (perms && (perms.user === "none" || perms.profile === "none")) return null
   const nProfiles = profiles.filter((p) => !p.deletedAt).length
   return (
     <ToggleGroup

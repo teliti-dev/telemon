@@ -155,6 +155,74 @@ export interface ShareState {
 export interface ShareAuth {
   /** Wajib 2FA untuk semua akun jarak jauh (otomatis wajib saat akses Publik aktif). */
   require2fa: boolean
+  /** Peran dengan izin Ubah boleh menulis lewat akses Publik (bawaan mati). */
+  allowPublicWrite: boolean
+}
+
+/** Menu yang bisa diatur izinnya untuk akun jarak jauh. Berbagi, Admin, dan Pengaturan hanya di aplikasi desktop. */
+export type Resource = "ringkasan" | "user" | "profile" | "event" | "router"
+
+/** Tanpa akses, hanya baca, atau ubah (tambah, edit, soft delete, pulihkan, import). */
+export type Level = "none" | "read" | "update"
+
+export type Permissions = Record<Resource, Level>
+
+export interface Role {
+  id: string
+  name: string
+  description?: string
+  permissions: Permissions
+  accountCount: number
+  /** Peran bawaan: tidak bisa dihapus, izinnya bisa dikembalikan ke bawaan. */
+  builtin: boolean
+}
+
+export interface RoleInput {
+  name: string
+  description?: string
+  permissions: Permissions
+}
+
+export interface AppSettings {
+  retention: {
+    /** Hari; null = selamanya. */
+    eventDays: number | null
+    maxEvents: number
+    /** Hapus permanen item soft delete setelah N hari; null = tidak pernah. */
+    deletedDays: number | null
+    auditDays: number | null
+  }
+  polling: {
+    sessionSeconds: number
+    logSeconds: number
+    /** Jam; null = hanya manual. */
+    autoImportHours: number | null
+    timeoutSeconds: number
+    retries: number
+  }
+  remote: {
+    sessionHours: number
+    maxFailures: number
+    lockMinutes: number
+    allowPublicWrite: boolean
+  }
+}
+
+export interface PurgeCounts {
+  events: number
+  users: number
+  profiles: number
+}
+
+export interface StorageInfo {
+  path: string
+  sizeBytes: number
+  events: number
+  users: number
+  deletedUsers: number
+  deletedProfiles: number
+  /** Yang akan dihapus bila "Bersihkan sekarang" dijalankan dengan pengaturan tersimpan. */
+  purgeable: PurgeCounts
 }
 
 /** Akun untuk akses non-desktop (browser lewat Serve LAN dan Publik). Semua akun hanya baca. */
@@ -162,6 +230,8 @@ export interface AccountSummary {
   id: string
   username: string
   displayName: string
+  roleId: string
+  roleName: string
   twoFactor: boolean
   disabled: boolean
   createdAt: number
@@ -173,6 +243,10 @@ export interface SessionInfo {
   userId: string
   username: string
   displayName: string
+  roleName: string
+  permissions: Permissions
+  /** Asal sesi; tulis lewat "publik" bisa dimatikan pemilik. */
+  via: "lan" | "publik"
   twoFactor: boolean
 }
 

@@ -2,26 +2,47 @@ import {
   ActivityIcon,
   GaugeIcon,
   RadioTowerIcon,
+  SettingsIcon,
   Share2Icon,
+  UserCogIcon,
   UsersIcon,
   type LucideIcon,
 } from "lucide-react"
 
 import type { Access } from "@/lib/access"
 import type { Page } from "@/lib/route"
+import type { Permissions, Resource } from "@/lib/types"
 
-/** Lima menu utama; dipakai menu atas (desktop) dan menu bawah (HP). `end`: rata kanan di menu atas. Profile ada di dalam Users. */
-export const NAV: { page: Page; label: string; icon: LucideIcon; desktopOnly?: boolean; end?: boolean }[] = [
-  { page: "ringkasan", label: "Ringkasan", icon: GaugeIcon },
-  { page: "user", label: "Users", icon: UsersIcon },
-  { page: "event", label: "Event", icon: ActivityIcon },
-  { page: "router", label: "Router", icon: RadioTowerIcon },
+export interface NavItem {
+  page: Page
+  label: string
+  icon: LucideIcon
+  /** Izin yang menentukan menu tampil untuk akun jarak jauh (cukup salah satunya bukan "Tanpa akses"). */
+  resources?: Resource[]
+  /** Hanya di aplikasi desktop (kelola akses, akun, peran, pengaturan). */
+  desktopOnly?: boolean
+  /** Rata kanan di menu atas. */
+  end?: boolean
+}
+
+/** Menu utama; dipakai menu atas (desktop) dan menu bawah (HP). Profile ada di dalam Users. */
+export const NAV: NavItem[] = [
+  { page: "ringkasan", label: "Ringkasan", icon: GaugeIcon, resources: ["ringkasan"] },
+  { page: "user", label: "Users", icon: UsersIcon, resources: ["user", "profile"] },
+  { page: "event", label: "Event", icon: ActivityIcon, resources: ["event"] },
+  { page: "router", label: "Router", icon: RadioTowerIcon, resources: ["router"] },
   { page: "berbagi", label: "Berbagi", icon: Share2Icon, desktopOnly: true, end: true },
+  { page: "admin", label: "Admin", icon: UserCogIcon, desktopOnly: true, end: true },
+  { page: "pengaturan", label: "Pengaturan", icon: SettingsIcon, desktopOnly: true, end: true },
 ]
 
-/** Menu yang tampil: Berbagi (kelola akses dan akun) hanya di aplikasi desktop. */
-export function navFor(access: Access) {
-  return NAV.filter((i) => access === "desktop" || !i.desktopOnly)
+/** Menu yang tampil: desktop semua; jarak jauh hanya yang izinnya bukan "Tanpa akses". */
+export function navFor(access: Access, permissions?: Permissions) {
+  return NAV.filter((i) => {
+    if (access === "desktop") return true
+    if (i.desktopOnly) return false
+    return !i.resources || i.resources.some((r) => permissions?.[r] && permissions[r] !== "none")
+  }).map((i) => (i.page === "user" && access === "remote" && permissions?.user === "none" ? { ...i, page: "profile" as Page } : i))
 }
 
 export function isNavActive(item: Page, current: Page) {

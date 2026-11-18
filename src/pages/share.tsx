@@ -3,7 +3,6 @@ import { CopyIcon, GlobeIcon, Loader2Icon, ShieldAlertIcon, WifiIcon } from "luc
 import { QRCodeSVG } from "qrcode.react"
 import { toast } from "sonner"
 
-import { AccountsCard } from "@/components/accounts-card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -49,7 +48,7 @@ function UrlBlock({ url, label }: { url: string; label: string }) {
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">
-          Pindai QR dari HP atau bagikan URL ini. Pengunjung harus masuk dengan akun di bawah, dan hanya bisa melihat data.
+          Pindai QR dari HP atau bagikan URL ini. Pengunjung masuk dengan akun dari menu Admin; yang boleh dilakukan mengikuti peran akunnya.
         </p>
       </div>
     </div>
@@ -150,7 +149,7 @@ export function SharePage() {
           ) : (
             <p className="text-sm text-muted-foreground">
               Mati. Saat dinyalakan, Telemon membuka port {portValid ? portNum : "-"} di komputer ini; Windows bisa meminta izin
-              firewall. Pengunjung masuk dengan akun jarak jauh di bawah.
+              firewall. Pengunjung masuk dengan akun dari menu Admin.
             </p>
           )}
         </CardContent>
@@ -234,7 +233,13 @@ export function SharePage() {
         </CardContent>
       </Card>
 
-      <AccountsCard />
+      <p className="text-sm text-muted-foreground xl:col-span-2">
+        Akun dan peran (apa yang boleh dilakukan tiap akun) dikelola di menu{" "}
+        <button type="button" className="font-medium text-foreground underline underline-offset-4" onClick={() => navigate("admin")}>
+          Admin
+        </button>
+        . Tulis lewat akses publik diatur di Pengaturan.
+      </p>
     </div>
   )
 }

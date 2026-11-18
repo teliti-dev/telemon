@@ -2,9 +2,10 @@ import { GlobeIcon, WifiIcon, ZapIcon } from "lucide-react"
 
 import { AccountMenu } from "@/components/account-menu"
 import { AppearanceDrawer } from "@/components/appearance-drawer"
-import { isNavActive, navFor } from "@/components/nav-items"
+import { isNavActive } from "@/components/nav-items"
 import { Badge } from "@/components/ui/badge"
 import { useNavBadges } from "@/hooks/use-nav-badges"
+import { useNavItems } from "@/hooks/use-nav-items"
 import { PAGE_CONTAINER } from "@/lib/layout"
 import { href, useRoute } from "@/lib/route"
 import { useStore } from "@/lib/store-context"
@@ -21,6 +22,8 @@ export function SiteHeader({ title }: { title: string }) {
   const { share, status, access } = useStore()
   const { page } = useRoute()
   const badges = useNavBadges()
+  const items = useNavItems()
+  const firstEnd = items.findIndex((i) => i.end)
 
   return (
     <>
@@ -81,7 +84,7 @@ export function SiteHeader({ title }: { title: string }) {
 
       <div className="sticky top-0 z-20 hidden border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:block">
         <nav aria-label="Menu utama" className={cn(PAGE_CONTAINER, "-mb-px flex h-9 items-end gap-0.5")}>
-          {navFor(access).map((item) => {
+          {items.map((item, index) => {
             const active = isNavActive(item.page, page)
             const n = badges[item.page]
             return (
@@ -91,7 +94,7 @@ export function SiteHeader({ title }: { title: string }) {
                 aria-current={active ? "page" : undefined}
                 className={cn(
                   "inline-flex h-9 items-center gap-1.5 border-b-2 px-2 text-sm font-medium transition-colors outline-none focus-visible:bg-muted",
-                  item.end && "ml-auto",
+                  index === firstEnd && "ml-auto",
                   active
                     ? "border-brand text-brand"
                     : "border-transparent text-muted-foreground hover:text-foreground"

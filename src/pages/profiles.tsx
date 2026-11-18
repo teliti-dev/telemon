@@ -41,7 +41,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-import { useWriteGate } from "@/hooks/use-write-gate"
+import { useUpdateGate, useWriteGate } from "@/hooks/use-write-gate"
 import { formatNumber } from "@/lib/format"
 import { navigate } from "@/lib/route"
 import { useStore } from "@/lib/store-context"
@@ -51,8 +51,10 @@ import type { PppProfile } from "@/lib/types"
 type View = "active" | "deleted"
 
 export function ProfilesPage({ params }: { params: URLSearchParams }) {
-  const { profiles, liveUsers, routers, routerById, api, access } = useStore()
-  const gate = useWriteGate()
+  const { profiles, liveUsers, routers, routerById, api } = useStore()
+  const gate = useWriteGate("profile")
+  const profileReason = useUpdateGate("profile")()
+  const importReason = useUpdateGate("router")()
 
   const [query, setQuery] = React.useState(params.get("q") ?? "")
   const [routerId, setRouterId] = React.useState(params.get("router") ?? "all")
@@ -88,7 +90,7 @@ export function ProfilesPage({ params }: { params: URLSearchParams }) {
       .sort((a, b) => a.name.localeCompare(b.name, "id", { numeric: true }) || a.routerId.localeCompare(b.routerId))
   }, [profiles, query, routerId, view])
 
-  const canWriteAny = access === "desktop" && routers.some((r) => r.canWrite)
+  const canWriteAny = !profileReason && routers.some((r) => r.canWrite)
   const deletedCount = profiles.filter((p) => !!p.deletedAt).length
 
   async function restore(p: PppProfile) {
@@ -139,7 +141,7 @@ export function ProfilesPage({ params }: { params: URLSearchParams }) {
       <div className="flex flex-wrap items-center gap-2">
         <UsersSectionNav page="profile" />
         <div className="ml-auto flex gap-2">
-          <Button variant="outline" onClick={() => setImporting(true)} disabled={access === "remote"}>
+          <Button variant="outline" onClick={() => setImporting(true)} disabled={!!importReason} title={importReason ?? undefined}>
             <DownloadIcon />
             <span className="hidden sm:inline">Import dari Mikrotik</span>
             <span className="sm:hidden">Import</span>
@@ -147,7 +149,7 @@ export function ProfilesPage({ params }: { params: URLSearchParams }) {
           <Button
             onClick={() => setForm({ mode: "create" })}
             disabled={!canWriteAny}
-            title={canWriteAny ? undefined : "Tidak ada router dengan hak write, atau mode hanya baca"}
+            title={canWriteAny ? undefined : (profileReason ?? "Tidak ada router dengan hak write")}
           >
             <PlusIcon />
             <span className="hidden sm:inline">Tambah profile</span>

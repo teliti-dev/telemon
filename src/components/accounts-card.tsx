@@ -7,6 +7,7 @@ import {
   ShieldCheckIcon,
   ShieldOffIcon,
   Trash2Icon,
+  UserCogIcon,
   UserCheckIcon,
   UserXIcon,
 } from "lucide-react"
@@ -34,13 +35,21 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { useNow } from "@/hooks/use-now"
 import { useApi } from "@/lib/api-context"
 import { formatRelative } from "@/lib/format"
+import { DEFAULT_NEW_ACCOUNT_ROLE_ID } from "@/lib/defaults"
 import { randomPassword } from "@/lib/random"
 import { useStore } from "@/lib/store-context"
-import type { AccountSummary } from "@/lib/types"
+import type { AccountSummary, Role } from "@/lib/types"
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
@@ -48,6 +57,7 @@ type Dialog_ =
   | null
   | { kind: "add" }
   | { kind: "reset-password"; account: AccountSummary }
+  | { kind: "role"; account: AccountSummary }
   | { kind: "reset-2fa" | "delete"; account: AccountSummary }
 
 /** Akun untuk akses lewat browser (Serve LAN dan Publik). Semua akun hanya baca. */
@@ -56,12 +66,15 @@ export function AccountsCard() {
   const { share } = useStore()
   const now = useNow(60_000)
   const [accounts, setAccounts] = React.useState<AccountSummary[] | null>(null)
+  const [roles, setRoles] = React.useState<Role[]>([])
   const [dialog, setDialog] = React.useState<Dialog_>(null)
 
   const load = React.useCallback(() => {
-    api
-      .listAccounts()
-      .then(setAccounts)
+    Promise.all([api.listAccounts(), api.listRoles()])
+      .then(([a, r]) => {
+        setAccounts(a)
+        setRoles(r)
+      })
       .catch((e: unknown) => toast.error(errMsg(e)))
   }, [api])
 
@@ -83,14 +96,14 @@ export function AccountsCard() {
   }
 
   return (
-    <Card className="xl:col-span-2">
+    <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <KeyRoundIcon className="size-4" /> Akun jarak jauh
+          <KeyRoundIcon className="size-4" /> Akun
         </CardTitle>
         <CardDescription>
-          Untuk masuk lewat browser (LAN dan publik). Semua akun hanya bisa melihat data, tidak
-          bisa mengubah router. Aplikasi desktop ini tidak memakai login.
+          Untuk masuk lewat browser (LAN dan publik). Apa yang boleh dilakukan akun mengikuti
+          perannya. Aplikasi desktop ini tidak memakai login.
         </CardDescription>
         <CardAction>
           <Button onClick={() => setDialog({ kind: "add" })}>
@@ -137,6 +150,7 @@ export function AccountsCard() {
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <span className="font-mono font-medium">{a.username}</span>
                     <span className="text-muted-foreground">{a.displayName}</span>
+                    <Badge variant="secondary">{a.roleName}</Badge>
                   </div>
                   <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
                     {a.twoFactor ? (
@@ -159,6 +173,9 @@ export function AccountsCard() {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
+                    <DropdownMenuItem onSelect={() => setDialog({ kind: "role", account: a })}>
+                      <UserCogIcon /> Ubah peran
+                    </DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => setDialog({ kind: "reset-password", account: a })}>
                       <KeyRoundIcon /> Reset password
                     </DropdownMenuItem>
@@ -180,7 +197,13 @@ export function AccountsCard() {
         )}
       </CardContent>
 
-      <AddAccountDialog open={dialog?.kind === "add"} onOpenChange={(o) => !o && setDialog(null)} onDone={load} />
+      <AddAccountDialog open={dialog?.kind === "add"} onOpenChange={(o) => !o && setDialog(null)} onDone={load} roles={roles} />
+      <ChangeRoleDialog
+        account={dialog?.kind === "role" ? dialog.account : null}
+        roles={roles}
+        onOpenChange={(o) => !o && setDialog(null)}
+        onDone={load}
+      />
       <ResetPasswordDialog
         account={dialog?.kind === "reset-password" ? dialog.account : null}
         onOpenChange={(o) => !o && setDialog(null)}
@@ -246,16 +269,36 @@ function PasswordField({
   )
 }
 
+function RoleSelect({ id, roles, value, onChange }: { id: string; roles: Role[]; value: string; onChange: (v: string) => void }) {
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger id={id} className="w-full">
+        <SelectValue placeholder="Pilih peran" />
+      </SelectTrigger>
+      <SelectContent>
+        {roles.map((r) => (
+          <SelectItem key={r.id} value={r.id}>
+            {r.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+}
+
 function AddAccountDialog({
   open,
   onOpenChange,
   onDone,
+  roles,
 }: {
   open: boolean
   onOpenChange: (o: boolean) => void
   onDone: () => void
+  roles: Role[]
 }) {
   const { api } = useApi()
+  const [roleId, setRoleId] = React.useState(DEFAULT_NEW_ACCOUNT_ROLE_ID)
   const [username, setUsername] = React.useState("")
   const [displayName, setDisplayName] = React.useState("")
   const [password, setPassword] = React.useState("")
@@ -270,6 +313,7 @@ function AddAccountDialog({
           setUsername("")
           setDisplayName("")
           setPassword("")
+          setRoleId(DEFAULT_NEW_ACCOUNT_ROLE_ID)
           setError(null)
         }
         onOpenChange(o)
@@ -283,7 +327,7 @@ function AddAccountDialog({
             setBusy(true)
             setError(null)
             try {
-              const a = await api.createAccount({ username, displayName, password })
+              const a = await api.createAccount({ username, displayName, password, roleId })
               toast.success(`Akun ${a.username} dibuat`)
               onDone()
               onOpenChange(false)
@@ -297,7 +341,7 @@ function AddAccountDialog({
           <DialogHeader>
             <DialogTitle>Tambah akun</DialogTitle>
             <DialogDescription>
-              Berikan username dan password ini ke orangnya lewat jalur aman. Akun hanya bisa melihat data.
+              Berikan username dan password ini ke orangnya lewat jalur aman.
             </DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -309,6 +353,11 @@ function AddAccountDialog({
               <Label htmlFor="ac-name">Nama</Label>
               <Input id="ac-name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={60} placeholder="Budi (NOC)" />
             </div>
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="ac-role">Peran</Label>
+            <RoleSelect id="ac-role" roles={roles} value={roleId} onChange={setRoleId} />
+            <p className="text-xs text-muted-foreground">Bawaan Viewer (hanya baca). Atur izin peran di tab Peran.</p>
           </div>
           <div className="grid gap-1.5">
             <Label htmlFor="ac-pass">Password awal</Label>
@@ -324,7 +373,7 @@ function AddAccountDialog({
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
               Batal
             </Button>
-            <Button type="submit" disabled={busy || !username.trim() || !displayName.trim() || password.length < 8}>
+            <Button type="submit" disabled={busy || !username.trim() || !displayName.trim() || password.length < 8 || !roleId}>
               {busy ? "Membuat…" : "Buat akun"}
             </Button>
           </DialogFooter>
@@ -400,5 +449,89 @@ function ResetPasswordDialog({
         </form>
       </DialogContent>
     </Dialog>
+  )
+}
+
+function ChangeRoleDialog({
+  account,
+  roles,
+  onOpenChange,
+  onDone,
+}: {
+  account: AccountSummary | null
+  roles: Role[]
+  onOpenChange: (o: boolean) => void
+  onDone: () => void
+}) {
+  const { api } = useApi()
+  return (
+    <Dialog open={!!account} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        {account && <ChangeRoleForm key={account.id} account={account} roles={roles} onClose={() => onOpenChange(false)} onDone={onDone} api={api} />}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function ChangeRoleForm({
+  account,
+  roles,
+  onClose,
+  onDone,
+  api,
+}: {
+  account: AccountSummary
+  roles: Role[]
+  onClose: () => void
+  onDone: () => void
+  api: ReturnType<typeof useApi>["api"]
+}) {
+  const [roleId, setRoleId] = React.useState(account.roleId)
+  const [busy, setBusy] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+  const role = roles.find((r) => r.id === roleId)
+
+  return (
+    <form
+      className="grid gap-3"
+      onSubmit={async (e) => {
+        e.preventDefault()
+        setBusy(true)
+        setError(null)
+        try {
+          await api.setAccountRole(account.id, roleId)
+          toast.success(`Peran ${account.username} diubah`)
+          onDone()
+          onClose()
+        } catch (err) {
+          setError(errMsg(err))
+        } finally {
+          setBusy(false)
+        }
+      }}
+    >
+      <DialogHeader>
+        <DialogTitle>Ubah peran {account.username}</DialogTitle>
+        <DialogDescription>Berlaku pada sesi berikutnya; sesi yang sedang berjalan mengikuti peran saat masuk.</DialogDescription>
+      </DialogHeader>
+      <div className="grid gap-1.5">
+        <Label htmlFor="cr-role">Peran</Label>
+        <RoleSelect id="cr-role" roles={roles} value={roleId} onChange={setRoleId} />
+        {role?.description && <p className="text-xs text-muted-foreground">{role.description}</p>}
+      </div>
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
+          Batal
+        </Button>
+        <Button type="submit" disabled={busy || roleId === account.roleId}>
+          {busy ? "Menyimpan…" : "Simpan"}
+        </Button>
+      </DialogFooter>
+    </form>
   )
 }

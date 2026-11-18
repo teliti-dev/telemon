@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { useNow } from "@/hooks/use-now"
+import { useUpdateGate } from "@/hooks/use-write-gate"
 import { formatRelative } from "@/lib/format"
 import { useStore } from "@/lib/store-context"
 import type { ImportCounts, ImportResult } from "@/lib/types"
@@ -69,7 +70,8 @@ function ImportBody({
   defaultRouterId?: string
   onClose: () => void
 }) {
-  const { routers, routerById, api, access } = useStore()
+  const { routers, routerById, api } = useStore()
+  const importReason = useUpdateGate("router")()
   const now = useNow(30_000)
   const online = routers.filter((r) => r.status === "online")
   const [target, setTarget] = React.useState(
@@ -160,7 +162,7 @@ function ImportBody({
         <Button variant="outline" onClick={onClose} disabled={busy}>
           {results && !busy ? "Tutup" : "Batal"}
         </Button>
-        <Button onClick={run} disabled={busy || online.length === 0 || access === "remote"}>
+        <Button onClick={run} disabled={busy || online.length === 0 || !!importReason}>
           {busy ? "Membaca router…" : results ? "Import lagi" : "Import"}
         </Button>
       </DialogFooter>
