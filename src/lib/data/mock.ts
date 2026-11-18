@@ -4,6 +4,12 @@
  * event live acak setiap beberapa detik.
  */
 import type {
+  AiBudgetInput,
+  AiDashboard,
+  AiProvider,
+  AiProviderInput,
+  AiUsageDay,
+  AiUsageRow,
   DeletedReason,
   ImportResult,
   NewRouter,
@@ -312,6 +318,12 @@ export class MockApi implements TelemonApi {
   private chats = new Map<string, AiChat[]>()
   private roles: MockRole[] = DEFAULT_ROLES.map((r) => ({ ...r, permissions: { ...r.permissions }, builtin: true }))
   private settings: AppSettings = structuredClone(DEFAULT_SETTINGS)
+  private aiProviders: AiProvider[] = [
+    { id: "p1", name: "Anthropic", kind: "anthropic", model: "claude-sonnet-5-5", keyHint: "sk-ant-…x7Qa", status: "ok", latencyMs: 820, checkedAt: Date.now() - 600_000, isDefault: true, balanceUsd: 38.42 },
+    { id: "p2", name: "OpenRouter", kind: "openrouter", model: "openai/gpt-4.1-mini", keyHint: "sk-or-…92fD", status: "error", error: "401: kunci ditolak atau kedaluwarsa", checkedAt: Date.now() - 3600_000, isDefault: false, balanceUsd: 0 },
+    { id: "p3", name: "Ollama lokal", kind: "ollama", model: "llama3.1:8b", baseUrl: "http://192.168.1.20:11434", status: "ok", latencyMs: 2400, checkedAt: Date.now() - 900_000, isDefault: false, balanceUsd: null },
+  ]
+  private aiBudget: AiBudgetInput = { monthlyUsd: 25, alertPercent: 80, hardStop: false }
   private sessions: MockSession[]
   private currentSessionId?: string
   private challenges = new Map<string, { accountId: string; expires: number }>()
@@ -1010,6 +1022,123 @@ export class MockApi implements TelemonApi {
     }
     // i18n-ignore: label ditandai tk() di pemanggil
     if (!Number.isInteger(v) || v < min || v > max) throw new Error(t("{label} harus {min}-{max}", { label: t(label), min, max }))
+  }
+
+  // ---- Dasbor AI ----
+  async getAiDashboard(days: 7 | 30): Promise<AiDashboard> {
+    this.authorize("pengaturan", "read")
+    await delay(250)
+    const now = Date.now()
+    const dayMs = 86400_000
+    const today = now - (now % dayMs)
+    const seed = mulberry32(77)
+    const usage: AiUsageDay[] = []
+    for (let i = 29; i >= 0; i--) {
+      const weekend = [0, 6].includes(new Date(today - i * dayMs).getUTCDay())
+      const requests = Math.floor((weekend ? 8 : 30) + seed() * (weekend ? 10 : 45))
+      const inputTokens = requests * Math.floor(1800 + seed() * 2600)
+      const outputTokens = requests * Math.floor(250 + seed() * 500)
+      const costUsd = (inputTokens * 3 + outputTokens * 15) / 1e6
+      usage.push({ day: today - i * dayMs, inputTokens, outputTokens, costUsd: Math.round(costUsd * 100) / 100, requests })
+    }
+    const monthStart = new Date(now)
+    monthStart.setUTCDate(1)
+    monthStart.setUTCHours(0, 0, 0, 0)
+    const spent = usage.filter((u) => u.day >= monthStart.getTime()).reduce((s, u) => s + u.costUsd, 0)
+    const resetAt = Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 1)
+    const window = usage.slice(-days)
+    const sum = (f: (u: AiUsageDay) => number) => window.reduce((s, u) => s + f(u), 0)
+    const split = (parts: [string, string, number][]): AiUsageRow[] =>
+      parts.map(([key, label, share]) => ({
+        key,
+        label,
+        requests: Math.round(sum((u) => u.requests) * share),
+        inputTokens: Math.round(sum((u) => u.inputTokens) * share),
+        outputTokens: Math.round(sum((u) => u.outputTokens) * share),
+        costUsd: Math.round(sum((u) => u.costUsd) * share * 100) / 100,
+      }))
+    return {
+      providers: structuredClone(this.aiProviders),
+      budget: { ...this.aiBudget, spentMonthUsd: Math.round(spent * 100) / 100, resetAt },
+      usage: window,
+      byModel: split([["claude-sonnet-5-5", "claude-sonnet-5-5", 0.86], ["llama3.1:8b", "llama3.1:8b", 0.14]]),
+      byAccount: split([["admin", "admin", 0.52], ["operator", "operator", 0.38], ["pantau", "pantau", 0.1]]),
+      errorRate: 0.031,
+      p50Ms: 910,
+    }
+  }
+
+  private providerOrThrow(id: string) {
+    const p = this.aiProviders.find((x) => x.id === id)
+    if (!p) throw new Error(t("Provider tidak ditemukan"))
+    return p
+  }
+
+  async saveAiProvider(id: string | null, input: AiProviderInput): Promise<AiProvider> {
+    this.authorize("pengaturan")
+    await delay(500)
+    const name = input.name.trim()
+    const model = input.model.trim()
+    if (!name || !model) throw new Error(t("Nama dan model wajib diisi"))
+    const needsKey = input.kind !== "ollama"
+    const key = input.apiKey?.trim()
+    if (!id && needsKey && !key) throw new Error(t("Kunci API wajib diisi"))
+    if (input.kind === "ollama" || input.kind === "custom") {
+      if (!/^https?:\/\/\S+$/.test(input.baseUrl?.trim() ?? "")) throw new Error(t("URL dasar harus diawali http:// atau https://"))
+    }
+    if (this.aiProviders.some((p) => p.id !== id && p.name.toLowerCase() === name.toLowerCase())) throw new Error(t("Nama provider sudah dipakai"))
+    const hint = key ? `${key.slice(0, Math.min(6, key.length - 4))}…${key.slice(-4)}` : undefined
+    let p: AiProvider
+    if (id) {
+      p = this.providerOrThrow(id)
+      Object.assign(p, { name, kind: input.kind, model, baseUrl: input.baseUrl?.trim() || undefined })
+      if (hint) Object.assign(p, { keyHint: hint, status: "unconfigured" as const, error: undefined })
+    } else {
+      p = { id: `p${Date.now()}`, name, kind: input.kind, model, baseUrl: input.baseUrl?.trim() || undefined, keyHint: hint, status: "unconfigured", isDefault: this.aiProviders.length === 0, balanceUsd: null }
+      this.aiProviders.push(p)
+    }
+    return structuredClone(p)
+  }
+
+  async removeAiProvider(id: string): Promise<void> {
+    this.authorize("pengaturan")
+    await delay(300)
+    const p = this.providerOrThrow(id)
+    if (p.isDefault && this.aiProviders.length > 1) throw new Error(t("Jadikan provider lain sebagai bawaan dulu"))
+    this.aiProviders = this.aiProviders.filter((x) => x.id !== id)
+  }
+
+  async setDefaultAiProvider(id: string): Promise<void> {
+    this.authorize("pengaturan")
+    await delay(250)
+    const p = this.providerOrThrow(id)
+    if (p.status === "error") throw new Error(t("Provider sedang error; uji dulu sebelum dijadikan bawaan"))
+    this.aiProviders.forEach((x) => (x.isDefault = x.id === id))
+  }
+
+  async testAiProvider(id: string): Promise<AiProvider> {
+    this.authorize("pengaturan")
+    await delay(900)
+    const p = this.providerOrThrow(id)
+    p.checkedAt = Date.now()
+    if (p.keyHint === "sk-or-…92fD") {
+      p.status = "error"
+      p.error = "401: kunci ditolak atau kedaluwarsa"
+    } else {
+      p.status = "ok"
+      p.error = undefined
+      p.latencyMs = Math.round(500 + Math.random() * 1500)
+      if (p.kind === "anthropic" || p.kind === "openai" || p.kind === "openrouter") p.balanceUsd = p.balanceUsd ?? 10
+    }
+    return structuredClone(p)
+  }
+
+  async saveAiBudget(input: AiBudgetInput): Promise<void> {
+    this.authorize("pengaturan")
+    await delay(300)
+    if (input.monthlyUsd !== null && (!(input.monthlyUsd > 0) || input.monthlyUsd > 100000)) throw new Error(t("Batas bulanan harus 0-100000"))
+    if (!Number.isInteger(input.alertPercent) || input.alertPercent < 10 || input.alertPercent > 100) throw new Error(t("Peringatan harus 10-100%"))
+    this.aiBudget = { ...input }
   }
 
   async getSettings(): Promise<AppSettings> {

@@ -2,6 +2,7 @@ import * as React from "react"
 
 import { AddAccountForm, ChangeRoleForm, ResetPasswordForm } from "@/components/accounts-card"
 import { FormLayoutProvider } from "@/components/form-layout"
+import { AiProviderForm } from "@/components/ai-provider-dialog"
 import { ImportBody } from "@/components/import-dialog"
 import { PageHeader } from "@/components/page-header"
 import { ProfileForm } from "@/components/profile-form-dialog"
@@ -14,7 +15,7 @@ import { useApi } from "@/lib/api-context"
 import { useT } from "@/lib/i18n"
 import { navigate, navigatePath } from "@/lib/route"
 import { useStore } from "@/lib/store-context"
-import type { AccountSummary, Role } from "@/lib/types"
+import type { AccountSummary, AiProvider, Role } from "@/lib/types"
 
 /**
  * Halaman bertingkat untuk HP: formulir yang di desktop berupa dialog menjadi halaman penuh
@@ -147,5 +148,30 @@ export function BackButton({ onBack, label }: { onBack: () => void; label: strin
     <Button variant="outline" size="sm" onClick={onBack}>
       {label}
     </Button>
+  )
+}
+
+export function AiProviderFormPage({ providerId }: { providerId?: string }) {
+  const t = useT()
+  const { api } = useApi()
+  const [state, setState] = React.useState<{ provider?: AiProvider; loading: boolean }>({ loading: !!providerId })
+  const back = () => navigate("pengaturan")
+  React.useEffect(() => {
+    if (!providerId) return
+    let cancelled = false
+    api
+      .getAiDashboard(7)
+      .then((d) => !cancelled && setState({ provider: d.providers.find((p) => p.id === providerId), loading: false }))
+      .catch(() => !cancelled && setState({ loading: false }))
+    return () => {
+      cancelled = true
+    }
+  }, [api, providerId])
+  if (state.loading) return <PageSkeleton page="pengaturan" />
+  if (providerId && !state.provider) return <NotFound message={t("Provider tidak ditemukan")} onBack={back} />
+  return (
+    <Wrap title={state.provider ? t("Edit {name}", { name: state.provider.name }) : t("Tambah provider AI")} onBack={back}>
+      <AiProviderForm provider={state.provider} onClose={back} />
+    </Wrap>
   )
 }

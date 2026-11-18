@@ -2,7 +2,11 @@ import type {
   AccountSummary,
   AiChat,
   AiChatSummary,
+  AiBudgetInput,
+  AiDashboard,
   AiMessage,
+  AiProvider,
+  AiProviderInput,
   AiStreamEvent,
   AppSettings,
   PurgeCounts,
@@ -120,6 +124,13 @@ export interface TelemonApi {
   // Pengaturan (hanya aplikasi desktop)
   getSettings(): Promise<AppSettings>
   saveSettings(settings: AppSettings): Promise<AppSettings>
+  // Dasbor AI. Kunci API write-only; server hanya mengembalikan petunjuk kunci.
+  getAiDashboard(days: 7 | 30): Promise<AiDashboard>
+  saveAiProvider(id: string | null, input: AiProviderInput): Promise<AiProvider>
+  removeAiProvider(id: string): Promise<void>
+  setDefaultAiProvider(id: string): Promise<void>
+  testAiProvider(id: string): Promise<AiProvider>
+  saveAiBudget(input: AiBudgetInput): Promise<void>
   getStorageInfo(): Promise<StorageInfo>
   purgeNow(): Promise<PurgeCounts>
   resetAccountPassword(id: string, password: string): Promise<void>

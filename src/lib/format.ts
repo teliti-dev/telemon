@@ -75,3 +75,12 @@ export function formatBytes(n: number) {
   }
   return `${nf(i === 0 ? "bytes0" : "bytes1", { maximumFractionDigits: i === 0 ? 0 : 1 }).format(v)} ${units[i]}`
 }
+
+/** "1,2 jt", "38 rb": ringkas untuk jumlah token. */
+export function formatCompact(n: number) {
+  return nf("compact", { notation: "compact", maximumFractionDigits: 1 }).format(n)
+}
+
+export function formatUsd(n: number) {
+  return nf("usd", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)
+}

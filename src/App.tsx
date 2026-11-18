@@ -32,7 +32,7 @@ import { ProfilesPage } from "@/pages/profiles"
 import { RoutersPage } from "@/pages/routers"
 import { SettingsPage } from "@/pages/settings"
 import { SharePage } from "@/pages/share"
-import { AccountFormPage, ImportPage, ProfileFormPage, RoleFormPage, RouterFormPage, UserFormPage } from "@/pages/subpages"
+import { AccountFormPage, AiProviderFormPage, ImportPage, ProfileFormPage, RoleFormPage, RouterFormPage, UserFormPage } from "@/pages/subpages"
 import { UsersPage } from "@/pages/users"
 import { UserDetailPage } from "@/components/user-detail-sheet"
 
@@ -119,7 +119,10 @@ function Content() {
       case "ringkasan": return <OverviewPage onOpenUser={openUserFn} />
       case "event": return <EventsPage key={hash} params={params} onOpenUser={openUserFn} />
       case "berbagi": return <SharePage />
-      case "pengaturan": return <SettingsPage />
+      case "pengaturan":
+        if (s0 === "ai-provider" && s1 === "new") return <AiProviderFormPage />
+        if (s0 === "ai-provider" && s1 && s2 === "edit") return <AiProviderFormPage providerId={s1} />
+        return <SettingsPage />
       default: return <AccountPage />
     }
   }

@@ -365,3 +365,74 @@ export interface NewRouter {
   username: string
   password: string
 }
+
+// ---- Dasbor AI (Pengaturan): provider, token, saldo, anggaran ----
+export type AiProviderKind = "anthropic" | "openai" | "openrouter" | "ollama" | "custom"
+export type AiProviderStatus = "ok" | "error" | "unconfigured"
+
+/** Kunci API write-only: server hanya mengembalikan petunjuk (`keyHint`), tidak pernah kuncinya. */
+export interface AiProvider {
+  id: string
+  name: string
+  kind: AiProviderKind
+  model: string
+  baseUrl?: string
+  keyHint?: string
+  status: AiProviderStatus
+  error?: string
+  latencyMs?: number
+  checkedAt?: number
+  isDefault: boolean
+  /** Sisa saldo (USD); null = penyedia tidak melaporkan saldo (mis. model lokal). */
+  balanceUsd: number | null
+}
+
+export interface AiProviderInput {
+  name: string
+  kind: AiProviderKind
+  model: string
+  baseUrl?: string
+  /** Kosong saat edit = kunci tetap. */
+  apiKey?: string
+}
+
+export interface AiUsageDay {
+  /** Awal hari (epoch ms). */
+  day: number
+  inputTokens: number
+  outputTokens: number
+  costUsd: number
+  requests: number
+}
+
+export interface AiBudget {
+  /** Batas biaya per bulan (USD); null = tanpa batas. */
+  monthlyUsd: number | null
+  /** Peringatan saat pemakaian mencapai persen ini. */
+  alertPercent: number
+  /** Bila true, AI berhenti menjawab saat batas tercapai. */
+  hardStop: boolean
+  spentMonthUsd: number
+  resetAt: number
+}
+
+export interface AiUsageRow {
+  key: string
+  label: string
+  requests: number
+  inputTokens: number
+  outputTokens: number
+  costUsd: number
+}
+
+export interface AiDashboard {
+  providers: AiProvider[]
+  budget: AiBudget
+  usage: AiUsageDay[]
+  byModel: AiUsageRow[]
+  byAccount: AiUsageRow[]
+  errorRate: number
+  p50Ms: number
+}
+
+export type AiBudgetInput = Pick<AiBudget, "monthlyUsd" | "alertPercent" | "hardStop">

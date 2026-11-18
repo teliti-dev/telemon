@@ -2,6 +2,7 @@ import * as React from "react"
 import { DatabaseIcon, RadioTowerIcon, RotateCcwIcon, ShieldIcon, SparklesIcon, TimerResetIcon } from "lucide-react"
 import { toast } from "sonner"
 
+import { AiDashboard } from "@/components/ai-dashboard"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -317,6 +318,8 @@ function SettingsForm() {
             </div>
           </CardContent>
         </Card>
+
+        <div className="xl:col-span-2"><AiDashboard /></div>
 
         <StorageCard key={storageKey} dirty={dirty} />
       </div>

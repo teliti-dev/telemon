@@ -1,5 +1,6 @@
 import admin from "./admin"
 import ai from "./ai"
+import aidash from "./aidash"
 import auth from "./auth"
 import common from "./common"
 import data from "./data"
@@ -26,6 +27,7 @@ export const EN: Record<string, string> = {
   ...routers,
   ...admin,
   ...ai,
+  ...aidash,
   ...settings,
   ...data,
 }
