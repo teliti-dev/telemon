@@ -86,6 +86,7 @@ export function SiteHeader({ title }: { title: string }) {
                 aria-current={active ? "page" : undefined}
                 className={cn(
                   "inline-flex h-10 items-center gap-1.5 border-b-2 px-2.5 text-sm font-medium transition-colors outline-none focus-visible:bg-muted",
+                  item.end && "ml-auto",
                   active
                     ? "border-primary text-foreground"
                     : "border-transparent text-muted-foreground hover:text-foreground"
