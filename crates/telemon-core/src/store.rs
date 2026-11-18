@@ -10,6 +10,7 @@ use rusqlite::{Connection, OptionalExtension, params, params_from_iter};
 use crate::events::{Event, EventKind};
 use crate::model::{PppActive, PppProfile, PppSecret};
 use crate::poller::{UserStatus, user_status};
+use crate::write::Change;
 
 pub type Result<T> = rusqlite::Result<T>;
 
@@ -73,6 +74,22 @@ CREATE TABLE user_meta (
   tags TEXT NOT NULL DEFAULT '',
   updated_at INTEGER NOT NULL
 );
+", "
+CREATE TABLE audit (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at_ms INTEGER NOT NULL,
+  actor TEXT NOT NULL,
+  router_id TEXT NOT NULL,
+  action TEXT NOT NULL,
+  target TEXT NOT NULL,
+  title TEXT NOT NULL,
+  changes TEXT NOT NULL DEFAULT '',
+  ok INTEGER NOT NULL,
+  steps_done INTEGER NOT NULL DEFAULT 0,
+  error TEXT
+);
+CREATE INDEX audit_at ON audit(at_ms);
+CREATE INDEX audit_router ON audit(router_id, at_ms);
 "];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -80,6 +97,7 @@ pub struct PurgeCounts {
     pub events: u64,
     pub users: u64,
     pub profiles: u64,
+    pub audit: u64,
 }
 
 /// Nilai `None` = tanpa batas waktu (selamanya / tidak pernah).
@@ -88,6 +106,8 @@ pub struct RetentionPolicy {
     pub event_days: Option<u32>,
     pub max_events: u32,
     pub deleted_days: Option<u32>,
+    /// Riwayat perubahan disimpan N hari.
+    pub audit_days: Option<u32>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -148,6 +168,71 @@ pub struct UserMeta {
     pub note: Option<String>,
     pub tags: Vec<String>,
     pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AuditOutcome {
+    Ok,
+    /// Gagal (atau ditolak) setelah `steps_done` langkah selesai di router.
+    Failed { steps_done: usize, error: String },
+}
+
+/// Satu baris riwayat perubahan ke router. Tidak pernah memuat password.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuditEntry {
+    pub at_ms: i64,
+    /// Akun yang menjalankan (`desktop` untuk aplikasi desktop tanpa login).
+    pub actor: String,
+    pub router_id: String,
+    pub action: String,
+    pub target: String,
+    pub title: String,
+    pub changes: Vec<Change>,
+    pub outcome: AuditOutcome,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredAudit {
+    pub id: i64,
+    pub entry: AuditEntry,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct AuditQuery {
+    pub router_id: Option<String>,
+    pub actor: Option<String>,
+    /// Pencarian bagian nama target (username/profile).
+    pub target: Option<String>,
+    pub only_failed: bool,
+    pub since_ms: Option<i64>,
+    pub until_ms: Option<i64>,
+    pub before_id: Option<i64>,
+    /// Dibatasi 1..=500; 0 dianggap 50.
+    pub limit: usize,
+}
+
+const FS: char = '\u{1f}';
+const RS: char = '\u{1e}';
+
+fn clean(s: &str) -> String {
+    s.replace([FS, RS], " ")
+}
+
+/// Perubahan disimpan sebagai teks: baris dipisah RS, kolom FS; `-` = kosong, `+teks` = berisi.
+fn encode_changes(cs: &[Change]) -> String {
+    let opt = |v: &Option<String>| v.as_deref().map_or("-".to_string(), |t| format!("+{}", clean(t)));
+    cs.iter().map(|c| format!("{}{FS}{}{FS}{}", clean(&c.field), opt(&c.from), opt(&c.to))).collect::<Vec<_>>().join(&RS.to_string())
+}
+
+fn decode_changes(s: &str) -> Vec<Change> {
+    let opt = |v: &str| v.strip_prefix('+').map(String::from);
+    s.split(RS)
+        .filter(|l| !l.is_empty())
+        .filter_map(|l| {
+            let mut p = l.split(FS);
+            Some(Change { field: p.next()?.to_string(), from: opt(p.next()?), to: opt(p.next()?) })
+        })
+        .collect()
 }
 
 fn status_str(s: UserStatus) -> &'static str {
@@ -409,6 +494,71 @@ impl Store {
         rows.collect()
     }
 
+    // ---------------- riwayat perubahan ----------------
+
+    pub fn record_audit(&mut self, e: &AuditEntry) -> Result<i64> {
+        let (ok, done, err) = match &e.outcome {
+            AuditOutcome::Ok => (1, 0, None),
+            AuditOutcome::Failed { steps_done, error } => (0, *steps_done as i64, Some(error.as_str())),
+        };
+        self.conn.execute(
+            "INSERT INTO audit (at_ms, actor, router_id, action, target, title, changes, ok, steps_done, error) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
+            params![e.at_ms, e.actor, e.router_id, e.action, e.target, e.title, encode_changes(&e.changes), ok, done, err],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    /// Terbaru dulu; `before_id` untuk halaman berikutnya.
+    pub fn list_audit(&self, q: &AuditQuery) -> Result<Vec<StoredAudit>> {
+        let mut sql = String::from("SELECT id, at_ms, actor, router_id, action, target, title, changes, ok, steps_done, error FROM audit WHERE 1=1");
+        let mut args: Vec<Value> = Vec::new();
+        if let Some(r) = &q.router_id {
+            sql.push_str(" AND router_id = ?");
+            args.push(r.clone().into());
+        }
+        if let Some(a) = &q.actor {
+            sql.push_str(" AND actor = ?");
+            args.push(a.clone().into());
+        }
+        if let Some(t) = q.target.as_deref().filter(|t| !t.is_empty()) {
+            sql.push_str(" AND target LIKE ? ESCAPE '\\'");
+            let esc = t.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+            args.push(format!("%{esc}%").into());
+        }
+        if q.only_failed {
+            sql.push_str(" AND ok = 0");
+        }
+        if let Some(t) = q.since_ms {
+            sql.push_str(" AND at_ms >= ?");
+            args.push(t.into());
+        }
+        if let Some(t) = q.until_ms {
+            sql.push_str(" AND at_ms <= ?");
+            args.push(t.into());
+        }
+        if let Some(id) = q.before_id {
+            sql.push_str(" AND id < ?");
+            args.push(id.into());
+        }
+        sql.push_str(" ORDER BY id DESC LIMIT ?");
+        args.push((if q.limit == 0 { 50 } else { q.limit.min(500) } as i64).into());
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(params_from_iter(args), |r| {
+            let ok: i64 = r.get(8)?;
+            let outcome = if ok == 1 {
+                AuditOutcome::Ok
+            } else {
+                AuditOutcome::Failed { steps_done: r.get::<_, i64>(9)?.max(0) as usize, error: r.get::<_, Option<String>>(10)?.unwrap_or_default() }
+            };
+            let changes: String = r.get(7)?;
+            Ok(StoredAudit {
+                id: r.get(0)?,
+                entry: AuditEntry { at_ms: r.get(1)?, actor: r.get(2)?, router_id: r.get(3)?, action: r.get(4)?, target: r.get(5)?, title: r.get(6)?, changes: decode_changes(&changes), outcome },
+            })
+        })?;
+        rows.collect()
+    }
+
     // ---------------- catatan lokal ----------------
 
     pub fn set_user_meta(&mut self, user_id: &str, m: &UserMeta) -> Result<()> {
@@ -459,7 +609,11 @@ impl Store {
             }
             None => (0, 0),
         };
-        Ok(PurgeCounts { events: by_age + over, users, profiles })
+        let audit = match p.audit_days {
+            Some(d) => self.scalar("SELECT COUNT(*) FROM audit WHERE at_ms < ?1", [now_ms - i64::from(d) * DAY_MS])?,
+            None => 0,
+        };
+        Ok(PurgeCounts { events: by_age + over, users, profiles, audit })
     }
 
     /// Hapus event lewat umur, pangkas ke `max_events` terbaru, dan hapus permanen item soft delete
@@ -482,6 +636,9 @@ impl Store {
             )?;
             out.users = tx.execute("DELETE FROM users WHERE deleted_at IS NOT NULL AND deleted_at < ?1", [cutoff])? as u64;
             out.profiles = tx.execute("DELETE FROM profiles WHERE deleted_at IS NOT NULL AND deleted_at < ?1", [cutoff])? as u64;
+        }
+        if let Some(d) = p.audit_days {
+            out.audit = tx.execute("DELETE FROM audit WHERE at_ms < ?1", [now_ms - i64::from(d) * DAY_MS])? as u64;
         }
         tx.commit()?;
         Ok(out)
@@ -537,7 +694,7 @@ mod tests {
         Event { at_ms: at, kind, username: user.map(String::from), address: None, caller_id: None, message: format!("{} {kind:?}", user.unwrap_or("-")) }
     }
     fn policy(days: Option<u32>, max: u32, del: Option<u32>) -> RetentionPolicy {
-        RetentionPolicy { event_days: days, max_events: max, deleted_days: del }
+        RetentionPolicy { event_days: days, max_events: max, deleted_days: del, audit_days: None }
     }
 
     #[test]
@@ -683,6 +840,85 @@ mod tests {
         assert_eq!(s.list_users(None, true).unwrap().len(), 2);
     }
 
+    fn audit(at: i64, actor: &str, target: &str, ok: bool) -> AuditEntry {
+        AuditEntry {
+            at_ms: at,
+            actor: actor.into(),
+            router_id: "r1".into(),
+            action: "user.edit".into(),
+            target: target.into(),
+            title: format!("Ubah user {target}"),
+            changes: vec![
+                Change { field: "profile".into(), from: Some("10M".into()), to: Some("20M".into()) },
+                Change { field: "comment".into(), from: None, to: Some("a\u{1f}b\u{1e}c".into()) },
+                Change { field: "remote-address".into(), from: Some("1.2.3.4".into()), to: None },
+            ],
+            outcome: if ok { AuditOutcome::Ok } else { AuditOutcome::Failed { steps_done: 1, error: "router menolak".into() } },
+        }
+    }
+
+    #[test]
+    fn riwayat_perubahan_simpan_dan_cari() {
+        let mut s = Store::open_in_memory().unwrap();
+        let first = audit(10, "admin", "budi_1", true);
+        s.record_audit(&first).unwrap();
+        s.record_audit(&audit(20, "operator", "sari", false)).unwrap();
+        s.record_audit(&audit(30, "admin", "sari", true)).unwrap();
+
+        let all = s.list_audit(&AuditQuery { limit: 100, ..Default::default() }).unwrap();
+        assert_eq!(all.iter().map(|a| a.entry.at_ms).collect::<Vec<_>>(), vec![30, 20, 10]);
+        // Perubahan kembali utuh: kosong vs terisi dibedakan; pemisah dalam teks diganti spasi.
+        let got = &all[2].entry;
+        assert_eq!(got.changes[0], first.changes[0]);
+        assert_eq!(got.changes[1].to.as_deref(), Some("a b c"));
+        assert_eq!((got.changes[1].from.clone(), got.changes[2].to.clone()), (None, None));
+        assert_eq!(all[1].entry.outcome, AuditOutcome::Failed { steps_done: 1, error: "router menolak".into() });
+
+        let q = |f: &dyn Fn(&mut AuditQuery)| {
+            let mut q = AuditQuery { limit: 100, ..Default::default() };
+            f(&mut q);
+            s.list_audit(&q).unwrap().len()
+        };
+        assert_eq!(q(&|q| q.actor = Some("admin".into())), 2);
+        assert_eq!(q(&|q| q.only_failed = true), 1);
+        assert_eq!(q(&|q| q.target = Some("SARI".into())), 2);
+        assert_eq!(q(&|q| q.target = Some("_".into())), 1);
+        assert_eq!(q(&|q| q.router_id = Some("r2".into())), 0);
+        assert_eq!(q(&|q| { q.since_ms = Some(15); q.until_ms = Some(25) }), 1);
+        assert_eq!(q(&|q| { q.limit = 2; q.before_id = Some(3) }), 2);
+    }
+
+    #[test]
+    fn retensi_riwayat_perubahan() {
+        let mut s = Store::open_in_memory().unwrap();
+        let now = 100 * DAY_MS;
+        s.record_audit(&audit(now - 400 * DAY_MS, "a", "x", true)).unwrap();
+        s.record_audit(&audit(now - DAY_MS, "a", "y", true)).unwrap();
+        let pol = RetentionPolicy { event_days: None, max_events: 1000, deleted_days: None, audit_days: Some(365) };
+        assert_eq!(s.purge_preview(now, &pol).unwrap().audit, 1);
+        assert_eq!(s.purge(now, &pol).unwrap().audit, 1);
+        assert_eq!(s.list_audit(&AuditQuery { limit: 10, ..Default::default() }).unwrap().len(), 1);
+        let forever = RetentionPolicy { audit_days: None, ..pol };
+        assert_eq!(s.purge(now, &forever).unwrap().audit, 0);
+    }
+
+    #[test]
+    fn migrasi_dari_versi_lama() {
+        let dir = std::env::temp_dir().join(format!("telemon-mig-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("old.db");
+        {
+            let c = Connection::open(&path).unwrap();
+            c.execute_batch(MIGRATIONS[0]).unwrap();
+            c.pragma_update(None, "user_version", 1i64).unwrap();
+            c.execute("INSERT INTO events (at_ms, router_id, kind, message) VALUES (1,'r1','connected','lama')", []).unwrap();
+        }
+        let mut s = Store::open(&path).unwrap();
+        assert_eq!(s.count_events().unwrap(), 1, "data lama tetap");
+        s.record_audit(&audit(1, "a", "x", true)).unwrap(); // tabel baru ada
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
     #[test]
     fn jenis_event_tak_dikenal_dilewati() {
         let mut s = Store::open_in_memory().unwrap();
@@ -721,7 +957,7 @@ mod tests {
 
         let pol = policy(Some(30), 4, Some(30));
         let pv = s.purge_preview(now, &pol).unwrap();
-        assert_eq!(pv, PurgeCounts { events: 3 + 1, users: 1, profiles: 0 });
+        assert_eq!(pv, PurgeCounts { events: 3 + 1, users: 1, ..Default::default() });
 
         // Pratinjau tidak mengubah apa pun.
         assert_eq!(s.count_events().unwrap(), 8);

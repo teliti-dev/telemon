@@ -189,7 +189,7 @@ mod tests {
         let old = Event { at_ms: 1, kind: crate::events::EventKind::Connected, username: None, address: None, caller_id: None, message: "lama".into() };
         store.lock().unwrap().insert_events("r1", &[old]).unwrap();
         let (stop_tx, stop_rx) = watch::channel(false);
-        let h = tokio::spawn(run_purge(store.clone(), || RetentionPolicy { event_days: Some(1), max_events: 1000, deleted_days: None }, Duration::from_millis(10), stop_rx));
+        let h = tokio::spawn(run_purge(store.clone(), || RetentionPolicy { event_days: Some(1), max_events: 1000, deleted_days: None, audit_days: None }, Duration::from_millis(10), stop_rx));
         wait_until(|| store.lock().unwrap().count_events().unwrap() == 0).await;
         stop_tx.send(true).unwrap();
         tokio::time::timeout(Duration::from_secs(2), h).await.expect("berhenti").unwrap();

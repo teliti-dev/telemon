@@ -44,6 +44,10 @@ pub struct Change {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Plan {
+    /// Kode tindakan stabil untuk riwayat: `user.add`, `user.edit`, `user.soft_delete`, `user.restore`, `profile.add`, `profile.edit`.
+    pub action: String,
+    /// Username atau nama profile yang disentuh.
+    pub target: String,
     pub title: String,
     pub changes: Vec<Change>,
     pub steps: Vec<Step>,
@@ -178,7 +182,7 @@ pub async fn plan_add_user(api: &impl RouterApi, u: &NewUser) -> Result<Plan, Er
         attrs.push(attr("disabled", "yes"));
         changes.push(Change { field: "disabled".into(), from: None, to: Some("ya".into()) });
     }
-    Ok(Plan { title: format!("Tambah user {name}"), changes, steps: vec![Step { cmd: "/ppp/secret/add".into(), attrs, optional: false }] })
+    Ok(Plan { action: "user.add".into(), target: name.into(), title: format!("Tambah user {name}"), changes, steps: vec![Step { cmd: "/ppp/secret/add".into(), attrs, optional: false }] })
 }
 
 pub async fn plan_edit_user(api: &impl RouterApi, name: &str, p: &UserPatch) -> Result<Plan, Error> {
@@ -233,7 +237,7 @@ pub async fn plan_edit_user(api: &impl RouterApi, name: &str, p: &UserPatch) -> 
         steps.push(Step { cmd: "/ppp/active/remove".into(), attrs: vec![attr(".id", row_id(&a)?)], optional: true });
         changes.push(Change { field: "sesi aktif".into(), from: Some("terhubung".into()), to: Some("diputus".into()) });
     }
-    Ok(Plan { title: format!("Ubah user {name}"), changes, steps })
+    Ok(Plan { action: "user.edit".into(), target: name.into(), title: format!("Ubah user {name}"), changes, steps })
 }
 
 /// Hapus (soft): secret dinonaktifkan dan sesinya diputus. Secret tidak dihapus dari router.
@@ -243,6 +247,7 @@ pub async fn plan_soft_delete_user(api: &impl RouterApi, name: &str) -> Result<P
         other => other,
     })?;
     plan.title = format!("Hapus (soft) user {name}");
+    plan.action = "user.soft_delete".into();
     Ok(plan)
 }
 
@@ -252,6 +257,7 @@ pub async fn plan_restore_user(api: &impl RouterApi, name: &str) -> Result<Plan,
         other => other,
     })?;
     plan.title = format!("Pulihkan user {name}");
+    plan.action = "user.restore".into();
     Ok(plan)
 }
 
@@ -290,7 +296,7 @@ pub async fn plan_add_profile(api: &impl RouterApi, p: &NewProfile) -> Result<Pl
         attrs.push(attr("only-one", o.clone()));
         changes.push(Change { field: "only-one".into(), from: None, to: Some(o.clone()) });
     }
-    Ok(Plan { title: format!("Tambah profile {name}"), changes, steps: vec![Step { cmd: "/ppp/profile/add".into(), attrs, optional: false }] })
+    Ok(Plan { action: "profile.add".into(), target: name.into(), title: format!("Tambah profile {name}"), changes, steps: vec![Step { cmd: "/ppp/profile/add".into(), attrs, optional: false }] })
 }
 
 pub async fn plan_edit_profile(api: &impl RouterApi, name: &str, p: &ProfilePatch) -> Result<Plan, Error> {
@@ -320,7 +326,7 @@ pub async fn plan_edit_profile(api: &impl RouterApi, name: &str, p: &ProfilePatc
     if changes.is_empty() {
         return rej("tidak ada perubahan");
     }
-    Ok(Plan { title: format!("Ubah profile {name}"), changes, steps: vec![Step { cmd: "/ppp/profile/set".into(), attrs, optional: false }] })
+    Ok(Plan { action: "profile.edit".into(), target: name.into(), title: format!("Ubah profile {name}"), changes, steps: vec![Step { cmd: "/ppp/profile/set".into(), attrs, optional: false }] })
 }
 
 /// Profile hanya ditandai terhapus di Telemon (RouterOS tidak punya flag disabled untuk profile);
@@ -348,6 +354,37 @@ pub async fn apply(api: &impl RouterApi, plan: &Plan) -> Result<usize, (usize, E
         }
     }
     Ok(done)
+}
+
+/// `apply` yang selalu mencatat hasilnya (berhasil, gagal sebagian, atau ditolak) ke riwayat perubahan.
+/// Kegagalan menulis riwayat hanya dicatat ke stderr agar tidak menyembunyikan hasil penulisan ke router.
+pub async fn apply_audited(
+    api: &impl RouterApi,
+    store: &crate::monitor::SharedStore,
+    router_id: &str,
+    actor: &str,
+    now_ms: i64,
+    plan: &Plan,
+) -> Result<usize, (usize, Error)> {
+    let res = apply(api, plan).await;
+    let outcome = match &res {
+        Ok(_) => crate::store::AuditOutcome::Ok,
+        Err((n, e)) => crate::store::AuditOutcome::Failed { steps_done: *n, error: e.to_string() },
+    };
+    let entry = crate::store::AuditEntry {
+        at_ms: now_ms,
+        actor: actor.to_string(),
+        router_id: router_id.to_string(),
+        action: plan.action.clone(),
+        target: plan.target.clone(),
+        title: plan.title.clone(),
+        changes: plan.changes.clone(),
+        outcome,
+    };
+    if let Err(e) = store.lock().expect("store lock").record_audit(&entry) {
+        eprintln!("telemon: gagal mencatat riwayat perubahan: {e}");
+    }
+    res
 }
 
 #[cfg(test)]
@@ -512,7 +549,7 @@ mod tests {
     async fn perintah_di_luar_daftar_ditolak_sebelum_terkirim() {
         let sim = Sim::new();
         for cmd in ["/ppp/secret/remove", "/ppp/profile/remove", "/system/reboot", "/user/add", "/ppp/secret/disable"] {
-            let plan = Plan { title: "x".into(), changes: vec![], steps: vec![Step { cmd: "/ppp/secret/set".into(), attrs: vec![], optional: false }, Step { cmd: cmd.into(), attrs: vec![], optional: false }] };
+            let plan = Plan { action: "t".into(), target: "x".into(), title: "x".into(), changes: vec![], steps: vec![Step { cmd: "/ppp/secret/set".into(), attrs: vec![], optional: false }, Step { cmd: cmd.into(), attrs: vec![], optional: false }] };
             let (done, e) = apply(&sim, &plan).await.unwrap_err();
             assert_eq!(done, 0, "{cmd}: tidak boleh ada yang terkirim");
             assert!(matches!(e, Error::Rejected(_)), "{cmd}");
@@ -523,7 +560,7 @@ mod tests {
     #[tokio::test]
     async fn gagal_di_router_melaporkan_langkah_selesai() {
         let sim = Sim::new();
-        let plan = Plan { title: "x".into(), changes: vec![], steps: vec![
+        let plan = Plan { action: "t".into(), target: "x".into(), title: "x".into(), changes: vec![], steps: vec![
             Step { cmd: "/ppp/profile/add".into(), attrs: vec![attr("name", "30M")], optional: false },
             Step { cmd: "/ppp/profile/add".into(), attrs: vec![attr("name", "30M")], optional: false },
         ] };
@@ -560,6 +597,42 @@ mod tests {
         assert!(valid_rate("10M") && valid_rate("10M/20M") && valid_rate("512k/1M") && valid_rate("100"));
         assert!(!valid_rate("") && !valid_rate("M") && !valid_rate("10MM") && !valid_rate("10/") && !valid_rate("1/2/3") && !valid_rate("10Mbps"));
         assert!(valid_username("budi.s@x-1") && !valid_username("a") && !valid_username("a b") && !valid_username(&"x".repeat(41)));
+    }
+
+    #[tokio::test]
+    async fn penerapan_tercatat_di_riwayat() {
+        use crate::monitor::SharedStore;
+        use crate::store::{AuditOutcome, AuditQuery, Store};
+        use std::sync::Arc;
+        let sim = Sim::new();
+        let store: SharedStore = Arc::new(Mutex::new(Store::open_in_memory().unwrap()));
+
+        let ok = plan_edit_user(&sim, "budi", &UserPatch { profile: Some("20M".into()), password: Some("baru-baru".into()), ..Default::default() }).await.unwrap();
+        apply_audited(&sim, &store, "r1", "admin", 1000, &ok).await.unwrap();
+
+        // Gagal sebagian: langkah pertama jalan, kedua ditolak router.
+        let half = Plan { action: "profile.add".into(), target: "30M".into(), title: "Tambah profile 30M".into(), changes: vec![], steps: vec![
+            Step { cmd: "/ppp/profile/add".into(), attrs: vec![attr("name", "30M")], optional: false },
+            Step { cmd: "/ppp/profile/add".into(), attrs: vec![attr("name", "30M")], optional: false },
+        ] };
+        assert!(apply_audited(&sim, &store, "r1", "operator", 2000, &half).await.is_err());
+
+        // Ditolak daftar perintah: tetap tercatat sebagai percobaan.
+        let bad = Plan { action: "x".into(), target: "x".into(), title: "x".into(), changes: vec![], steps: vec![Step { cmd: "/system/reboot".into(), attrs: vec![], optional: false }] };
+        assert!(apply_audited(&sim, &store, "r1", "operator", 3000, &bad).await.is_err());
+
+        let log = store.lock().unwrap().list_audit(&AuditQuery { limit: 10, ..Default::default() }).unwrap();
+        assert_eq!(log.len(), 3);
+        let first = log.iter().find(|a| a.entry.at_ms == 1000).unwrap();
+        assert_eq!((first.entry.actor.as_str(), first.entry.action.as_str(), first.entry.target.as_str()), ("admin", "user.edit", "budi"));
+        assert_eq!(first.entry.outcome, AuditOutcome::Ok);
+        assert!(first.entry.changes.iter().any(|c| c.field == "profile" && c.from.as_deref() == Some("10M")));
+        assert!(!format!("{:?}", log).contains("baru-baru"), "password tidak boleh masuk riwayat");
+        let partial = log.iter().find(|a| a.entry.at_ms == 2000).unwrap();
+        assert!(matches!(&partial.entry.outcome, AuditOutcome::Failed { steps_done: 1, .. }));
+        let rejected = log.iter().find(|a| a.entry.at_ms == 3000).unwrap();
+        assert!(matches!(&rejected.entry.outcome, AuditOutcome::Failed { steps_done: 0, error } if error.contains("tidak diizinkan")));
+        assert!(!sim.calls.lock().unwrap().iter().any(|c| c == "/system/reboot"));
     }
 
     #[tokio::test]
