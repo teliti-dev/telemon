@@ -23,17 +23,19 @@ export interface NavItem {
   desktopOnly?: boolean
   /** Rata kanan di menu atas. */
   end?: boolean
+  /** Masuk "Lainnya" di menu bawah HP. */
+  more?: boolean
 }
 
-/** Menu utama; dipakai menu atas (desktop) dan menu bawah (HP). Profile ada di dalam Users. */
+/** Menu utama; dipakai menu atas (desktop) dan menu bawah (HP). Profil PPP ada di dalam Users. */
 export const NAV: NavItem[] = [
   { page: "ringkasan", label: "Ringkasan", icon: GaugeIcon, resources: ["ringkasan"] },
   { page: "user", label: "Users", icon: UsersIcon, resources: ["user", "profile"] },
   { page: "event", label: "Event", icon: ActivityIcon, resources: ["event"] },
   { page: "router", label: "Router", icon: RadioTowerIcon, resources: ["router"] },
-  { page: "berbagi", label: "Berbagi", icon: Share2Icon, desktopOnly: true, end: true },
-  { page: "admin", label: "Admin", icon: UserCogIcon, desktopOnly: true, end: true },
-  { page: "pengaturan", label: "Pengaturan", icon: SettingsIcon, desktopOnly: true, end: true },
+  { page: "berbagi", label: "Berbagi", icon: Share2Icon, desktopOnly: true, end: true, more: true },
+  { page: "admin", label: "Admin", icon: UserCogIcon, resources: ["admin"], end: true, more: true },
+  { page: "pengaturan", label: "Pengaturan", icon: SettingsIcon, resources: ["pengaturan"], end: true, more: true },
 ]
 
 /** Menu yang tampil: desktop semua; jarak jauh hanya yang izinnya bukan "Tanpa akses". */

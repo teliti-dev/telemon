@@ -159,8 +159,8 @@ export interface ShareAuth {
   allowPublicWrite: boolean
 }
 
-/** Menu yang bisa diatur izinnya untuk akun jarak jauh. Berbagi, Admin, dan Pengaturan hanya di aplikasi desktop. */
-export type Resource = "ringkasan" | "user" | "profile" | "event" | "router"
+/** Menu yang bisa diatur izinnya per peran. Berbagi (menyalakan serve/publik) hanya dari aplikasi desktop. */
+export type Resource = "ringkasan" | "user" | "profile" | "event" | "router" | "admin" | "pengaturan"
 
 /** Tanpa akses (bawaan), lihat, atau ubah (tambah, edit, soft delete, pulihkan, import). Ubah mencakup lihat. */
 export type Level = "none" | "read" | "update"
@@ -268,6 +268,9 @@ export interface TwoFactorSetup {
   secret: string
   otpauthUrl: string
 }
+
+/** Ubah router: username dan password kosong berarti tetap. */
+export type RouterEdit = Omit<NewRouter, "username" | "password"> & { username?: string; password?: string }
 
 export interface NewRouter {
   /** Izinkan edit user/profil PPP (akun API punya hak write). */

@@ -16,15 +16,15 @@ const CELL =
   "flex h-14 w-full flex-col items-center justify-center gap-1 text-[11px] font-medium outline-none focus-visible:bg-muted"
 
 /**
- * Menu utama di bawah layar untuk HP (< 768px). Menu khusus desktop (Berbagi, Admin,
- * Pengaturan) dikumpulkan di "Lainnya" supaya tetap terjangkau di jendela sempit.
+ * Menu utama di bawah layar untuk HP (< 768px). Menu kelola (Berbagi, Admin,
+ * Pengaturan) dikumpulkan di "Lainnya" agar menu bawah tidak penuh.
  */
 export function BottomNav() {
   const { page } = useRoute()
   const badges = useNavBadges()
   const all = useNavItems()
-  const main = all.filter((i) => !i.desktopOnly)
-  const extra = all.filter((i) => i.desktopOnly)
+  const main = all.filter((i) => !i.more)
+  const extra = all.filter((i) => i.more)
   const cols = main.length + (extra.length > 0 ? 1 : 0)
   const extraActive = extra.some((i) => isNavActive(i.page, page))
 

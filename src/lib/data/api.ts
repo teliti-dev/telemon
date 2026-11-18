@@ -14,6 +14,7 @@ import type {
   PppProfile,
   ProfileInput,
   ProfilePatch,
+  RouterEdit,
   UserInput,
   UserPatch,
   PppEvent,
@@ -58,6 +59,8 @@ export interface TelemonApi {
   subscribe(onUpdate: (u: LiveUpdate) => void): () => void
   addRouter(input: NewRouter): Promise<RouterInfo>
   removeRouter(id: string): Promise<void>
+  /** Ubah koneksi router. Username/password kosong = tetap. */
+  updateRouter(id: string, input: RouterEdit): Promise<RouterInfo>
   /**
    * Tulis ke router (/ppp/secret). Mikrotik source of truth: setelah menulis,
    * state dibaca ulang dari router. Gagal bila router offline atau akun API

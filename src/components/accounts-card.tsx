@@ -60,7 +60,7 @@ type Dialog_ =
   | { kind: "reset-2fa" | "delete"; account: AccountSummary }
 
 /** Akun untuk akses lewat browser (Serve LAN dan Publik). Izin mengikuti peran. */
-export function AccountsCard() {
+export function AccountsCard({ readOnly }: { readOnly?: boolean }) {
   const { api } = useApi()
   const { share } = useStore()
   const now = useNow(60_000)
@@ -102,10 +102,11 @@ export function AccountsCard() {
         </CardTitle>
         <CardDescription>
           Untuk masuk lewat browser (LAN dan publik). Apa yang boleh dilakukan akun mengikuti
-          perannya. Aplikasi desktop ini tidak memakai login.
+          perannya. Aplikasi desktop tidak memakai login. Anda tidak bisa mengelola akun Anda sendiri atau akun
+          berizin lebih tinggi dari sini.
         </CardDescription>
         <CardAction>
-          <Button onClick={() => setDialog({ kind: "add" })}>
+          <Button onClick={() => setDialog({ kind: "add" })} disabled={readOnly}>
             <PlusIcon /> <span className="hidden sm:inline">Tambah akun</span>
             <span className="sm:hidden">Tambah</span>
           </Button>
@@ -124,7 +125,7 @@ export function AccountsCard() {
           <Switch
             id="req2fa"
             checked={require2fa}
-            disabled={publicOn}
+            disabled={publicOn || readOnly}
             onCheckedChange={async (v) => {
               try {
                 await api.setRequire2fa(v)
@@ -167,7 +168,7 @@ export function AccountsCard() {
                 {a.disabled && <Badge variant="outline">Nonaktif</Badge>}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon-sm" aria-label={`Aksi ${a.username}`}>
+                    <Button variant="ghost" size="icon-sm" disabled={readOnly} aria-label={`Aksi ${a.username}`}>
                       <MoreVerticalIcon />
                     </Button>
                   </DropdownMenuTrigger>

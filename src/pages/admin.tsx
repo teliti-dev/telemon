@@ -1,25 +1,32 @@
 import { AccountsCard } from "@/components/accounts-card"
-import { DesktopOnly } from "@/components/desktop-only"
 import { RolesCard } from "@/components/roles-card"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { useStore } from "@/lib/store-context"
+import { useUpdateGate } from "@/hooks/use-write-gate"
 
-/** Admin: akun jarak jauh dan peran (izin per menu). Hanya di aplikasi desktop. */
+/** Admin: akun jarak jauh dan peran (izin per menu). Mengubah butuh izin Ubah pada menu Admin. */
 export function AdminPage() {
-  const { access } = useStore()
-  if (access !== "desktop") return <DesktopOnly what="Pengelolaan akun dan peran" />
+  const reason = useUpdateGate("admin")()
+  const readOnly = !!reason
   return (
-    <Tabs defaultValue="akun" className="gap-3">
-      <TabsList>
-        <TabsTrigger value="akun">Akun</TabsTrigger>
-        <TabsTrigger value="peran">Peran</TabsTrigger>
-      </TabsList>
-      <TabsContent value="akun">
-        <AccountsCard />
-      </TabsContent>
-      <TabsContent value="peran">
-        <RolesCard />
-      </TabsContent>
-    </Tabs>
+    <div className="grid gap-3">
+      {readOnly && (
+        <Alert>
+          <AlertDescription>{reason}. Anda hanya bisa melihat akun dan peran.</AlertDescription>
+        </Alert>
+      )}
+      <Tabs defaultValue="akun" className="gap-3">
+        <TabsList>
+          <TabsTrigger value="akun">Akun</TabsTrigger>
+          <TabsTrigger value="peran">Peran</TabsTrigger>
+        </TabsList>
+        <TabsContent value="akun">
+          <AccountsCard readOnly={readOnly} />
+        </TabsContent>
+        <TabsContent value="peran">
+          <RolesCard readOnly={readOnly} />
+        </TabsContent>
+      </Tabs>
+    </div>
   )
 }

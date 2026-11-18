@@ -37,7 +37,7 @@ function LevelCell({ level }: { level: Level }) {
 }
 
 /** Peran dan izin per menu dalam satu tabel. Peran bawaan tidak bisa dihapus. */
-export function RolesCard() {
+export function RolesCard({ readOnly }: { readOnly?: boolean }) {
   const { api } = useApi()
   const [roles, setRoles] = React.useState<Role[] | null>(null)
   const [dialog, setDialog] = React.useState<{ role?: Role } | null>(null)
@@ -60,10 +60,10 @@ export function RolesCard() {
         <CardTitle>Peran dan izin</CardTitle>
         <CardDescription>
           Izin per menu untuk akun yang masuk lewat browser. Bawaan tanpa akses; centang Lihat atau Ubah per menu. Aplikasi desktop tidak
-          dibatasi peran.
+          dibatasi peran. Pengelola peran tidak bisa memberi izin melebihi miliknya atau mengubah perannya sendiri.
         </CardDescription>
         <CardAction>
-          <Button onClick={() => setDialog({})}>
+          <Button onClick={() => setDialog({})} disabled={readOnly}>
             <PlusIcon /> <span className="hidden sm:inline">Tambah peran</span>
             <span className="sm:hidden">Tambah</span>
           </Button>
@@ -104,7 +104,7 @@ export function RolesCard() {
                     <TableCell className="pr-3">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon-sm" aria-label={`Aksi ${role.name}`}>
+                          <Button variant="ghost" size="icon-sm" disabled={readOnly} aria-label={`Aksi ${role.name}`}>
                             <MoreVerticalIcon />
                           </Button>
                         </DropdownMenuTrigger>

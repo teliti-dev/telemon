@@ -8,7 +8,9 @@ export const RESOURCES: { key: Resource; label: string; levels: Level[]; hint: s
   { key: "user", label: "Users", levels: ["none", "read", "update"], hint: "Ubah: tambah, edit, hapus (soft), pulihkan, catatan" },
   { key: "profile", label: "Profil PPP", levels: ["none", "read", "update"], hint: "Profil PPP di router (rate limit, pool). Ubah: tambah, edit, hapus (soft), pulihkan" },
   { key: "event", label: "Event", levels: ["none", "read"], hint: "Feed dan riwayat event PPPoE" },
-  { key: "router", label: "Router", levels: ["none", "read", "update"], hint: "Ubah: import dari Mikrotik. Tambah/hapus router hanya dari desktop" },
+  { key: "router", label: "Router", levels: ["none", "read", "update"], hint: "Ubah: tambah, edit, hapus router dan import dari Mikrotik" },
+  { key: "admin", label: "Admin", levels: ["none", "read", "update"], hint: "Akun dan peran. Ubah: tambah, edit, hapus; tidak bisa memberi izin melebihi milik sendiri" },
+  { key: "pengaturan", label: "Pengaturan", levels: ["none", "read", "update"], hint: "Retensi, polling, sesi. Izin tulis lewat publik hanya dari desktop" },
 ]
 
 export const LEVEL_LABEL: Record<Level, string> = {
@@ -28,13 +30,15 @@ export function canRead(p: Permissions | undefined, r: Resource) {
   return !p || p[r] !== "none"
 }
 
-const DESKTOP_ONLY: Page[] = ["berbagi", "admin", "pengaturan"]
+const DESKTOP_ONLY: Page[] = ["berbagi"]
 const PAGE_RESOURCE: Partial<Record<Page, Resource>> = {
   ringkasan: "ringkasan",
   user: "user",
   profile: "profile",
   event: "event",
   router: "router",
+  admin: "admin",
+  pengaturan: "pengaturan",
 }
 
 /** Alasan halaman tidak boleh dibuka; null bila boleh. */

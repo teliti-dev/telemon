@@ -13,6 +13,7 @@ import type {
   PppUser,
   ProfileInput,
   ProfilePatch,
+  RouterEdit,
   RouterInfo,
   AccountSummary,
   AppSettings,
@@ -392,7 +393,7 @@ export class MockApi implements TelemonApi {
   }
 
   async addRouter(input: NewRouter): Promise<RouterInfo> {
-    this.authorize("desktop")
+    this.authorize("router")
     await delay(900)
     if (!input.username || !input.password) {
       throw new Error("Username dan password API wajib diisi")
@@ -439,14 +440,47 @@ export class MockApi implements TelemonApi {
    * Sesi jarak jauh: butuh izin Ubah pada menu terkait, dan tulis lewat akses publik
    * ditolak bila dimatikan. "desktop" = hanya aplikasi desktop.
    */
-  private authorize(resource: Resource | "desktop") {
+  private authorize(resource: Resource | "desktop", need: "read" | "update" = "update") {
     if (!this.currentSessionId) return
     const { a, s } = this.current()
     if (resource === "desktop") throw new Error("Hanya bisa dilakukan dari aplikasi desktop")
-    if (this.roleOf(a).permissions[resource] !== "update") throw new Error("Peran Anda tidak boleh mengubah data ini")
+    const level = this.roleOf(a).permissions[resource]
+    if (need === "read") {
+      if (level === "none") throw new Error("Peran Anda tidak punya akses ke data ini")
+      return
+    }
+    if (level !== "update") throw new Error("Peran Anda tidak boleh mengubah data ini")
     if (s.via === "publik" && !this.share.auth.allowPublicWrite) {
       throw new Error("Tulis lewat akses publik dimatikan oleh pemilik Telemon")
     }
+  }
+
+  private caller(): MockAccount | null {
+    return this.currentSessionId ? this.current().a : null
+  }
+
+  /** Pengaman anti-kenaikan izin: sesi jarak jauh tidak bisa memberi izin melebihi miliknya. */
+  private assertGrantable(perms: Permissions) {
+    const me = this.caller()
+    if (!me) return
+    const rank = { none: 0, read: 1, update: 2 } as const
+    const mine = this.roleOf(me).permissions
+    for (const r of RESOURCES) {
+      if (rank[perms[r.key]] > rank[mine[r.key]]) throw new Error("Anda tidak bisa memberi izin melebihi peran Anda")
+    }
+  }
+
+  /** Akun sendiri dan akun berizin lebih tinggi tidak bisa dikelola dari Admin oleh sesi jarak jauh. */
+  private assertManageable(target: MockAccount) {
+    const me = this.caller()
+    if (!me) return
+    if (me.id === target.id) throw new Error("Tidak bisa mengubah akun Anda sendiri dari sini; pakai halaman Akun saya")
+    this.assertGrantable(this.roleOf(target).permissions)
+  }
+
+  private assertNotOwnRole(roleId: string) {
+    const me = this.caller()
+    if (me && me.roleId === roleId) throw new Error("Tidak bisa mengubah peran yang sedang Anda pakai")
   }
 
   private openSession(a: MockAccount, touch = true): SessionInfo {
@@ -673,15 +707,17 @@ export class MockApi implements TelemonApi {
   }
 
   async listAccounts() {
-    this.authorize("desktop")
+    this.authorize("admin", "read")
     await delay(250)
     return this.accounts.map((a) => this.summary(a))
   }
 
   async createAccount(input: { username: string; displayName: string; password: string; roleId: string }) {
-    this.authorize("desktop")
+    this.authorize("admin")
     await delay(500)
-    if (!this.roles.some((r) => r.id === input.roleId)) throw new Error("Pilih peran untuk akun ini")
+    const grant = this.roles.find((r) => r.id === input.roleId)
+    if (!grant) throw new Error("Pilih peran untuk akun ini")
+    this.assertGrantable(grant.permissions)
     const username = input.username.trim().toLowerCase()
     if (!/^[a-z0-9._-]{3,30}$/.test(username)) throw new Error("Username 3-30 karakter: huruf kecil, angka, titik, garis bawah, atau strip")
     if (this.accounts.some((a) => a.username === username)) throw new Error("Username sudah dipakai")
@@ -696,27 +732,30 @@ export class MockApi implements TelemonApi {
   }
 
   async resetAccountPassword(id: string, password: string) {
-    this.authorize("desktop")
+    this.authorize("admin")
     await delay(400)
     if (password.length < 8) throw new Error("Password minimal 8 karakter")
     const a = this.accountOrThrow(id)
+    this.assertManageable(a)
     a.password = password
     this.sessions = this.sessions.filter((x) => x.accountId !== id)
   }
 
   async setAccountDisabled(id: string, disabled: boolean) {
-    this.authorize("desktop")
+    this.authorize("admin")
     await delay(300)
     const a = this.accountOrThrow(id)
+    this.assertManageable(a)
     a.disabled = disabled
     if (disabled) this.sessions = this.sessions.filter((x) => x.accountId !== id)
     return this.summary(a)
   }
 
   async resetAccount2fa(id: string) {
-    this.authorize("desktop")
+    this.authorize("admin")
     await delay(300)
     const a = this.accountOrThrow(id)
+    this.assertManageable(a)
     a.totp = false
     a.recovery = []
     this.sessions = this.sessions.filter((x) => x.accountId !== id)
@@ -724,9 +763,10 @@ export class MockApi implements TelemonApi {
   }
 
   async deleteAccount(id: string) {
-    this.authorize("desktop")
+    this.authorize("admin")
     await delay(300)
     const a = this.accountOrThrow(id)
+    this.assertManageable(a)
     const rest = this.accounts.filter((x) => x.id !== a.id && !x.disabled)
     if (rest.length === 0 && this.share.publik.status === "on") {
       throw new Error("Akses publik sedang aktif; matikan dulu sebelum menghapus akun terakhir")
@@ -736,7 +776,7 @@ export class MockApi implements TelemonApi {
   }
 
   async setRequire2fa(required: boolean) {
-    this.authorize("desktop")
+    this.authorize("admin")
     await delay(300)
     if (!required && this.share.publik.status === "on") throw new Error("Wajib selama akses publik aktif")
     this.share.auth.require2fa = required
@@ -765,14 +805,15 @@ export class MockApi implements TelemonApi {
   }
 
   async listRoles(): Promise<Role[]> {
-    this.authorize("desktop")
+    this.authorize("admin", "read")
     await delay(200)
     return this.roles.map((r) => this.toRole(r))
   }
 
   async createRole(input: RoleInput): Promise<Role> {
-    this.authorize("desktop")
+    this.authorize("admin")
     await delay(400)
+    this.assertGrantable(input.permissions)
     const name = this.validateRole(input)
     const role: MockRole = {
       id: `role-${Date.now().toString(36)}`, name, description: input.description?.trim() || undefined,
@@ -783,10 +824,12 @@ export class MockApi implements TelemonApi {
   }
 
   async updateRole(id: string, input: RoleInput): Promise<Role> {
-    this.authorize("desktop")
+    this.authorize("admin")
     await delay(400)
     const role = this.roles.find((r) => r.id === id)
     if (!role) throw new Error("Peran tidak ditemukan")
+    this.assertNotOwnRole(id)
+    this.assertGrantable(input.permissions)
     role.name = this.validateRole(input, id)
     role.description = input.description?.trim() || undefined
     role.permissions = { ...input.permissions }
@@ -794,10 +837,11 @@ export class MockApi implements TelemonApi {
   }
 
   async deleteRole(id: string) {
-    this.authorize("desktop")
+    this.authorize("admin")
     await delay(300)
     const role = this.roles.find((r) => r.id === id)
     if (!role) throw new Error("Peran tidak ditemukan")
+    this.assertNotOwnRole(id)
     if (role.builtin) throw new Error("Peran bawaan tidak bisa dihapus")
     const used = this.accounts.filter((a) => a.roleId === id).length
     if (used > 0) throw new Error(`Peran masih dipakai ${used} akun; pindahkan akun-nya dulu`)
@@ -805,10 +849,13 @@ export class MockApi implements TelemonApi {
   }
 
   async setAccountRole(id: string, roleId: string) {
-    this.authorize("desktop")
+    this.authorize("admin")
     await delay(300)
     const a = this.accountOrThrow(id)
-    if (!this.roles.some((r) => r.id === roleId)) throw new Error("Peran tidak ditemukan")
+    const target = this.roles.find((r) => r.id === roleId)
+    if (!target) throw new Error("Peran tidak ditemukan")
+    this.assertManageable(a)
+    this.assertGrantable(target.permissions)
     a.roleId = roleId
     return this.summary(a)
   }
@@ -822,14 +869,17 @@ export class MockApi implements TelemonApi {
   }
 
   async getSettings(): Promise<AppSettings> {
-    this.authorize("desktop")
+    this.authorize("pengaturan", "read")
     await delay(200)
     return structuredClone(this.settings)
   }
 
   async saveSettings(next: AppSettings): Promise<AppSettings> {
-    this.authorize("desktop")
+    this.authorize("pengaturan")
     await delay(400)
+    if (this.currentSessionId && next.remote.allowPublicWrite !== this.settings.remote.allowPublicWrite) {
+      throw new Error("Izin tulis lewat akses publik hanya bisa diubah dari aplikasi desktop")
+    }
     const { retention: r, polling: p, remote: m } = next
     this.checkRange("Simpan event (hari)", r.eventDays, 1, 3650, true)
     this.checkRange("Maksimum event", r.maxEvents, 1000, 5_000_000)
@@ -864,7 +914,7 @@ export class MockApi implements TelemonApi {
   }
 
   async getStorageInfo(): Promise<StorageInfo> {
-    this.authorize("desktop")
+    this.authorize("pengaturan", "read")
     await delay(200)
     return {
       path: "<folder data aplikasi>/telemon.db",
@@ -878,7 +928,7 @@ export class MockApi implements TelemonApi {
   }
 
   async purgeNow(): Promise<PurgeCounts> {
-    this.authorize("desktop")
+    this.authorize("pengaturan")
     await delay(800)
     const counts = this.purgeCounts()
     const now = Date.now()
@@ -1154,8 +1204,23 @@ export class MockApi implements TelemonApi {
     return result
   }
 
+  async updateRouter(id: string, input: RouterEdit): Promise<RouterInfo> {
+    this.authorize("router")
+    await delay(700)
+    const r = this.routers.find((x) => x.id === id)
+    if (!r) throw new Error("Router tidak ditemukan")
+    const name = input.name.trim()
+    const host = input.host.trim()
+    if (!name || name.length > 40) throw new Error("Nama router 1-40 karakter")
+    if (!host) throw new Error("Host/IP wajib diisi")
+    if (!Number.isInteger(input.port) || input.port < 1 || input.port > 65535) throw new Error("Port 1-65535")
+    Object.assign(r, { name, host, port: input.port, tls: input.tls, canWrite: input.allowWrite })
+    this.emit({ kind: "router", router: { ...r } })
+    return { ...r }
+  }
+
   async removeRouter(id: string) {
-    this.authorize("desktop")
+    this.authorize("router")
     await delay(300)
     this.routers = this.routers.filter((r) => r.id !== id)
     this.users = this.users.filter((u) => u.routerId !== id)

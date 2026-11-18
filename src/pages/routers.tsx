@@ -8,6 +8,7 @@ import {
   UsersIcon,
   Trash2Icon,
   DownloadIcon,
+  PencilIcon,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -50,9 +51,9 @@ import { useStore } from "@/lib/store-context"
 import type { RouterInfo } from "@/lib/types"
 
 export function RoutersPage() {
-  const { routers, liveUsers: users, api, access } = useStore()
+  const { routers, liveUsers: users, api } = useStore()
   const importReason = useUpdateGate("router")()
-  const desktop = access === "desktop"
+  const [editing, setEditing] = React.useState<RouterInfo | null>(null)
   const now = useNow(10_000)
   const [adding, setAdding] = React.useState(false)
   const [removing, setRemoving] = React.useState<RouterInfo | null>(null)
@@ -64,7 +65,7 @@ export function RoutersPage() {
         <p className="text-sm text-muted-foreground">
           Mikrotik adalah source of truth; Telemon membaca dan (bila diizinkan) menulis lewat RouterOS API.
         </p>
-        <Button onClick={() => setAdding(true)} disabled={!desktop} title={desktop ? undefined : "Tambah router hanya dari aplikasi desktop"}>
+        <Button onClick={() => setAdding(true)} disabled={!!importReason} title={importReason ?? undefined}>
           <PlusIcon />
           <span className="hidden sm:inline">Tambah router</span>
           <span className="sm:hidden">Tambah</span>
@@ -111,6 +112,9 @@ export function RoutersPage() {
                       <DropdownMenuItem onSelect={() => navigate("user", { router: r.id })}>
                         <UsersIcon /> Lihat user
                       </DropdownMenuItem>
+                      <DropdownMenuItem disabled={!!importReason} onSelect={() => setEditing(r)}>
+                        <PencilIcon /> Edit router
+                      </DropdownMenuItem>
                       <DropdownMenuItem
                         disabled={r.status !== "online" || !!importReason}
                         onSelect={() => setImportFor(r)}
@@ -118,7 +122,7 @@ export function RoutersPage() {
                         <DownloadIcon /> Import dari Mikrotik
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem variant="destructive" disabled={!desktop} onSelect={() => setRemoving(r)}>
+                      <DropdownMenuItem variant="destructive" disabled={!!importReason} onSelect={() => setRemoving(r)}>
                         <Trash2Icon /> Hapus dari Telemon
                       </DropdownMenuItem>
                     </DropdownMenuContent>
@@ -154,7 +158,8 @@ export function RoutersPage() {
         })}
       </div>
 
-      <AddRouterDialog open={adding} onOpenChange={setAdding} />
+      <RouterDialog open={adding} onOpenChange={setAdding} />
+      <RouterDialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)} router={editing ?? undefined} />
       <ImportDialog
         open={!!importFor}
         onOpenChange={(o) => !o && setImportFor(null)}
@@ -195,35 +200,55 @@ export function RoutersPage() {
   )
 }
 
-function AddRouterDialog({
+function RouterDialog({
   open,
   onOpenChange,
+  router,
 }: {
   open: boolean
   onOpenChange: (o: boolean) => void
+  /** Kosong = router baru. */
+  router?: RouterInfo
 }) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[92svh] overflow-y-auto sm:max-w-md">
+        {open && <RouterForm router={router} onClose={() => onOpenChange(false)} />}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function RouterForm({ router, onClose }: { router?: RouterInfo; onClose: () => void }) {
   const { api } = useStore()
-  const [tls, setTls] = React.useState(true)
-  const [allowWrite, setAllowWrite] = React.useState(false)
-  const [port, setPort] = React.useState("8729")
+  const editing = !!router
+  const [tls, setTls] = React.useState(router?.tls ?? true)
+  const [allowWrite, setAllowWrite] = React.useState(router?.canWrite ?? false)
+  const [port, setPort] = React.useState(String(router?.port ?? 8729))
   const [busy, setBusy] = React.useState(false)
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const f = new FormData(e.currentTarget)
+    const username = String(f.get("username")).trim()
+    const password = String(f.get("password"))
     setBusy(true)
     try {
-      const r = await api.addRouter({
+      const base = {
         name: String(f.get("name")).trim(),
         host: String(f.get("host")).trim(),
         port: Number(port),
         tls,
         allowWrite,
-        username: String(f.get("username")).trim(),
-        password: String(f.get("password")),
-      })
-      toast.success(`${r.name} ditambahkan`)
-      onOpenChange(false)
+      }
+      if (router) {
+        const r = await api.updateRouter(router.id, { ...base, username: username || undefined, password: password || undefined })
+        toast.success(`${r.name} diperbarui`)
+      } else {
+        const r = await api.addRouter({ ...base, username, password })
+        toast.success(`${r.name} ditambahkan`)
+      }
+      onClose()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err))
     } finally {
@@ -232,86 +257,77 @@ function AddRouterDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <form onSubmit={onSubmit} className="grid gap-4">
-          <DialogHeader>
-            <DialogTitle>Tambah router</DialogTitle>
-            <DialogDescription>
-              Pakai akun API khusus. Grup <code>read</code> cukup untuk memantau; tambah
-              hak <code>write</code> bila user dan profil PPP ingin diedit dari Telemon.
-              Password disimpan di keyring sistem operasi.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-2">
-            <Label htmlFor="r-name">Nama</Label>
-            <Input id="r-name" name="name" required placeholder="RB-Utara" />
-          </div>
-          <div className="grid grid-cols-[1fr_6rem] gap-3">
-            <div className="grid gap-2">
-              <Label htmlFor="r-host">Host / IP</Label>
-              <Input id="r-host" name="host" required placeholder="10.10.5.1" inputMode="url" />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="r-port">Port</Label>
-              <Input
-                id="r-port"
-                required
-                inputMode="numeric"
-                pattern="[0-9]{1,5}"
-                value={port}
-                onChange={(e) => setPort(e.target.value)}
-              />
-            </div>
-          </div>
-          <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
-            <div className="grid gap-0.5">
-              <Label htmlFor="r-tls">API-SSL (TLS)</Label>
-              <p className="text-xs text-muted-foreground">
-                Disarankan. Port bawaan 8729; tanpa TLS 8728.
-              </p>
-            </div>
-            <Switch
-              id="r-tls"
-              checked={tls}
-              onCheckedChange={(v) => {
-                setTls(v)
-                setPort((p) => (p === "8729" || p === "8728" ? (v ? "8729" : "8728") : p))
-              }}
-            />
-          </div>
-          <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
-            <div className="grid gap-0.5">
-              <Label htmlFor="r-write">Izinkan edit user dan profil PPP</Label>
-              <p className="text-xs text-muted-foreground">
-                Nyalakan hanya bila akun API di atas punya hak write. Setiap tulis ke router
-                tetap meminta konfirmasi.
-              </p>
-            </div>
-            <Switch id="r-write" checked={allowWrite} onCheckedChange={setAllowWrite} />
-          </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="grid gap-2">
-              <Label htmlFor="r-user">Username API</Label>
-              <Input id="r-user" name="username" required autoComplete="off" placeholder="telemon" />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="r-pass">Password</Label>
-              <Input id="r-pass" name="password" type="password" required autoComplete="new-password" />
-            </div>
-          </div>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button type="button" variant="outline">
-                Batal
-              </Button>
-            </DialogClose>
-            <Button type="submit" disabled={busy}>
-              {busy ? "Menghubungkan…" : "Simpan"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+    <form onSubmit={onSubmit} className="grid gap-4">
+      <DialogHeader>
+        <DialogTitle>{editing ? `Edit ${router?.name}` : "Tambah router"}</DialogTitle>
+        <DialogDescription>
+          Pakai akun API khusus. Grup <code>read</code> cukup untuk memantau; tambah hak <code>write</code> bila user dan
+          profil PPP ingin diedit dari Telemon. Password disimpan di keyring sistem operasi
+          {editing && "; kosongkan username dan password bila tidak diubah"}.
+        </DialogDescription>
+      </DialogHeader>
+      <div className="grid gap-2">
+        <Label htmlFor="r-name">Nama</Label>
+        <Input id="r-name" name="name" required defaultValue={router?.name} placeholder="RB-Utara" />
+      </div>
+      <div className="grid grid-cols-[1fr_6rem] gap-3">
+        <div className="grid gap-2">
+          <Label htmlFor="r-host">Host / IP</Label>
+          <Input id="r-host" name="host" required defaultValue={router?.host} placeholder="10.10.5.1" inputMode="url" />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="r-port">Port</Label>
+          <Input
+            id="r-port"
+            required
+            inputMode="numeric"
+            pattern="[0-9]{1,5}"
+            value={port}
+            onChange={(e) => setPort(e.target.value)}
+          />
+        </div>
+      </div>
+      <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
+        <div className="grid gap-0.5">
+          <Label htmlFor="r-tls">API-SSL (TLS)</Label>
+          <p className="text-xs text-muted-foreground">Disarankan. Port bawaan 8729; tanpa TLS 8728.</p>
+        </div>
+        <Switch
+          id="r-tls"
+          checked={tls}
+          onCheckedChange={(v) => {
+            setTls(v)
+            setPort((p) => (p === "8729" || p === "8728" ? (v ? "8729" : "8728") : p))
+          }}
+        />
+      </div>
+      <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
+        <div className="grid gap-0.5">
+          <Label htmlFor="r-write">Izinkan edit user dan profil PPP</Label>
+          <p className="text-xs text-muted-foreground">
+            Nyalakan hanya bila akun API di bawah punya hak write. Setiap tulis ke router tetap meminta konfirmasi.
+          </p>
+        </div>
+        <Switch id="r-write" checked={allowWrite} onCheckedChange={setAllowWrite} />
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="grid gap-2">
+          <Label htmlFor="r-user">Username API</Label>
+          <Input id="r-user" name="username" required={!editing} autoComplete="off" placeholder={editing ? "tetap" : "telemon"} />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="r-pass">Password</Label>
+          <Input id="r-pass" name="password" type="password" required={!editing} autoComplete="new-password" placeholder={editing ? "tetap" : undefined} />
+        </div>
+      </div>
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
+          Batal
+        </Button>
+        <Button type="submit" disabled={busy}>
+          {busy ? "Menghubungkan…" : "Simpan"}
+        </Button>
+      </DialogFooter>
+    </form>
   )
 }

@@ -3,7 +3,6 @@ import { DatabaseIcon, RadioTowerIcon, RotateCcwIcon, ShieldIcon, TimerResetIcon
 import { toast } from "sonner"
 
 import { ConfirmDialog } from "@/components/confirm-dialog"
-import { DesktopOnly } from "@/components/desktop-only"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -17,6 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
+import { useUpdateGate } from "@/hooks/use-write-gate"
 import { useApi } from "@/lib/api-context"
 import { DEFAULT_SETTINGS } from "@/lib/defaults"
 import { formatBytes, formatNumber } from "@/lib/format"
@@ -129,15 +129,16 @@ function problems(s: AppSettings) {
   ].filter(Boolean).length
 }
 
-/** Pengaturan: retensi data, polling dan sinkronisasi, akses jarak jauh, penyimpanan. Hanya desktop. */
+/** Pengaturan: retensi data, polling dan sinkronisasi, akses jarak jauh, penyimpanan. Mengubah butuh izin Ubah. */
 export function SettingsPage() {
-  const { access } = useStore()
-  if (access !== "desktop") return <DesktopOnly what="Pengaturan" />
   return <SettingsForm />
 }
 
 function SettingsForm() {
   const { api } = useApi()
+  const { access } = useStore()
+  const readReason = useUpdateGate("pengaturan")()
+  const readOnly = !!readReason
   const [saved, setSaved] = React.useState<AppSettings | null>(null)
   const [draft, setDraft] = React.useState<AppSettings | null>(null)
   const [busy, setBusy] = React.useState(false)
@@ -188,7 +189,13 @@ function SettingsForm() {
   )
 
   return (
+    <fieldset disabled={readOnly} className="contents">
     <div className="grid gap-3">
+      {readOnly && (
+        <Alert>
+          <AlertDescription>{readReason}. Anda hanya bisa melihat pengaturan.</AlertDescription>
+        </Alert>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">Perubahan berlaku setelah disimpan.</p>
         <Button
@@ -264,10 +271,10 @@ function SettingsForm() {
               <div className="grid gap-0.5">
                 <Label htmlFor="rem-write">Izinkan tulis lewat akses publik</Label>
                 <p className="text-xs text-muted-foreground">
-                  Bawaan mati. Peran dengan izin Ubah baru bisa menulis ke router lewat internet bila ini dinyalakan.
+                  Bawaan mati. Peran dengan izin Ubah baru bisa menulis lewat internet bila ini dinyalakan. Hanya bisa diubah dari aplikasi desktop.
                 </p>
               </div>
-              <Switch id="rem-write" checked={m.allowPublicWrite} onCheckedChange={(v) => set("remote", { allowPublicWrite: v })} />
+              <Switch id="rem-write" checked={m.allowPublicWrite} disabled={access !== "desktop"} onCheckedChange={(v) => set("remote", { allowPublicWrite: v })} />
             </div>
             {m.allowPublicWrite && (
               <Alert variant="destructive">
@@ -295,6 +302,7 @@ function SettingsForm() {
         </div>
       )}
     </div>
+    </fieldset>
   )
 }
 
