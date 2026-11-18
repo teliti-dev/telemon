@@ -1,0 +1,20 @@
+[package]
+name = "telemon-core"
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-only"
+description = "Inti Telemon: klien dan model RouterOS (tanpa penyimpanan)"
+
+[dependencies]
+mikrotik-rs = "0.10.0"
+tokio = { version = "1.54.1", features = ["rt", "macros", "time", "sync", "net"] }
+
+[dev-dependencies]
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "io-util"] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
