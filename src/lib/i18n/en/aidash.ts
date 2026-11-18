@@ -1,4 +1,6 @@
 export default {
+  "Aksi": "Actions",
+  "Pilih aksi": "Choose an action",
   "Provider tidak ditemukan": "Provider not found",
   "Tambah provider AI": "Add AI provider",
   "Nama dan model wajib diisi": "Name and model are required",

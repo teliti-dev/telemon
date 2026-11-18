@@ -2,7 +2,6 @@ import { SparklesIcon } from "lucide-react"
 
 import { AiChatPanel } from "@/components/ai-chat-panel"
 import { Button } from "@/components/ui/button"
-import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet"
 import { useIsDesktop } from "@/hooks/use-media-query"
 import { useAiChat } from "@/lib/ai-context"
 import { useT } from "@/lib/i18n"
@@ -41,16 +40,16 @@ export function AiChatDock() {
     )
   }
 
+  // HP: chat adalah halaman `#/ai` (AiChatPage), bukan lembar.
+  return null
+}
+
+/** Halaman AI di HP: menutupi konten, menyisakan menu bawah. Tombol kembali sistem menutupnya. */
+export function AiChatPage() {
+  const ai = useAiChat()
   return (
-    <Sheet open={ai.open} onOpenChange={ai.setOpen}>
-      <SheetContent
-        showCloseButton={false}
-        className="gap-0 p-0 data-[side=right]:w-full pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"
-      >
-        <SheetTitle className="sr-only">{t("Tanya AI")}</SheetTitle>
-        <SheetDescription className="sr-only">{t("Hanya membaca data Telemon; tidak mengubah apa pun.")}</SheetDescription>
-        <AiChatPanel onClose={() => ai.setOpen(false)} />
-      </SheetContent>
-    </Sheet>
+    <div className="fixed inset-x-0 top-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 bg-background pt-[env(safe-area-inset-top)]">
+      <AiChatPanel onClose={() => ai.setOpen(false)} />
+    </div>
   )
 }

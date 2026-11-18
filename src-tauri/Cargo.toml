@@ -23,3 +23,11 @@ serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
 tauri = { version = "2.12.6" }
 tauri-plugin-log = "2"
+
+# Binary kecil: tanpa OpenSSL/aws-lc (pakai rustls + ring bila perlu TLS), tanpa C bawaan selain SQLite statis. ADR 0010.
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

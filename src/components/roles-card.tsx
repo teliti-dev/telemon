@@ -7,13 +7,7 @@ import { RoleDialog } from "@/components/role-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+import { ActionMenu, ActionMenuContent, ActionMenuItem, ActionMenuSeparator, ActionMenuTrigger } from "@/components/action-menu"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useIsDesktop } from "@/hooks/use-media-query"
 import { useApi } from "@/lib/api-context"
@@ -107,27 +101,27 @@ export function RolesCard({ readOnly }: { readOnly?: boolean }) {
                     ))}
                     <TableCell className="tabular-nums">{role.accountCount}</TableCell>
                     <TableCell className="pr-3">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
+                      <ActionMenu>
+                        <ActionMenuTrigger asChild>
                           <Button variant="ghost" size="icon-sm" disabled={readOnly} aria-label={t("Aksi {name}", { name: role.name })}>
                             <MoreVerticalIcon />
                           </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onSelect={() => (isDesktop ? setDialog({ role }) : navigatePath("admin", ["role", role.id, "edit"]))}>
+                        </ActionMenuTrigger>
+                        <ActionMenuContent align="end">
+                          <ActionMenuItem onSelect={() => (isDesktop ? setDialog({ role }) : navigatePath("admin", ["role", role.id, "edit"]))}>
                             <PencilIcon /> {t("Edit")}
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
+                          </ActionMenuItem>
+                          <ActionMenuSeparator />
+                          <ActionMenuItem
                             variant="destructive"
                             disabled={role.builtin || role.accountCount > 0}
                             onSelect={() => setRemoving(role)}
                           >
                             <Trash2Icon />{" "}
                             {role.builtin ? t("Bawaan") : role.accountCount > 0 ? t("Dipakai {n} akun", { n: role.accountCount }) : t("Hapus")}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                          </ActionMenuItem>
+                        </ActionMenuContent>
+                      </ActionMenu>
                     </TableCell>
                   </TableRow>
                 ))}

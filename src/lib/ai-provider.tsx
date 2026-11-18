@@ -3,6 +3,7 @@ import * as React from "react"
 import { useIsDesktop } from "@/hooks/use-media-query"
 import { useAuth } from "@/lib/auth-context"
 import { t } from "@/lib/i18n"
+import { navigate, useRoute } from "@/lib/route"
 import { useStore } from "@/lib/store-context"
 import type { AiChat, AiChatSummary, AiMessage, AiStreamEvent } from "@/lib/types"
 
@@ -47,7 +48,26 @@ export function AiChatProvider({ children }: { children: React.ReactNode }) {
   const { api, access, share } = useStore()
   const { session } = useAuth()
   const isDesktop = useIsDesktop()
-  const [open, setOpen] = React.useState(false)
+  // Desktop: panel di kanan (state lokal). HP: halaman sendiri `#/ai` (tombol kembali = tutup).
+  const { page } = useRoute()
+  const [deskOpen, setDeskOpen] = React.useState(false)
+  const open = isDesktop ? deskOpen : page === "ai"
+  const openRef = React.useRef(open)
+  React.useEffect(() => {
+    openRef.current = open
+  }, [open])
+  const setOpen = React.useCallback(
+    (v: boolean | ((o: boolean) => boolean)) => {
+      const next = typeof v === "function" ? v(openRef.current) : v
+      if (isDesktop) return setDeskOpen(next)
+      if (next) navigate("ai")
+      else if (window.location.hash.startsWith("#/ai")) {
+        if (window.history.length > 1) window.history.back()
+        else navigate("ringkasan")
+      }
+    },
+    [isDesktop]
+  )
   const [view, setView] = React.useState<AiView>("chat")
   const [messages, setMessages] = React.useState<AiMessage[]>([])
   const [meta, setMeta] = React.useState<Meta>(freshMeta)
@@ -151,7 +171,7 @@ export function AiChatProvider({ children }: { children: React.ReactNode }) {
       setView("chat")
       queueMicrotask(() => void run([], text.trim()))
     },
-    [commit, commitMeta, run]
+    [commit, commitMeta, run, setOpen]
   )
 
   const regenerate = React.useCallback(() => {
@@ -233,7 +253,7 @@ export function AiChatProvider({ children }: { children: React.ReactNode }) {
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [available])
+  }, [available, setOpen])
 
   const value = React.useMemo(
     () => ({
@@ -264,7 +284,7 @@ export function AiChatProvider({ children }: { children: React.ReactNode }) {
       deleteChat,
       currentId: meta.id,
     }),
-    [available, unavailableReason, share?.features.aiMask, open, isDesktop, view, meta, messages, busy, send, stop, newChat, ask, regenerate, setFeedback, exportMarkdown, history, historyLoading, loadHistory, openChat, renameChat, togglePin, deleteChat]
+    [available, unavailableReason, share?.features.aiMask, open, setOpen, isDesktop, view, meta, messages, busy, send, stop, newChat, ask, regenerate, setFeedback, exportMarkdown, history, historyLoading, loadHistory, openChat, renameChat, togglePin, deleteChat]
   )
 
   return <AiChatContext.Provider value={value}>{children}</AiChatContext.Provider>

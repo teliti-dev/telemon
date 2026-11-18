@@ -18,13 +18,7 @@ import { UsersSectionNav } from "@/components/users-section-nav"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+import { ActionMenu, ActionMenuContent, ActionMenuItem, ActionMenuSeparator, ActionMenuTrigger } from "@/components/action-menu"
 import { Input } from "@/components/ui/input"
 import {
   Select,
@@ -115,33 +109,33 @@ export function ProfilesPage({ params }: { params: URLSearchParams }) {
     const reason = gate(p.routerId)
     const used = usage.get(p.id)?.total ?? 0
     return (
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
+      <ActionMenu>
+        <ActionMenuTrigger asChild>
           <Button variant="ghost" size="icon-sm" aria-label={t("Aksi {name}", { name: p.name })} onClick={(e) => e.stopPropagation()}>
             <MoreVerticalIcon />
           </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+        </ActionMenuTrigger>
+        <ActionMenuContent align="end" onClick={(e) => e.stopPropagation()}>
           {p.deletedAt ? (
-            <DropdownMenuItem onSelect={() => restore(p)}>
+            <ActionMenuItem onSelect={() => restore(p)}>
               <RotateCcwIcon /> {t("Pulihkan")}
-            </DropdownMenuItem>
+            </ActionMenuItem>
           ) : (
             <>
-              <DropdownMenuItem disabled={!!reason} onSelect={() => (isDesktop ? setForm({ mode: "edit", profile: p }) : navigatePath("profile", [p.id, "edit"]))}>
+              <ActionMenuItem disabled={!!reason} onSelect={() => (isDesktop ? setForm({ mode: "edit", profile: p }) : navigatePath("profile", [p.id, "edit"]))}>
                 <PencilIcon /> {t("Edit")}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem variant="destructive" disabled={used > 0} onSelect={() => setRemoving(p)}>
+              </ActionMenuItem>
+              <ActionMenuSeparator />
+              <ActionMenuItem variant="destructive" disabled={used > 0} onSelect={() => setRemoving(p)}>
                 <Trash2Icon /> {used > 0 ? t("Dipakai {n} user", { n: used }) : t("Hapus (soft)")}
-              </DropdownMenuItem>
+              </ActionMenuItem>
             </>
           )}
           {reason && !p.deletedAt && (
             <p className="max-w-56 px-2 py-1.5 text-xs text-muted-foreground">{reason}.</p>
           )}
-        </DropdownMenuContent>
-      </DropdownMenu>
+        </ActionMenuContent>
+      </ActionMenu>
     )
   }
 

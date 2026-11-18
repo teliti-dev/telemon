@@ -34,13 +34,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+import { ActionMenu, ActionMenuContent, ActionMenuItem, ActionMenuSeparator, ActionMenuTrigger } from "@/components/action-menu"
 import { useNow } from "@/hooks/use-now"
 import { formatRelative } from "@/lib/format"
 import { useUpdateGate } from "@/hooks/use-write-gate"
@@ -104,31 +98,31 @@ export function RoutersPage() {
                   {r.host}:{r.port}
                 </CardDescription>
                 <CardAction>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
+                  <ActionMenu>
+                    <ActionMenuTrigger asChild>
                       <Button variant="ghost" size="icon" aria-label={t("Aksi {name}", { name: r.name })}>
                         <MoreVerticalIcon />
                       </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onSelect={() => navigate("user", { router: r.id })}>
+                    </ActionMenuTrigger>
+                    <ActionMenuContent align="end">
+                      <ActionMenuItem onSelect={() => navigate("user", { router: r.id })}>
                         <UsersIcon /> {t("Lihat user")}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem disabled={!!importReason} onSelect={() => (isDesktop ? setEditing(r) : navigatePath("router", [r.id, "edit"]))}>
+                      </ActionMenuItem>
+                      <ActionMenuItem disabled={!!importReason} onSelect={() => (isDesktop ? setEditing(r) : navigatePath("router", [r.id, "edit"]))}>
                         <PencilIcon /> {t("Edit router")}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
+                      </ActionMenuItem>
+                      <ActionMenuItem
                         disabled={r.status !== "online" || !!importReason}
                         onSelect={() => (isDesktop ? setImportFor(r) : navigatePath("import", [], { router: r.id }))}
                       >
                         <DownloadIcon /> {t("Import dari Mikrotik")}
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem variant="destructive" disabled={!!importReason} onSelect={() => setRemoving(r)}>
+                      </ActionMenuItem>
+                      <ActionMenuSeparator />
+                      <ActionMenuItem variant="destructive" disabled={!!importReason} onSelect={() => setRemoving(r)}>
                         <Trash2Icon /> {t("Hapus dari Telemon")}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                      </ActionMenuItem>
+                    </ActionMenuContent>
+                  </ActionMenu>
                 </CardAction>
               </CardHeader>
               <CardContent className="space-y-2.5">

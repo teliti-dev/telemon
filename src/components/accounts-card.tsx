@@ -20,13 +20,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+import { ActionMenu, ActionMenuContent, ActionMenuItem, ActionMenuSeparator, ActionMenuTrigger } from "@/components/action-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
@@ -163,31 +157,31 @@ export function AccountsCard({ readOnly }: { readOnly?: boolean }) {
                   </div>
                 </div>
                 {a.disabled && <Badge variant="outline">{t("Nonaktif")}</Badge>}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
+                <ActionMenu>
+                  <ActionMenuTrigger asChild>
                     <Button variant="ghost" size="icon-sm" disabled={readOnly} aria-label={t("Aksi {name}", { name: a.username })}>
                       <MoreVerticalIcon />
                     </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onSelect={() => (isDesktop ? setDialog({ kind: "role", account: a }) : navigatePath("admin", ["account", a.id, "role"]))}>
+                  </ActionMenuTrigger>
+                  <ActionMenuContent align="end">
+                    <ActionMenuItem onSelect={() => (isDesktop ? setDialog({ kind: "role", account: a }) : navigatePath("admin", ["account", a.id, "role"]))}>
                       <UserCogIcon /> {t("Ubah peran")}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => (isDesktop ? setDialog({ kind: "reset-password", account: a }) : navigatePath("admin", ["account", a.id, "password"]))}>
+                    </ActionMenuItem>
+                    <ActionMenuItem onSelect={() => (isDesktop ? setDialog({ kind: "reset-password", account: a }) : navigatePath("admin", ["account", a.id, "password"]))}>
                       <KeyRoundIcon /> {t("Reset password")}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem disabled={!a.twoFactor} onSelect={() => setDialog({ kind: "reset-2fa", account: a })}>
+                    </ActionMenuItem>
+                    <ActionMenuItem disabled={!a.twoFactor} onSelect={() => setDialog({ kind: "reset-2fa", account: a })}>
                       <ShieldOffIcon /> {t("Reset 2FA")}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => void toggleDisabled(a)}>
+                    </ActionMenuItem>
+                    <ActionMenuItem onSelect={() => void toggleDisabled(a)}>
                       {a.disabled ? <UserCheckIcon /> : <UserXIcon />} {a.disabled ? t("Aktifkan") : t("Nonaktifkan")}
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem variant="destructive" onSelect={() => setDialog({ kind: "delete", account: a })}>
+                    </ActionMenuItem>
+                    <ActionMenuSeparator />
+                    <ActionMenuItem variant="destructive" onSelect={() => setDialog({ kind: "delete", account: a })}>
                       <Trash2Icon /> {t("Hapus")}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                    </ActionMenuItem>
+                  </ActionMenuContent>
+                </ActionMenu>
               </li>
             ))}
           </ul>

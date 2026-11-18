@@ -24,6 +24,7 @@ import { navigate, navigatePath, useRoute, type Page } from "@/lib/route"
 import { StoreProvider } from "@/lib/store"
 import { useStore } from "@/lib/store-context"
 import { AccountPage } from "@/pages/account"
+import { AiChatPage } from "@/components/ai-chat-dock"
 import { AppearancePage } from "@/pages/appearance"
 import { AdminPage } from "@/pages/admin"
 import { EventsPage } from "@/pages/events"
@@ -48,6 +49,7 @@ const TITLES: Record<Page, string> = {
   akun: tk("Akun saya"),
   import: tk("Import dari Mikrotik"),
   appearance: tk("Appearance"),
+  ai: tk("Tanya AI"),
 }
 
 function NoAccess({ reason }: { reason: string }) {
@@ -90,6 +92,7 @@ function Content() {
   function renderPage(): React.ReactNode {
     const [s0, s1, s2] = segments
     if (page === "appearance") return <AppearancePage />
+    if (page === "ai") return isDesktop ? <OverviewPage onOpenUser={openUserFn} /> : <AiChatPage />
     if (page === "import") return <ImportPage router={params.get("router") ?? undefined} />
     if (page === "user") {
       if (s0 === "new") return <UserFormPage mode="create" router={params.get("router") ?? undefined} />
