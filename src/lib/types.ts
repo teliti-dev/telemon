@@ -367,7 +367,8 @@ export interface NewRouter {
 }
 
 // ---- Dasbor AI (Pengaturan): provider, token, saldo, anggaran ----
-export type AiProviderKind = "anthropic" | "openai" | "openrouter" | "ollama" | "custom"
+/** 9Router = gateway OpenAI-compatible milik sendiri (perlu URL dasar); lainnya memakai alamat resmi penyedia. */
+export type AiProviderKind = "ninerouter" | "anthropic" | "openai" | "deepseek" | "gemini"
 export type AiProviderStatus = "ok" | "error" | "unconfigured"
 
 /** Kunci API write-only: server hanya mengembalikan petunjuk (`keyHint`), tidak pernah kuncinya. */

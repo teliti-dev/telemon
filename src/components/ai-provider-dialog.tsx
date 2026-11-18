@@ -15,19 +15,19 @@ import { useStore } from "@/lib/store-context"
 import type { AiProvider, AiProviderKind } from "@/lib/types"
 
 export const PROVIDER_KIND_LABEL: Record<AiProviderKind, string> = {
+  ninerouter: tk("9Router"),
   anthropic: tk("Anthropic"),
   openai: tk("OpenAI"),
-  openrouter: tk("OpenRouter"),
-  ollama: tk("Ollama (lokal)"),
-  custom: tk("Kustom (kompatibel OpenAI)"),
+  deepseek: tk("DeepSeek"),
+  gemini: tk("Google Gemini (AI Studio)"),
 }
 
 const MODEL_HINT: Record<AiProviderKind, string> = {
+  ninerouter: "nama-combo atau model",
   anthropic: "claude-sonnet-5-5",
   openai: "gpt-4.1-mini",
-  openrouter: "openai/gpt-4.1-mini",
-  ollama: "llama3.1:8b",
-  custom: "nama-model",
+  deepseek: "deepseek-chat",
+  gemini: "gemini-2.5-flash",
 }
 
 interface Props {
@@ -61,8 +61,8 @@ export function AiProviderForm({ provider, onSaved, onClose }: { provider?: AiPr
   const [busy, setBusy] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
 
-  const needsKey = kind !== "ollama"
-  const needsUrl = kind === "ollama" || kind === "custom"
+  const needsKey = true
+  const needsUrl = kind === "ninerouter"
   const valid = name.trim() && model.trim() && (!needsKey || editing || apiKey.trim().length >= 8) && (!needsUrl || /^https?:\/\/\S+$/.test(baseUrl.trim()))
 
   async function submit(e: React.FormEvent) {
@@ -132,7 +132,7 @@ export function AiProviderForm({ provider, onSaved, onClose }: { provider?: AiPr
       {needsUrl && (
         <div className="grid gap-1.5">
           <Label htmlFor="pv-url">{t("URL dasar")}</Label>
-          <Input id="pv-url" className="font-mono" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="http://192.168.1.20:11434" inputMode="url" autoCapitalize="off" spellCheck={false} />
+          <Input id="pv-url" className="font-mono" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="http://172.20.0.2:8080/v1" inputMode="url" autoCapitalize="off" spellCheck={false} />
         </div>
       )}
       {needsKey && (

@@ -320,8 +320,8 @@ export class MockApi implements TelemonApi {
   private settings: AppSettings = structuredClone(DEFAULT_SETTINGS)
   private aiProviders: AiProvider[] = [
     { id: "p1", name: "Anthropic", kind: "anthropic", model: "claude-sonnet-5-5", keyHint: "sk-ant-…x7Qa", status: "ok", latencyMs: 820, checkedAt: Date.now() - 600_000, isDefault: true, balanceUsd: 38.42 },
-    { id: "p2", name: "OpenRouter", kind: "openrouter", model: "openai/gpt-4.1-mini", keyHint: "sk-or-…92fD", status: "error", error: "401: kunci ditolak atau kedaluwarsa", checkedAt: Date.now() - 3600_000, isDefault: false, balanceUsd: 0 },
-    { id: "p3", name: "Ollama lokal", kind: "ollama", model: "llama3.1:8b", baseUrl: "http://192.168.1.20:11434", status: "ok", latencyMs: 2400, checkedAt: Date.now() - 900_000, isDefault: false, balanceUsd: null },
+    { id: "p2", name: "DeepSeek", kind: "deepseek", model: "deepseek-chat", keyHint: "sk-ds…92fD", status: "error", error: "401: kunci ditolak atau kedaluwarsa", checkedAt: Date.now() - 3600_000, isDefault: false, balanceUsd: 0 },
+    { id: "p3", name: "9Router", kind: "ninerouter", model: "combo-cepat", baseUrl: "http://172.20.0.2:8080/v1", keyHint: "sk-9r…41cB", status: "ok", latencyMs: 1400, checkedAt: Date.now() - 900_000, isDefault: false, balanceUsd: null },
   ]
   private aiBudget: AiBudgetInput = { monthlyUsd: 25, alertPercent: 80, hardStop: false }
   private sessions: MockSession[]
@@ -1061,7 +1061,7 @@ export class MockApi implements TelemonApi {
       providers: structuredClone(this.aiProviders),
       budget: { ...this.aiBudget, spentMonthUsd: Math.round(spent * 100) / 100, resetAt },
       usage: window,
-      byModel: split([["claude-sonnet-5-5", "claude-sonnet-5-5", 0.86], ["llama3.1:8b", "llama3.1:8b", 0.14]]),
+      byModel: split([["claude-sonnet-5-5", "claude-sonnet-5-5", 0.86], ["combo-cepat", "combo-cepat", 0.14]]),
       byAccount: split([["admin", "admin", 0.52], ["operator", "operator", 0.38], ["pantau", "pantau", 0.1]]),
       errorRate: 0.031,
       p50Ms: 910,
@@ -1080,10 +1080,10 @@ export class MockApi implements TelemonApi {
     const name = input.name.trim()
     const model = input.model.trim()
     if (!name || !model) throw new Error(t("Nama dan model wajib diisi"))
-    const needsKey = input.kind !== "ollama"
+    const needsKey = true
     const key = input.apiKey?.trim()
     if (!id && needsKey && !key) throw new Error(t("Kunci API wajib diisi"))
-    if (input.kind === "ollama" || input.kind === "custom") {
+    if (input.kind === "ninerouter") {
       if (!/^https?:\/\/\S+$/.test(input.baseUrl?.trim() ?? "")) throw new Error(t("URL dasar harus diawali http:// atau https://"))
     }
     if (this.aiProviders.some((p) => p.id !== id && p.name.toLowerCase() === name.toLowerCase())) throw new Error(t("Nama provider sudah dipakai"))
@@ -1121,14 +1121,14 @@ export class MockApi implements TelemonApi {
     await delay(900)
     const p = this.providerOrThrow(id)
     p.checkedAt = Date.now()
-    if (p.keyHint === "sk-or-…92fD") {
+    if (p.keyHint === "sk-ds…92fD") {
       p.status = "error"
       p.error = "401: kunci ditolak atau kedaluwarsa"
     } else {
       p.status = "ok"
       p.error = undefined
       p.latencyMs = Math.round(500 + Math.random() * 1500)
-      if (p.kind === "anthropic" || p.kind === "openai" || p.kind === "openrouter") p.balanceUsd = p.balanceUsd ?? 10
+      if (p.kind === "anthropic" || p.kind === "deepseek") p.balanceUsd = p.balanceUsd ?? 10
     }
     return structuredClone(p)
   }
