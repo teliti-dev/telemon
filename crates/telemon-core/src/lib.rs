@@ -2,6 +2,7 @@
 //!
 //! Klien memakai `mikrotik-rs` (AGPL-3.0, ADR 0011) di balik trait [`RouterApi`] agar bisa diganti.
 
+pub mod auth;
 pub mod events;
 pub mod model;
 pub mod monitor;

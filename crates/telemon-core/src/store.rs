@@ -118,6 +118,40 @@ CREATE TABLE routers (
   last_import_at INTEGER,
   created_at INTEGER NOT NULL
 );
+", "
+CREATE TABLE roles (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  description TEXT NOT NULL DEFAULT '',
+  permissions TEXT NOT NULL,
+  builtin INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE accounts (
+  id TEXT PRIMARY KEY,
+  username TEXT NOT NULL UNIQUE,
+  display_name TEXT NOT NULL,
+  role_id TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  totp_enc BLOB,
+  totp_pending_enc BLOB,
+  totp_last_step INTEGER NOT NULL DEFAULT 0,
+  recovery TEXT NOT NULL DEFAULT '',
+  disabled INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  last_login_at INTEGER
+);
+CREATE TABLE sessions (
+  token_hash TEXT PRIMARY KEY,
+  id TEXT NOT NULL,
+  account_id TEXT NOT NULL,
+  via TEXT NOT NULL,
+  device TEXT NOT NULL DEFAULT '',
+  ip TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  last_seen_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL
+);
+CREATE INDEX sessions_account ON sessions(account_id);
 "];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -451,9 +485,9 @@ fn status_parse(s: &str) -> UserStatus {
 }
 
 pub struct Store {
-    conn: Connection,
+    pub(crate) conn: Connection,
     /// Ada setelah [`Store::unlock`]; tanpa itu password tidak disimpan maupun dibaca.
-    vault: Option<Vault>,
+    pub(crate) vault: Option<Vault>,
 }
 
 #[derive(Debug)]
