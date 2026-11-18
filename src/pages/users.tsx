@@ -76,7 +76,7 @@ export function UsersPage({
   params: URLSearchParams
   onOpenUser: (id: string) => void
 }) {
-  const { users, routers, routerById } = useStore()
+  const { users, routers, routerById, metas } = useStore()
   const now = useNow(15_000)
 
   const [query, setQuery] = React.useState(params.get("q") ?? "")
@@ -98,7 +98,10 @@ export function UsersPage({
           u.username.toLowerCase().includes(q) ||
           u.address?.includes(q) ||
           u.callerId?.toLowerCase().includes(q) ||
-          u.comment?.toLowerCase().includes(q))
+          u.comment?.toLowerCase().includes(q) ||
+          metas[u.id]?.customerName?.toLowerCase().includes(q) ||
+          metas[u.id]?.phone?.includes(q) ||
+          metas[u.id]?.tags.some((t) => t.toLowerCase().includes(q)))
     )
     const sorters: Record<SortKey, (a: PppUser, b: PppUser) => number> = {
       recent: (a, b) => (b.lastEventAt ?? 0) - (a.lastEventAt ?? 0),
@@ -107,7 +110,7 @@ export function UsersPage({
         (a.connectedAt ?? Number.MAX_SAFE_INTEGER) - (b.connectedAt ?? Number.MAX_SAFE_INTEGER),
     }
     return list.sort(sorters[sort])
-  }, [users, query, status, routerId, sort])
+  }, [users, metas, query, status, routerId, sort])
 
   const shown = filtered.slice(0, limit)
 
@@ -241,6 +244,7 @@ export function UsersPage({
                 {shown.map((u) => {
                   const t = uptimeOrSeen(u, now)
                   const tone = USER_TONE[userTone(u)]
+                  const label = metas[u.id]?.customerName ?? u.comment
                   return (
                     <TableRow
                       key={u.id}
@@ -249,10 +253,10 @@ export function UsersPage({
                       onKeyDown={(e) => e.key === "Enter" && onOpenUser(u.id)}
                       className={cn("cursor-pointer", tone.row)}
                     >
-                      <TableCell className={cn("pl-3 font-mono text-[13px]", tone.bar)} title={u.comment}>
+                      <TableCell className={cn("pl-3 font-mono text-[13px]", tone.bar)} title={label}>
                         {u.username}
-                        {u.comment && (
-                          <span className="ml-1.5 font-sans text-xs text-muted-foreground">· {u.comment}</span>
+                        {label && (
+                          <span className="ml-1.5 font-sans text-xs text-muted-foreground">· {label}</span>
                         )}
                       </TableCell>
                       <TableCell className="hidden text-muted-foreground lg:table-cell">{u.profile}</TableCell>
@@ -332,6 +336,7 @@ export function UsersPage({
               {shown.map((u) => {
                 const t = uptimeOrSeen(u, now)
                 const tone = userTone(u)
+                const label = metas[u.id]?.customerName ?? u.comment
                 return (
                   <li key={u.id} className="min-w-0">
                     <button
@@ -350,7 +355,7 @@ export function UsersPage({
                       </div>
                       <div className="truncate text-xs text-muted-foreground">
                         {routerById.get(u.routerId)?.name} · {u.profile}
-                        {u.comment && ` · ${u.comment}`}
+                        {label && ` · ${label}`}
                       </div>
                       <dl className="grid grid-cols-2 gap-x-2 text-xs">
                         <div className="min-w-0">

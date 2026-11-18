@@ -5,12 +5,16 @@ import type {
   RouterInfo,
   ShareBind,
   ShareState,
+  UserMeta,
+  UserMetaInput,
 } from "../types"
 
 export interface Snapshot {
   routers: RouterInfo[]
   users: PppUser[]
   events: PppEvent[]
+  /** Catatan lokal per user, kunci = id user. */
+  metas: Record<string, UserMeta>
   share: ShareState
 }
 
@@ -18,6 +22,7 @@ export type LiveUpdate =
   | { kind: "event"; event: PppEvent; user?: PppUser; router?: RouterInfo }
   | { kind: "router"; router: RouterInfo }
   | { kind: "router-removed"; routerId: string }
+  | { kind: "user-meta"; userId: string; meta: UserMeta }
   | { kind: "share"; share: ShareState }
 
 /**
@@ -32,6 +37,8 @@ export interface TelemonApi {
   subscribe(onUpdate: (u: LiveUpdate) => void): () => void
   addRouter(input: NewRouter): Promise<RouterInfo>
   removeRouter(id: string): Promise<void>
+  /** Menyimpan catatan lokal. Tidak menulis apa pun ke router. */
+  saveUserMeta(userId: string, meta: UserMetaInput): Promise<UserMeta>
   setLanShare(opts: {
     enabled: boolean
     bind: ShareBind

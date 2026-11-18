@@ -32,6 +32,20 @@ export interface PppUser {
   comment?: string
 }
 
+/**
+ * Catatan lokal per user, disimpan di Telemon (bukan di router).
+ * Kunci: id user ("routerId:username").
+ */
+export interface UserMeta {
+  customerName?: string
+  phone?: string
+  note?: string
+  tags: string[]
+  updatedAt: number
+}
+
+export type UserMetaInput = Omit<UserMeta, "updatedAt">
+
 export type PppEventType =
   | "auth_failed"
   | "authenticated"

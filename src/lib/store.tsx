@@ -24,6 +24,7 @@ function reducer(state: StoreState, action: Action): StoreState {
         routers: action.snap.routers,
         users: action.snap.users,
         events: action.snap.events.slice(0, MAX_EVENTS),
+        metas: action.snap.metas,
         share: action.snap.share,
       }
     case "live": {
@@ -54,6 +55,8 @@ function reducer(state: StoreState, action: Action): StoreState {
             routers: state.routers.filter((r) => r.id !== u.routerId),
             users: state.users.filter((x) => x.routerId !== u.routerId),
           }
+        case "user-meta":
+          return { ...state, metas: { ...state.metas, [u.userId]: u.meta } }
         case "share":
           return { ...state, share: u.share }
       }
@@ -66,6 +69,7 @@ const initial: StoreState = {
   routers: [],
   users: [],
   events: [],
+  metas: {},
 }
 
 /** Adapter Tauri dan HTTP belum ada; sementara semua lingkungan memakai data contoh. */

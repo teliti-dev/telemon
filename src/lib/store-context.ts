@@ -1,7 +1,7 @@
 import * as React from "react"
 
 import type { TelemonApi } from "./data/api"
-import type { PppEvent, PppUser, RouterInfo, ShareState } from "./types"
+import type { PppEvent, PppUser, RouterInfo, ShareState, UserMeta } from "./types"
 
 export interface StoreState {
   status: "loading" | "ready" | "error"
@@ -9,6 +9,7 @@ export interface StoreState {
   routers: RouterInfo[]
   users: PppUser[]
   events: PppEvent[]
+  metas: Record<string, UserMeta>
   share?: ShareState
 }
 

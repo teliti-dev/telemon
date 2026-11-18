@@ -17,6 +17,7 @@ Aplikasi desktop **Tauri v2** (Windows dan Linux, tanpa deploy). Lihat ADR 0001-
 - Mode **"Serve ke browser"**: tombol di UI menyalakan server Axum di proses yang sama (bawaan mati; LAN port 7878; token akses wajib; hanya baca) yang menyajikan UI yang sama + API JSON dan WebSocket. UI memakai satu lapisan data dengan adapter Tauri dan HTTP; setiap fitur data harus tersedia di keduanya.
 - Mode **"Publik"**: Cloudflare Quick Tunnel lewat sidecar `cloudflared` (versi dikunci + checksum) ke server mode serve. Wajib PIN (hash), hanya baca, rate limit login, mati otomatis (bawaan 8 jam). Event live via **WebSocket + cadangan polling, jangan SSE** (Quick Tunnel tidak mendukung SSE). Lihat ADR 0003.
 - Olympus tidak punya toolchain Rust dan webkit2gtk: build Tauri dilakukan di mesin lain atau CI. Di olympus hanya UI (`bun run dev/build/lint`).
+- **Edit user = catatan lokal** (`UserMeta`: nama pelanggan, telepon, label, catatan; disimpan di SQLite Telemon, kunci `routerId:username`). Tidak menulis ke router. Di mode serve/publik (adapter HTTP) catatan hanya bisa dibaca.
 - Telemon hanya **membaca** router (akun API grup `read`); jangan menambah fitur yang menulis ke router tanpa ADR. Kredensial router di keyring OS, bukan di SQLite atau berkas.
 
 ## Struktur UI (`src/`)

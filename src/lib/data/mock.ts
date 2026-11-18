@@ -10,6 +10,8 @@ import type {
   PppUser,
   RouterInfo,
   ShareState,
+  UserMeta,
+  UserMetaInput,
   UserStatus,
 } from "../types"
 import type { LiveUpdate, Snapshot, TelemonApi } from "./api"
@@ -162,6 +164,26 @@ function makeHistory(routers: RouterInfo[], users: PppUser[], now: number) {
   return events.sort((a, b) => b.at - a.at)
 }
 
+const CUSTOMERS = ["Budi Santoso", "Siti Rahma", "Agus Wijaya", "Dewi Lestari", "Rina Marlina", "Andi Pratama", "Joko Susilo", "Warung Bu Tini", "Masjid Al-Ikhlas", "Kantor Desa", "Toko Berkah", "Kos Putri Melati"] as const
+const NOTES = ["Rumah lantai 2, router di ruang tamu.", "Sering minta cek saat hujan.", "Bayar tiap tanggal 5.", "ONU diganti 10 Nov.", "Kabel drop dari tiang 14."] as const
+const TAGS = ["VIP", "Tunggakan", "Bermasalah", "Kantor", "Baru"] as const
+
+function makeMetas(users: PppUser[], now: number): Record<string, UserMeta> {
+  const metas: Record<string, UserMeta> = {}
+  for (const u of users) {
+    if (rand() > 0.3) continue
+    const tags = rand() < 0.5 ? [pick(TAGS)] : []
+    metas[u.id] = {
+      customerName: pick(CUSTOMERS),
+      phone: `08${Math.floor(1_000_000_000 + rand() * 8_999_999_999)}`.slice(0, 12),
+      note: rand() < 0.6 ? pick(NOTES) : undefined,
+      tags,
+      updatedAt: now - Math.floor(rand() * 30 * 86400_000),
+    }
+  }
+  return metas
+}
+
 const TUNNEL_WORDS = ["quiet", "river", "amber", "solar", "maple", "harbor", "nickel", "violet", "canyon", "pixel", "meadow", "tango"]
 
 export class MockApi implements TelemonApi {
@@ -169,6 +191,7 @@ export class MockApi implements TelemonApi {
   private routers: RouterInfo[]
   private users: PppUser[]
   private events: PppEvent[]
+  private metas: Record<string, UserMeta>
   private share: ShareState = {
     lan: { enabled: false, bind: "lan", port: 7878 },
     publik: { status: "off", pinSet: false, durationHours: 8 },
@@ -182,6 +205,7 @@ export class MockApi implements TelemonApi {
     this.routers = makeRouters(now)
     this.users = makeUsers(this.routers, now)
     this.events = makeHistory(this.routers, this.users, now)
+    this.metas = makeMetas(this.users, now)
   }
 
   async snapshot(): Promise<Snapshot> {
@@ -190,6 +214,7 @@ export class MockApi implements TelemonApi {
       routers: this.routers.map((r) => ({ ...r })),
       users: this.users.map((u) => ({ ...u })),
       events: [...this.events],
+      metas: structuredClone(this.metas),
       share: structuredClone(this.share),
     }
   }
@@ -277,6 +302,22 @@ export class MockApi implements TelemonApi {
     this.routers = this.routers.filter((r) => r.id !== id)
     this.users = this.users.filter((u) => u.routerId !== id)
     this.emit({ kind: "router-removed", routerId: id })
+  }
+
+  async saveUserMeta(userId: string, input: UserMetaInput): Promise<UserMeta> {
+    await delay(300)
+    if (!this.users.some((u) => u.id === userId)) throw new Error("User tidak ditemukan")
+    const clean = (v?: string) => v?.trim() || undefined
+    const meta: UserMeta = {
+      customerName: clean(input.customerName),
+      phone: clean(input.phone),
+      note: clean(input.note),
+      tags: [...new Set(input.tags.map((t) => t.trim()).filter(Boolean))].slice(0, 8),
+      updatedAt: Date.now(),
+    }
+    this.metas[userId] = meta
+    this.emit({ kind: "user-meta", userId, meta })
+    return meta
   }
 
   private shareChanged() {
