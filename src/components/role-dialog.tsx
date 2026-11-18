@@ -16,7 +16,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useApi } from "@/lib/api-context"
-import { DEFAULT_NEW_ACCOUNT_ROLE_ID, DEFAULT_ROLES } from "@/lib/defaults"
+import { DEFAULT_ROLES } from "@/lib/defaults"
 import { hasUpdate } from "@/lib/permissions"
 import type { Permissions, Role } from "@/lib/types"
 
@@ -41,10 +41,11 @@ export function RoleDialog({ open, onOpenChange, ...rest }: Props) {
 function RoleForm({ role, onDone, onClose }: Omit<Props, "open" | "onOpenChange"> & { onClose: () => void }) {
   const { api } = useApi()
   const def = role?.builtin ? DEFAULT_ROLES.find((d) => d.id === role.id) : undefined
-  const template = DEFAULT_ROLES.find((d) => d.id === DEFAULT_NEW_ACCOUNT_ROLE_ID)!.permissions
+  // Peran baru: tanpa akses sampai diberi centang.
+  const none: Permissions = { ringkasan: "none", user: "none", profile: "none", event: "none", router: "none" }
   const [name, setName] = React.useState(role?.name ?? "")
   const [description, setDescription] = React.useState(role?.description ?? "")
-  const [perms, setPerms] = React.useState<Permissions>(role?.permissions ?? { ...template })
+  const [perms, setPerms] = React.useState<Permissions>(role?.permissions ?? none)
   const [busy, setBusy] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
 
@@ -74,8 +75,8 @@ function RoleForm({ role, onDone, onClose }: Omit<Props, "open" | "onOpenChange"
       <DialogHeader>
         <DialogTitle>{role ? `Edit peran ${role.name}` : "Tambah peran"}</DialogTitle>
         <DialogDescription>
-          Pilih apa yang boleh dilakukan akun dengan peran ini di tiap menu. Menu Berbagi, Admin, dan Pengaturan
-          selalu hanya di aplikasi desktop.
+          Bawaan tanpa akses: centang menu yang boleh dilihat atau diubah akun dengan peran ini. Menu Berbagi, Admin, dan Pengaturan
+          selalu hanya di aplikasi desktop. Halaman Akun saya (profil sendiri, password, 2FA, sesi) tidak memerlukan izin.
         </DialogDescription>
       </DialogHeader>
 

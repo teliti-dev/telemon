@@ -1,7 +1,7 @@
 /**
  * Cara UI diakses:
  * - "desktop": aplikasi Tauri di komputer pemilik. Tanpa login; boleh menulis ke router (ADR 0004).
- * - "remote": browser lewat Serve LAN atau Publik. Wajib login; hanya baca.
+ * - "remote": browser lewat Serve LAN atau Publik. Wajib login; boleh apa saja mengikuti peran akun (ADR 0006).
  */
 export type Access = "desktop" | "remote"
 

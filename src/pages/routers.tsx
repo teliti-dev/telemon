@@ -239,7 +239,7 @@ function AddRouterDialog({
             <DialogTitle>Tambah router</DialogTitle>
             <DialogDescription>
               Pakai akun API khusus. Grup <code>read</code> cukup untuk memantau; tambah
-              hak <code>write</code> bila user dan profile ingin diedit dari Telemon.
+              hak <code>write</code> bila user dan profil PPP ingin diedit dari Telemon.
               Password disimpan di keyring sistem operasi.
             </DialogDescription>
           </DialogHeader>
@@ -282,7 +282,7 @@ function AddRouterDialog({
           </div>
           <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
             <div className="grid gap-0.5">
-              <Label htmlFor="r-write">Izinkan edit user dan profile</Label>
+              <Label htmlFor="r-write">Izinkan edit user dan profil PPP</Label>
               <p className="text-xs text-muted-foreground">
                 Nyalakan hanya bila akun API di atas punya hak write. Setiap tulis ke router
                 tetap meminta konfirmasi.

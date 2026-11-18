@@ -109,7 +109,7 @@ function ImportBody({
         <InfoIcon />
         <AlertDescription>
           <b>Router adalah source of truth.</b> Saat ada selisih, data di Telemon ditimpa
-          dengan data router. User atau profile yang sudah tidak ada di router ditandai
+          dengan data router. User atau profil PPP yang sudah tidak ada di router ditandai
           dihapus (soft delete), bukan dibuang. Password tidak ikut diimpor.
         </AlertDescription>
       </Alert>
@@ -150,7 +150,7 @@ function ImportBody({
               {r.result && (
                 <>
                   <Counts label="User" c={r.result.users} />
-                  <Counts label="Profile" c={r.result.profiles} />
+                  <Counts label="Profil PPP" c={r.result.profiles} />
                 </>
               )}
             </li>

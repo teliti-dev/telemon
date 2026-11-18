@@ -5,7 +5,7 @@ import type { TelemonApi } from "./data/api"
 
 export interface ApiValue {
   api: TelemonApi
-  /** Desktop (tanpa login, boleh menulis ke router) atau jarak jauh (login, hanya baca). */
+  /** Desktop (tanpa login, boleh menulis ke router) atau jarak jauh (login, izin mengikuti peran). */
   access: Access
 }
 

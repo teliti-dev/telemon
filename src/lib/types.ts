@@ -11,9 +11,9 @@ export interface RouterInfo {
   status: RouterStatus
   /** Waktu polling terakhir yang berhasil (epoch ms). */
   lastPollAt?: number
-  /** Akun API router punya hak write, jadi user/profile boleh diedit dari Telemon. */
+  /** Akun API router punya hak write, jadi user/profil PPP boleh diedit dari Telemon. */
   canWrite: boolean
-  /** Import user/profile terakhir (epoch ms). */
+  /** Import user/profil PPP terakhir (epoch ms). */
   lastImportAt?: number
   error?: string
 }
@@ -162,7 +162,7 @@ export interface ShareAuth {
 /** Menu yang bisa diatur izinnya untuk akun jarak jauh. Berbagi, Admin, dan Pengaturan hanya di aplikasi desktop. */
 export type Resource = "ringkasan" | "user" | "profile" | "event" | "router"
 
-/** Tanpa akses, hanya baca, atau ubah (tambah, edit, soft delete, pulihkan, import). */
+/** Tanpa akses (bawaan), lihat, atau ubah (tambah, edit, soft delete, pulihkan, import). Ubah mencakup lihat. */
 export type Level = "none" | "read" | "update"
 
 export type Permissions = Record<Resource, Level>
@@ -225,7 +225,7 @@ export interface StorageInfo {
   purgeable: PurgeCounts
 }
 
-/** Akun untuk akses non-desktop (browser lewat Serve LAN dan Publik). Semua akun hanya baca. */
+/** Akun untuk akses non-desktop (browser lewat Serve LAN dan Publik). Apa yang boleh dilakukan mengikuti peran. */
 export interface AccountSummary {
   id: string
   username: string
@@ -270,7 +270,7 @@ export interface TwoFactorSetup {
 }
 
 export interface NewRouter {
-  /** Izinkan edit user/profile (akun API punya hak write). */
+  /** Izinkan edit user/profil PPP (akun API punya hak write). */
   allowWrite: boolean
   name: string
   host: string

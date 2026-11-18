@@ -23,7 +23,7 @@ export function UsersSectionNav({ page }: { page: Extract<Page, "user" | "profil
         Users <span className="text-xs text-muted-foreground tabular-nums">{liveUsers.length}</span>
       </ToggleGroupItem>
       <ToggleGroupItem value="profile" className="gap-1.5 px-3">
-        Profile <span className="text-xs text-muted-foreground tabular-nums">{nProfiles}</span>
+        Profil PPP <span className="text-xs text-muted-foreground tabular-nums">{nProfiles}</span>
       </ToggleGroupItem>
     </ToggleGroup>
   )

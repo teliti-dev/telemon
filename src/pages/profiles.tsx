@@ -96,7 +96,7 @@ export function ProfilesPage({ params }: { params: URLSearchParams }) {
   async function restore(p: PppProfile) {
     try {
       await api.restoreProfile(p.id)
-      toast.success(`Profile ${p.name} dipulihkan`)
+      toast.success(`Profil PPP ${p.name} dipulihkan`)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
     }
@@ -152,7 +152,7 @@ export function ProfilesPage({ params }: { params: URLSearchParams }) {
             title={canWriteAny ? undefined : (profileReason ?? "Tidak ada router dengan hak write")}
           >
             <PlusIcon />
-            <span className="hidden sm:inline">Tambah profile</span>
+            <span className="hidden sm:inline">Tambah profil PPP</span>
             <span className="sm:hidden">Tambah</span>
           </Button>
         </div>
@@ -166,7 +166,7 @@ export function ProfilesPage({ params }: { params: URLSearchParams }) {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Cari nama, rate limit…"
-            aria-label="Cari profile"
+            aria-label="Cari profil PPP"
             className="pl-8"
           />
         </div>
@@ -204,12 +204,12 @@ export function ProfilesPage({ params }: { params: URLSearchParams }) {
       </div>
 
       <p className="-mb-1 text-xs text-muted-foreground" aria-live="polite">
-        {formatNumber(filtered.length)} profile
+        {formatNumber(filtered.length)} profil PPP
       </p>
 
       {filtered.length === 0 ? (
         <Card className="items-center py-12 text-sm text-muted-foreground">
-          {view === "deleted" ? "Tidak ada profile terhapus." : "Tidak ada profile yang cocok dengan filter."}
+          {view === "deleted" ? "Tidak ada profil PPP terhapus." : "Tidak ada profil PPP yang cocok dengan filter."}
         </Card>
       ) : (
         <>
@@ -248,7 +248,7 @@ export function ProfilesPage({ params }: { params: URLSearchParams }) {
                           className="hover:underline disabled:no-underline"
                           disabled={!u}
                           onClick={() => navigate("user", { router: p.routerId, q: p.name })}
-                          title="Lihat user dengan profile ini"
+                          title="Lihat user dengan profil PPP ini"
                         >
                           {u ? `${u.active}/${u.total}` : "0"}
                         </button>
@@ -314,11 +314,11 @@ export function ProfilesPage({ params }: { params: URLSearchParams }) {
       <ConfirmDialog
         open={!!removing}
         onOpenChange={(o) => !o && setRemoving(null)}
-        title={`Hapus profile ${removing?.name}?`}
+        title={`Hapus profil PPP ${removing?.name}?`}
         description={
           <p>
-            Soft delete: profile disembunyikan dari pilihan di Telemon dan bisa dipulihkan.
-            Profile di router <b>{routerById.get(removing?.routerId ?? "")?.name}</b> tidak dihapus.
+            Soft delete: profil PPP disembunyikan dari pilihan di Telemon dan bisa dipulihkan.
+            Profil PPP di router <b>{routerById.get(removing?.routerId ?? "")?.name}</b> tidak dihapus.
           </p>
         }
         confirmLabel="Hapus"
@@ -326,7 +326,7 @@ export function ProfilesPage({ params }: { params: URLSearchParams }) {
         onConfirm={async () => {
           if (removing) {
             await api.softDeleteProfile(removing.id)
-            toast.success(`Profile ${removing.name} dihapus (soft)`)
+            toast.success(`Profil PPP ${removing.name} dihapus (soft)`)
           }
         }}
       />

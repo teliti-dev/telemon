@@ -59,7 +59,7 @@ export function RolesCard() {
       <CardHeader>
         <CardTitle>Peran dan izin</CardTitle>
         <CardDescription>
-          Izin per menu untuk akun yang masuk lewat browser: tanpa akses, hanya baca, atau ubah. Aplikasi desktop tidak
+          Izin per menu untuk akun yang masuk lewat browser. Bawaan tanpa akses; centang Lihat atau Ubah per menu. Aplikasi desktop tidak
           dibatasi peran.
         </CardDescription>
         <CardAction>

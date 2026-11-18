@@ -289,7 +289,7 @@ function UserForm({
         <Label htmlFor="u-profile">Profil</Label>
         <Select value={profile} onValueChange={setProfile} disabled={profileOptions.length === 0}>
           <SelectTrigger id="u-profile" className="w-full">
-            <SelectValue placeholder="Pilih profile" />
+            <SelectValue placeholder="Pilih profil PPP" />
           </SelectTrigger>
           <SelectContent>
             {profileOptions.map((n) => (

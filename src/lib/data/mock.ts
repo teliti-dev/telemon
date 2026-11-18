@@ -921,14 +921,14 @@ export class MockApi implements TelemonApi {
 
   private profileOrThrow(id: string) {
     const p = this.profiles.find((x) => x.id === id)
-    if (!p) throw new Error("Profile tidak ditemukan")
+    if (!p) throw new Error("Profil PPP tidak ditemukan")
     return p
   }
 
   private checkProfileExists(routerId: string, name: string) {
     const p = this.profiles.find((x) => x.routerId === routerId && x.name === name)
-    if (!p) throw new Error(`Profile "${name}" tidak ada di router`)
-    if (p.deletedAt) throw new Error(`Profile "${name}" sudah dihapus; pulihkan dulu`)
+    if (!p) throw new Error(`Profil PPP "${name}" tidak ada di router`)
+    if (p.deletedAt) throw new Error(`Profil PPP "${name}" sudah dihapus; pulihkan dulu`)
   }
 
   private emitUser(u: PppUser) {
@@ -1034,10 +1034,10 @@ export class MockApi implements TelemonApi {
     const r = this.writableRouter(input.routerId)
     const name = input.name.trim()
     if (!/^[\w.-]{1,40}$/.test(name)) {
-      throw new Error("Nama profile 1-40 karakter: huruf, angka, titik, garis bawah, atau strip")
+      throw new Error("Nama profil PPP 1-40 karakter: huruf, angka, titik, garis bawah, atau strip")
     }
     if (this.profiles.some((p) => p.routerId === r.id && p.name === name)) {
-      throw new Error("Nama profile sudah ada di router ini (cek juga yang sudah dihapus)")
+      throw new Error("Nama profil PPP sudah ada di router ini (cek juga yang sudah dihapus)")
     }
     this.validateRate(input.rateLimit)
     const p: PppProfile = {
@@ -1058,7 +1058,7 @@ export class MockApi implements TelemonApi {
     this.authorize("profile")
     await delay(800)
     const p = this.profileOrThrow(id)
-    if (p.deletedAt) throw new Error("Profile sudah dihapus; pulihkan dulu")
+    if (p.deletedAt) throw new Error("Profil PPP sudah dihapus; pulihkan dulu")
     this.writableRouter(p.routerId)
     if ("rateLimit" in patch) {
       this.validateRate(patch.rateLimit)
@@ -1076,7 +1076,7 @@ export class MockApi implements TelemonApi {
     await delay(400)
     const p = this.profileOrThrow(id)
     const used = this.users.filter((u) => u.routerId === p.routerId && u.profile === p.name && !u.deletedAt).length
-    if (used > 0) throw new Error(`Profile masih dipakai ${used} user; pindahkan user-nya dulu`)
+    if (used > 0) throw new Error(`Profil PPP masih dipakai ${used} user; pindahkan user-nya dulu`)
     p.deletedAt = Date.now()
     p.deletedReason = "manual"
     return this.emitProfile(p)

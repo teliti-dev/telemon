@@ -41,7 +41,7 @@ export type LiveUpdate =
   | { kind: "router-removed"; routerId: string }
   | { kind: "user"; user: PppUser }
   | { kind: "profile"; profile: PppProfile }
-  /** Ganti seluruh user dan profile milik satu router (setelah import). */
+  /** Ganti seluruh user dan profil PPP milik satu router (setelah import). */
   | { kind: "inventory"; routerId: string; users: PppUser[]; profiles: PppProfile[] }
   | { kind: "user-meta"; userId: string; meta: UserMeta }
   | { kind: "share"; share: ShareState }

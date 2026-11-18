@@ -46,7 +46,6 @@ import { Switch } from "@/components/ui/switch"
 import { useNow } from "@/hooks/use-now"
 import { useApi } from "@/lib/api-context"
 import { formatRelative } from "@/lib/format"
-import { DEFAULT_NEW_ACCOUNT_ROLE_ID } from "@/lib/defaults"
 import { randomPassword } from "@/lib/random"
 import { useStore } from "@/lib/store-context"
 import type { AccountSummary, Role } from "@/lib/types"
@@ -60,7 +59,7 @@ type Dialog_ =
   | { kind: "role"; account: AccountSummary }
   | { kind: "reset-2fa" | "delete"; account: AccountSummary }
 
-/** Akun untuk akses lewat browser (Serve LAN dan Publik). Semua akun hanya baca. */
+/** Akun untuk akses lewat browser (Serve LAN dan Publik). Izin mengikuti peran. */
 export function AccountsCard() {
   const { api } = useApi()
   const { share } = useStore()
@@ -298,7 +297,7 @@ function AddAccountDialog({
   roles: Role[]
 }) {
   const { api } = useApi()
-  const [roleId, setRoleId] = React.useState(DEFAULT_NEW_ACCOUNT_ROLE_ID)
+  const [roleId, setRoleId] = React.useState("")
   const [username, setUsername] = React.useState("")
   const [displayName, setDisplayName] = React.useState("")
   const [password, setPassword] = React.useState("")
@@ -313,7 +312,7 @@ function AddAccountDialog({
           setUsername("")
           setDisplayName("")
           setPassword("")
-          setRoleId(DEFAULT_NEW_ACCOUNT_ROLE_ID)
+          setRoleId("")
           setError(null)
         }
         onOpenChange(o)
@@ -357,7 +356,7 @@ function AddAccountDialog({
           <div className="grid gap-1.5">
             <Label htmlFor="ac-role">Peran</Label>
             <RoleSelect id="ac-role" roles={roles} value={roleId} onChange={setRoleId} />
-            <p className="text-xs text-muted-foreground">Bawaan Viewer (hanya baca). Atur izin peran di tab Peran.</p>
+            <p className="text-xs text-muted-foreground">Wajib dipilih; tanpa peran akun tidak punya akses. Atur izin peran di tab Peran.</p>
           </div>
           <div className="grid gap-1.5">
             <Label htmlFor="ac-pass">Password awal</Label>

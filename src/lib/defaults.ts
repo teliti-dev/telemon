@@ -44,7 +44,7 @@ export const DEFAULT_ROLES: DefaultRole[] = [
   {
     id: "role-operator",
     name: "Operator",
-    description: "Mengelola user dan profile; router hanya dilihat.",
+    description: "Mengelola user dan profil PPP; router hanya dilihat.",
     permissions: { ringkasan: "read", user: "update", profile: "update", event: "read", router: "read" },
   },
   {
@@ -60,6 +60,3 @@ export const DEFAULT_ROLES: DefaultRole[] = [
     permissions: { ringkasan: "read", user: "none", profile: "none", event: "read", router: "read" },
   },
 ]
-
-/** Peran untuk akun baru (hak paling sedikit yang masih berguna). */
-export const DEFAULT_NEW_ACCOUNT_ROLE_ID = "role-viewer"

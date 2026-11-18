@@ -6,19 +6,19 @@ import type { Level, Permissions, Resource } from "./types"
 export const RESOURCES: { key: Resource; label: string; levels: Level[]; hint: string }[] = [
   { key: "ringkasan", label: "Ringkasan", levels: ["none", "read"], hint: "Angka dan kartu ringkasan" },
   { key: "user", label: "Users", levels: ["none", "read", "update"], hint: "Ubah: tambah, edit, hapus (soft), pulihkan, catatan" },
-  { key: "profile", label: "Profile", levels: ["none", "read", "update"], hint: "Ubah: tambah, edit, hapus (soft), pulihkan" },
+  { key: "profile", label: "Profil PPP", levels: ["none", "read", "update"], hint: "Profil PPP di router (rate limit, pool). Ubah: tambah, edit, hapus (soft), pulihkan" },
   { key: "event", label: "Event", levels: ["none", "read"], hint: "Feed dan riwayat event PPPoE" },
   { key: "router", label: "Router", levels: ["none", "read", "update"], hint: "Ubah: import dari Mikrotik. Tambah/hapus router hanya dari desktop" },
 ]
 
 export const LEVEL_LABEL: Record<Level, string> = {
   none: "Tanpa akses",
-  read: "Hanya baca",
+  read: "Lihat",
   update: "Ubah",
 }
 
 /** Label pendek untuk tabel. */
-export const LEVEL_SHORT: Record<Level, string> = { none: "—", read: "Baca", update: "Ubah" }
+export const LEVEL_SHORT: Record<Level, string> = { none: "—", read: "Lihat", update: "Ubah" }
 
 export function hasUpdate(p: Permissions) {
   return Object.values(p).includes("update")

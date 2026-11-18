@@ -220,7 +220,7 @@ function SettingsForm() {
               onChange={(v) => set("retention", { deletedDays: v })}
             />
             <ChoiceField id="ret-audit" label="Simpan riwayat perubahan dan login" value={r.auditDays} options={OPT_AUDIT} onChange={(v) => set("retention", { auditDays: v })} />
-            <p className="text-xs text-muted-foreground">Catatan pelanggan dan data user/profile dari router tidak dihapus otomatis.</p>
+            <p className="text-xs text-muted-foreground">Catatan pelanggan dan data user/profil PPP dari router tidak dihapus otomatis.</p>
           </CardContent>
         </Card>
 
@@ -272,7 +272,7 @@ function SettingsForm() {
             {m.allowPublicWrite && (
               <Alert variant="destructive">
                 <AlertDescription>
-                  Perubahan user dan profile bisa dikirim ke router dari internet. Pastikan hanya peran tepercaya yang punya izin
+                  Perubahan user dan profil PPP bisa dikirim ke router dari internet. Pastikan hanya peran tepercaya yang punya izin
                   Ubah, dan semua akun memakai 2FA.
                 </AlertDescription>
               </Alert>
@@ -342,7 +342,7 @@ function StorageCard({ dirty }: { dirty: boolean }) {
                 <dd className="tabular-nums">{formatNumber(info.users)} ({formatNumber(info.deletedUsers)} terhapus)</dd>
               </div>
               <div>
-                <dt className="text-xs text-muted-foreground">Profile terhapus</dt>
+                <dt className="text-xs text-muted-foreground">Profil PPP terhapus</dt>
                 <dd className="tabular-nums">{formatNumber(info.deletedProfiles)}</dd>
               </div>
             </dl>
@@ -367,7 +367,7 @@ function StorageCard({ dirty }: { dirty: boolean }) {
         title="Bersihkan data sekarang?"
         description={
           <p>
-            Data yang melewati batas retensi dihapus permanen dari Telemon ({p ? `${formatNumber(p.events)} event, ${formatNumber(p.users)} user, ${formatNumber(p.profiles)} profile` : ""}).
+            Data yang melewati batas retensi dihapus permanen dari Telemon ({p ? `${formatNumber(p.events)} event, ${formatNumber(p.users)} user, ${formatNumber(p.profiles)} profil PPP` : ""}).
             Data di router tidak berubah.
           </p>
         }
@@ -375,7 +375,7 @@ function StorageCard({ dirty }: { dirty: boolean }) {
         destructive
         onConfirm={async () => {
           const c = await api.purgeNow()
-          toast.success(`Dibersihkan: ${formatNumber(c.events)} event, ${formatNumber(c.users)} user, ${formatNumber(c.profiles)} profile`)
+          toast.success(`Dibersihkan: ${formatNumber(c.events)} event, ${formatNumber(c.users)} user, ${formatNumber(c.profiles)} profil PPP`)
           load()
         }}
       />

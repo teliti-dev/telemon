@@ -115,14 +115,14 @@ export function AppearanceDrawer({ iconOnly }: { iconOnly?: boolean }) {
             <section className="rounded-xl border border-dashed p-3">
               <h3 className="mb-1 text-sm font-medium">Pratinjau data contoh</h3>
               <p className="mb-2 text-xs text-muted-foreground">
-                Hanya ada di mode data contoh. Meniru aplikasi desktop (tanpa login) atau akses lewat browser (login, hanya baca).
+                Hanya ada di mode data contoh. Meniru aplikasi desktop (tanpa login) atau akses lewat browser (login, izin mengikuti peran).
               </p>
               <ChoiceGroup<Access>
                 label="Pratinjau akses"
                 value={access}
                 options={[
                   { value: "desktop", label: "Aplikasi desktop", hint: "tanpa login" },
-                  { value: "remote", label: "Jarak jauh", hint: "login, hanya baca" },
+                  { value: "remote", label: "Jarak jauh", hint: "login, sesuai peran" },
                 ]}
                 onChange={(v) => v !== access && setPreviewAccess(v)}
                 columns={2}

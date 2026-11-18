@@ -129,7 +129,7 @@ function ProfileForm({
     try {
       if (editing && profile) {
         await api.updateProfile(profile.id, patch)
-        toast.success(`Profile ${profile.name} diperbarui di ${router?.name}`)
+        toast.success(`Profil PPP ${profile.name} diperbarui di ${router?.name}`)
       } else {
         const p = await api.createProfile({
           routerId,
@@ -140,7 +140,7 @@ function ProfileForm({
           onlyOne,
           comment: comment.trim() || undefined,
         })
-        toast.success(`Profile ${p.name} dibuat di ${router?.name}`)
+        toast.success(`Profil PPP ${p.name} dibuat di ${router?.name}`)
       }
       onClose()
     } catch (e) {
@@ -156,7 +156,7 @@ function ProfileForm({
         <DialogHeader>
           <DialogTitle>Tulis ke {router?.name}?</DialogTitle>
           <DialogDescription>
-            Perubahan profile langsung dikirim ke router. Sesi yang sedang berjalan bisa
+            Perubahan profil PPP langsung dikirim ke router. Sesi yang sedang berjalan bisa
             terpengaruh, misalnya saat rate limit diubah.
           </DialogDescription>
         </DialogHeader>
@@ -188,7 +188,7 @@ function ProfileForm({
       }}
     >
       <DialogHeader>
-        <DialogTitle>{editing ? `Edit profile ${profile?.name}` : "Tambah profile"}</DialogTitle>
+        <DialogTitle>{editing ? `Edit profil PPP ${profile?.name}` : "Tambah profil PPP"}</DialogTitle>
         <DialogDescription>
           {editing ? "Mengubah /ppp/profile di router." : "Membuat /ppp/profile baru di router."}
         </DialogDescription>
