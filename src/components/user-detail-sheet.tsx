@@ -2,6 +2,8 @@ import * as React from "react"
 import {
   CopyIcon,
   InfoIcon,
+  EyeIcon,
+  EyeOffIcon,
   PencilIcon,
   PhoneIcon,
   RotateCcwIcon,
@@ -91,6 +93,47 @@ function Field({
 }
 
 /** 24 batang, satu per jam; warna = kejadian terburuk pada jam itu. */
+/** Password PPPoE: tersembunyi bawaan, tombol tampil/sembunyikan dan salin. Hanya untuk peran berizin Ubah. */
+function PasswordField({ user }: { user: PppUser }) {
+  const t = useT()
+  const [shown, setShown] = React.useState<string | null>(null)
+  const visible = shown === user.id
+  const btn = "shrink-0 rounded p-1 text-muted-foreground md:p-0.5 hover:bg-muted hover:text-foreground"
+  return (
+    <div className="min-w-0">
+      <dt className="text-xs text-muted-foreground">{t("Password PPPoE")}</dt>
+      <dd className="flex items-center gap-1">
+        <span className="min-w-0 truncate font-mono text-[13px]">
+          {user.password ? (visible ? user.password : "••••••••") : "-"}
+        </span>
+        {user.password && (
+          <>
+            <button
+              type="button"
+              aria-label={visible ? t("Sembunyikan password") : t("Tampilkan password")}
+              title={visible ? t("Sembunyikan password") : t("Tampilkan password")}
+              aria-pressed={visible}
+              onClick={() => setShown(visible ? null : user.id)}
+              className={btn}
+            >
+              {visible ? <EyeOffIcon className="size-3.5" /> : <EyeIcon className="size-3.5" />}
+            </button>
+            <button
+              type="button"
+              aria-label={t("Salin password")}
+              title={t("Salin password")}
+              onClick={() => copyText(user.password!, t("Password disalin"))}
+              className={btn}
+            >
+              <CopyIcon className="size-3.5" />
+            </button>
+          </>
+        )}
+      </dd>
+    </div>
+  )
+}
+
 function ActivityStrip({ events, now }: { events: PppEvent[]; now: number }) {
   const t = useT()
   const buckets = Array.from({ length: 24 }, () => ({ c: 0, d: 0, a: 0 }))
@@ -153,6 +196,7 @@ function InfoTab({
   const failed = count("auth_failed")
   const lastFail = day.find((e) => e.type === "auth_failed")
   const tone = userTone(user)
+  const canSeePassword = useUpdateGate("user")() === null
 
   const notices: React.ReactNode[] = []
   if (user.deletedAt) {
@@ -240,6 +284,7 @@ function InfoTab({
           <Field label={tk("Profil")} value={user.profile} />
           <Field label={tk("IP statis")} value={user.staticAddress} mono />
           <Field label={tk("Router")} value={router?.name} />
+          {canSeePassword && <PasswordField user={user} />}
         </dl>
       </section>
 

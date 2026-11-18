@@ -130,6 +130,7 @@ function makeUsers(routers: RouterInfo[], now: number): PppUser[] {
         profile: pick(PROFILES),
         status,
         callerId: mac(),
+        password: Array.from({ length: 8 }, () => "abcdefghjkmnpqrstuvwxyz23456789"[Math.floor(rand() * 31)]).join(""),
         lastSeenAt,
         comment: rand() < 0.2 ? pick(["Pelanggan baru", "Tunggakan", "Pindah alamat", "VIP"]) : undefined,
       }
@@ -1179,6 +1180,7 @@ export class MockApi implements TelemonApi {
       username,
       profile: input.profile,
       status: input.disabled ? "disabled" : "inactive",
+      password: input.password,
       staticAddress: input.staticAddress?.trim() || undefined,
       comment: input.comment?.trim() || undefined,
     }
@@ -1197,6 +1199,7 @@ export class MockApi implements TelemonApi {
       this.checkProfileExists(r.id, patch.profile)
       u.profile = patch.profile
     }
+    if (patch.password) u.password = patch.password
     if ("staticAddress" in patch) u.staticAddress = patch.staticAddress?.trim() || undefined
     if ("comment" in patch) u.comment = patch.comment?.trim() || undefined
     if (patch.disabled === true && u.status !== "disabled") {

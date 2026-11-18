@@ -95,4 +95,7 @@ export default {
   "Soft delete: secret di": "Soft delete: the secret on",
   "dinonaktifkan dan sesi yang sedang berjalan diputus. Secret tidak dihapus dari router dan bisa dipulihkan dari Telemon.": "is disabled and the running session is dropped. The secret is not removed from the router and can be restored from Telemon.",
   "{user} dihapus (soft)": "{user} deleted (soft)",
+  "Password PPPoE": "PPPoE password",
+  "Salin password": "Copy password",
+  "Password disalin": "Password copied",
 } satisfies Record<string, string>

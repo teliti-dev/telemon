@@ -34,6 +34,8 @@ export interface PppUser {
   lastEvent?: PppEventType
   lastEventAt?: number
   comment?: string
+  /** Password secret PPPoE. Hanya untuk yang berizin Ubah pada Users; jangan dicatat di log. */
+  password?: string
   /** Remote address statis di secret (opsional). */
   staticAddress?: string
   /** Soft delete: secret di router dinonaktifkan, data tetap ada di Telemon. */
