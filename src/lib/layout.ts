@@ -1,0 +1,2 @@
+/** Lebar dan jarak kiri-kanan konten; dipakai header dan halaman agar sejajar. */
+export const PAGE_CONTAINER = "mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8"

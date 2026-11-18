@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { ApiProvider } from "@/lib/api-provider"
+import { PAGE_CONTAINER } from "@/lib/layout"
 import { useRoute, type Page } from "@/lib/route"
 import { StoreProvider } from "@/lib/store"
 import { useStore } from "@/lib/store-context"
@@ -76,7 +77,7 @@ function Content() {
   return (
     <div className="flex min-h-svh flex-col">
       <SiteHeader title={TITLES[page]} />
-      <main className="mx-auto w-full max-w-screen-2xl flex-1 p-3 pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:p-4">
+      <main className={`${PAGE_CONTAINER} flex-1 py-4 pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:py-6`}>
         {body}
       </main>
       <BottomNav />

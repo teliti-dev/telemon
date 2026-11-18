@@ -29,11 +29,11 @@ export function AccountMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" className="gap-1.5 px-1.5" aria-label="Menu akun">
+        <Button variant="ghost" size="sm" className="gap-1.5 px-2" aria-label="Profile">
           <span className="flex size-6 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground">
             {initials}
           </span>
-          <span className="hidden max-w-28 truncate lg:inline">{session.displayName}</span>
+          <span className="hidden sm:inline">Profile</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-52">
