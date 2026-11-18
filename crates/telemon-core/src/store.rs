@@ -10,6 +10,7 @@ use rusqlite::{Connection, OptionalExtension, params, params_from_iter};
 use crate::events::{Event, EventKind};
 use crate::model::{PppActive, PppProfile, PppSecret};
 use crate::poller::{UserStatus, user_status};
+use crate::vault::{Vault, VaultError};
 use crate::write::Change;
 
 pub type Result<T> = rusqlite::Result<T>;
@@ -90,6 +91,16 @@ CREATE TABLE audit (
 );
 CREATE INDEX audit_at ON audit(at_ms);
 CREATE INDEX audit_router ON audit(router_id, at_ms);
+", "
+CREATE TABLE user_secrets (
+  user_id TEXT PRIMARY KEY,
+  enc BLOB NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE vault_meta (
+  k TEXT PRIMARY KEY,
+  v BLOB NOT NULL
+);
 "];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -253,7 +264,47 @@ fn status_parse(s: &str) -> UserStatus {
 
 pub struct Store {
     conn: Connection,
+    /// Ada setelah [`Store::unlock`]; tanpa itu password tidak disimpan maupun dibaca.
+    vault: Option<Vault>,
 }
+
+#[derive(Debug)]
+pub enum PasswordError {
+    /// Belum `unlock`.
+    Locked,
+    /// Kunci tidak cocok dengan basis data ini.
+    WrongKey,
+    Vault(VaultError),
+    Db(rusqlite::Error),
+}
+
+impl std::fmt::Display for PasswordError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PasswordError::Locked => f.write_str("penyimpanan password terkunci"),
+            PasswordError::WrongKey => f.write_str("kunci enkripsi tidak cocok dengan basis data"),
+            PasswordError::Vault(e) => write!(f, "{e}"),
+            PasswordError::Db(e) => write!(f, "basis data: {e}"),
+        }
+    }
+}
+
+impl std::error::Error for PasswordError {}
+
+impl From<rusqlite::Error> for PasswordError {
+    fn from(e: rusqlite::Error) -> Self {
+        PasswordError::Db(e)
+    }
+}
+
+impl From<VaultError> for PasswordError {
+    fn from(e: VaultError) -> Self {
+        PasswordError::Vault(e)
+    }
+}
+
+const CANARY_PLAIN: &[u8] = b"telemon-vault-v1";
+const CANARY_AAD: &[u8] = b"canary";
 
 impl Store {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
@@ -277,7 +328,7 @@ impl Store {
             tx.pragma_update(None, "user_version", (i + 1) as i64)?;
             tx.commit()?;
         }
-        Ok(Self { conn })
+        Ok(Self { conn, vault: None })
     }
 
     // ---------------- event ----------------
@@ -380,6 +431,16 @@ impl Store {
         for s in secrets {
             let id = user_id(router_id, &s.name);
             seen.push(id.clone());
+            if let (Some(pw), Some(v)) = (&s.password, &self.vault) {
+                // Router adalah sumber kebenaran: password yang dikirim router menimpa salinan lokal.
+                // Bila router tidak mengirim password (hak akun API kurang), salinan lama dibiarkan.
+                if let Ok(enc) = v.seal(id.as_bytes(), pw.as_bytes()) {
+                    tx.execute(
+                        "INSERT INTO user_secrets (user_id, enc, updated_at) VALUES (?1,?2,?3) ON CONFLICT(user_id) DO UPDATE SET enc=?2, updated_at=?3",
+                        params![id, enc, now_ms],
+                    )?;
+                }
+            }
             let status = status_str(user_status(s, active));
             let act = active.iter().find(|a| a.name == s.name);
             let connected_at = act.and_then(|a| a.uptime_secs).map(|u| now_ms - (u as i64) * 1000);
@@ -492,6 +553,77 @@ impl Store {
             })
         })?;
         rows.collect()
+    }
+
+    // ---------------- password terenkripsi (ADR 0009) ----------------
+
+    /// Buka penyimpanan password dengan kunci dari keyring. Basis data baru mencatat "kenari"
+    /// terenkripsi; basis data yang sudah punya kenari menolak kunci yang salah (`WrongKey`).
+    pub fn unlock(&mut self, key: &[u8; 32]) -> std::result::Result<(), PasswordError> {
+        let vault = Vault::new(key);
+        let canary: Option<Vec<u8>> = self.conn.query_row("SELECT v FROM vault_meta WHERE k = 'canary'", [], |r| r.get(0)).optional()?;
+        match canary {
+            Some(blob) => match vault.open(CANARY_AAD, &blob) {
+                Ok(p) if p == CANARY_PLAIN => {}
+                Ok(_) | Err(VaultError::Decrypt) => return Err(PasswordError::WrongKey),
+                Err(e) => return Err(e.into()),
+            },
+            None => {
+                self.conn.execute("INSERT INTO vault_meta (k, v) VALUES ('canary', ?1)", [vault.seal(CANARY_AAD, CANARY_PLAIN)?])?;
+            }
+        }
+        self.vault = Some(vault);
+        Ok(())
+    }
+
+    pub fn is_unlocked(&self) -> bool {
+        self.vault.is_some()
+    }
+
+    /// Simpan (atau ganti) password sebuah user. Boleh sebelum barisnya ada (mis. setelah menambah
+    /// user ke router, sebelum sinkronisasi berikutnya).
+    pub fn set_user_password(&mut self, user_id: &str, password: &str, now_ms: i64) -> std::result::Result<(), PasswordError> {
+        let v = self.vault.as_ref().ok_or(PasswordError::Locked)?;
+        let enc = v.seal(user_id.as_bytes(), password.as_bytes())?;
+        self.conn.execute(
+            "INSERT INTO user_secrets (user_id, enc, updated_at) VALUES (?1,?2,?3) ON CONFLICT(user_id) DO UPDATE SET enc=?2, updated_at=?3",
+            params![user_id, enc, now_ms],
+        )?;
+        Ok(())
+    }
+
+    /// Password user, atau `None` bila belum tersimpan. Hanya dipanggil untuk yang berizin Ubah;
+    /// sengaja terpisah dari `list_users` agar password tidak ikut terbaca di daftar.
+    pub fn user_password(&self, user_id: &str) -> std::result::Result<Option<String>, PasswordError> {
+        let v = self.vault.as_ref().ok_or(PasswordError::Locked)?;
+        let blob: Option<Vec<u8>> = self.conn.query_row("SELECT enc FROM user_secrets WHERE user_id = ?1", [user_id], |r| r.get(0)).optional()?;
+        let Some(blob) = blob else { return Ok(None) };
+        let plain = v.open(user_id.as_bytes(), &blob)?;
+        String::from_utf8(plain).map(Some).map_err(|_| PasswordError::Vault(VaultError::Corrupt))
+    }
+
+    pub fn has_user_password(&self, user_id: &str) -> Result<bool> {
+        self.conn.query_row("SELECT EXISTS(SELECT 1 FROM user_secrets WHERE user_id = ?1)", [user_id], |r| r.get(0))
+    }
+
+    /// Ganti kunci: semua password dibuka dengan kunci sekarang lalu dienkripsi ulang dengan kunci
+    /// baru dalam satu transaksi. Gagal di tengah = tidak ada yang berubah.
+    pub fn rekey(&mut self, new_key: &[u8; 32]) -> std::result::Result<(), PasswordError> {
+        let old = self.vault.as_ref().ok_or(PasswordError::Locked)?;
+        let new = Vault::new(new_key);
+        let tx = self.conn.transaction()?;
+        let rows: Vec<(String, Vec<u8>)> = {
+            let mut stmt = tx.prepare("SELECT user_id, enc FROM user_secrets")?;
+            stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<Result<_>>()?
+        };
+        for (id, blob) in rows {
+            let plain = old.open(id.as_bytes(), &blob)?;
+            tx.execute("UPDATE user_secrets SET enc = ?2 WHERE user_id = ?1", params![id, new.seal(id.as_bytes(), &plain)?])?;
+        }
+        tx.execute("UPDATE vault_meta SET v = ?1 WHERE k = 'canary'", [new.seal(CANARY_AAD, CANARY_PLAIN)?])?;
+        tx.commit()?;
+        self.vault = Some(new);
+        Ok(())
     }
 
     // ---------------- riwayat perubahan ----------------
@@ -630,10 +762,12 @@ impl Store {
         )? as u64;
         if let Some(d) = p.deleted_days {
             let cutoff = now_ms - i64::from(d) * DAY_MS;
-            tx.execute(
-                "DELETE FROM user_meta WHERE user_id IN (SELECT id FROM users WHERE deleted_at IS NOT NULL AND deleted_at < ?1)",
-                [cutoff],
-            )?;
+            for table in ["user_meta", "user_secrets"] {
+                tx.execute(
+                    &format!("DELETE FROM {table} WHERE user_id IN (SELECT id FROM users WHERE deleted_at IS NOT NULL AND deleted_at < ?1)"),
+                    [cutoff],
+                )?;
+            }
             out.users = tx.execute("DELETE FROM users WHERE deleted_at IS NOT NULL AND deleted_at < ?1", [cutoff])? as u64;
             out.profiles = tx.execute("DELETE FROM profiles WHERE deleted_at IS NOT NULL AND deleted_at < ?1", [cutoff])? as u64;
         }
@@ -917,6 +1051,107 @@ mod tests {
         assert_eq!(s.count_events().unwrap(), 1, "data lama tetap");
         s.record_audit(&audit(1, "a", "x", true)).unwrap(); // tabel baru ada
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    fn secret_pw(name: &str, pw: Option<&str>) -> PppSecret {
+        let mut sec = secret(name, "10M", false);
+        sec.password = pw.map(String::from);
+        sec
+    }
+
+    fn key() -> [u8; 32] {
+        crate::vault::generate_key().unwrap()
+    }
+
+    #[test]
+    fn password_terkunci_tanpa_kunci() {
+        let mut s = Store::open_in_memory().unwrap();
+        assert!(!s.is_unlocked());
+        assert!(matches!(s.set_user_password("r1:budi", "x", 1), Err(PasswordError::Locked)));
+        assert!(matches!(s.user_password("r1:budi"), Err(PasswordError::Locked)));
+        // Sinkronisasi tanpa kunci tidak menyimpan password apa pun.
+        s.sync_users("r1", 1, &[secret_pw("budi", Some("rahasia123"))], &[]).unwrap();
+        assert!(!s.has_user_password("r1:budi").unwrap());
+        assert!(matches!(s.rekey(&key()), Err(PasswordError::Locked)));
+    }
+
+    #[test]
+    fn password_tersimpan_terenkripsi_dan_mengikuti_router() {
+        let mut s = Store::open_in_memory().unwrap();
+        s.unlock(&key()).unwrap();
+        s.sync_users("r1", 1, &[secret_pw("budi", Some("rahasia123")), secret_pw("sari", None)], &[]).unwrap();
+        assert_eq!(s.user_password("r1:budi").unwrap().as_deref(), Some("rahasia123"));
+        assert_eq!(s.user_password("r1:sari").unwrap(), None);
+        // Yang tersimpan di berkas adalah blob terenkripsi, bukan teks.
+        let raw: Vec<u8> = s.conn.query_row("SELECT enc FROM user_secrets WHERE user_id='r1:budi'", [], |r| r.get(0)).unwrap();
+        assert!(!raw.windows(10).any(|w| w == b"rahasia123"));
+        // Router tidak mengirim password lagi: salinan lama dibiarkan. Router mengirim yang baru: ditimpa.
+        s.sync_users("r1", 2, &[secret_pw("budi", None)], &[]).unwrap();
+        assert_eq!(s.user_password("r1:budi").unwrap().as_deref(), Some("rahasia123"));
+        s.sync_users("r1", 3, &[secret_pw("budi", Some("baru-baru"))], &[]).unwrap();
+        assert_eq!(s.user_password("r1:budi").unwrap().as_deref(), Some("baru-baru"));
+        // Password tidak ikut daftar user.
+        assert!(!format!("{:?}", s.list_users(None, true).unwrap()).contains("baru-baru"));
+    }
+
+    #[test]
+    fn password_boleh_disimpan_sebelum_user_ada() {
+        let mut s = Store::open_in_memory().unwrap();
+        s.unlock(&key()).unwrap();
+        s.set_user_password("r1:tika", "tika-pass", 5).unwrap();
+        assert_eq!(s.user_password("r1:tika").unwrap().as_deref(), Some("tika-pass"));
+        s.set_user_password("r1:tika", "ganti-lagi", 6).unwrap();
+        assert_eq!(s.user_password("r1:tika").unwrap().as_deref(), Some("ganti-lagi"));
+    }
+
+    #[test]
+    fn kunci_salah_ditolak_dan_blob_terpindah_gagal() {
+        let dir = std::env::temp_dir().join(format!("telemon-vault-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("v.db");
+        let k = key();
+        {
+            let mut s = Store::open(&path).unwrap();
+            s.unlock(&k).unwrap();
+            s.set_user_password("r1:budi", "rahasia123", 1).unwrap();
+            s.set_user_password("r1:sari", "lain-lain", 1).unwrap();
+        }
+        let mut s = Store::open(&path).unwrap();
+        assert!(matches!(s.unlock(&key()), Err(PasswordError::WrongKey)));
+        assert!(!s.is_unlocked(), "kunci salah tidak boleh membuka");
+        s.unlock(&k).unwrap();
+        assert_eq!(s.user_password("r1:budi").unwrap().as_deref(), Some("rahasia123"));
+        // Menukar blob antar baris: terdeteksi karena terikat ke identitas baris.
+        s.conn.execute("UPDATE user_secrets SET enc = (SELECT enc FROM user_secrets WHERE user_id='r1:sari') WHERE user_id='r1:budi'", []).unwrap();
+        assert!(matches!(s.user_password("r1:budi"), Err(PasswordError::Vault(VaultError::Decrypt))));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn ganti_kunci_menjaga_password() {
+        let mut s = Store::open_in_memory().unwrap();
+        let (k1, k2) = (key(), key());
+        s.unlock(&k1).unwrap();
+        s.set_user_password("r1:a", "satu-satu", 1).unwrap();
+        s.set_user_password("r1:b", "dua-dua-dua", 1).unwrap();
+        s.rekey(&k2).unwrap();
+        assert_eq!(s.user_password("r1:b").unwrap().as_deref(), Some("dua-dua-dua"));
+        // Kunci lama tidak lagi cocok; kunci baru cocok.
+        let canary: Vec<u8> = s.conn.query_row("SELECT v FROM vault_meta WHERE k='canary'", [], |r| r.get(0)).unwrap();
+        assert!(Vault::new(&k1).open(CANARY_AAD, &canary).is_err());
+        assert!(Vault::new(&k2).open(CANARY_AAD, &canary).is_ok());
+    }
+
+    #[test]
+    fn purge_menghapus_password_user_terhapus_permanen() {
+        let mut s = Store::open_in_memory().unwrap();
+        s.unlock(&key()).unwrap();
+        let now = 100 * DAY_MS;
+        s.sync_users("r1", now - 60 * DAY_MS, &[secret_pw("lama", Some("lama-lama")), secret_pw("hidup", Some("hidup-hidup"))], &[]).unwrap();
+        s.sync_users("r1", now - 59 * DAY_MS, &[secret_pw("hidup", None)], &[]).unwrap(); // lama hilang di router
+        s.purge(now, &policy(None, 1000, Some(30))).unwrap();
+        assert!(!s.has_user_password("r1:lama").unwrap());
+        assert!(s.has_user_password("r1:hidup").unwrap());
     }
 
     #[test]

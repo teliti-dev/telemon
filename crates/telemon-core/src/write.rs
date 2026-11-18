@@ -53,6 +53,16 @@ pub struct Plan {
     pub steps: Vec<Step>,
 }
 
+impl Plan {
+    /// Password baru yang akan dikirim rencana ini (untuk disimpan terenkripsi setelah berhasil).
+    pub fn new_password(&self) -> Option<&str> {
+        if !matches!(self.action.as_str(), "user.add" | "user.edit") {
+            return None;
+        }
+        self.steps.iter().filter(|s| matches!(s.cmd.as_str(), "/ppp/secret/add" | "/ppp/secret/set")).flat_map(|s| s.attrs.iter()).find(|(k, _)| k == "password").map(|(_, v)| v.as_str())
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct NewUser {
     pub name: String,
@@ -381,8 +391,16 @@ pub async fn apply_audited(
         changes: plan.changes.clone(),
         outcome,
     };
-    if let Err(e) = store.lock().expect("store lock").record_audit(&entry) {
+    let mut st = store.lock().expect("store lock");
+    if let Err(e) = st.record_audit(&entry) {
         eprintln!("telemon: gagal mencatat riwayat perubahan: {e}");
+    }
+    // Salinan lokal password mengikuti router bila penyimpanan terbuka; tanpa kunci dilewati.
+    if res.is_ok() && st.is_unlocked() && let Some(pw) = plan.new_password() {
+        let id = format!("{router_id}:{}", plan.target);
+        if let Err(e) = st.set_user_password(&id, pw, now_ms) {
+            eprintln!("telemon: gagal menyimpan password terenkripsi: {e}");
+        }
     }
     res
 }
@@ -633,6 +651,38 @@ mod tests {
         let rejected = log.iter().find(|a| a.entry.at_ms == 3000).unwrap();
         assert!(matches!(&rejected.entry.outcome, AuditOutcome::Failed { steps_done: 0, error } if error.contains("tidak diizinkan")));
         assert!(!sim.calls.lock().unwrap().iter().any(|c| c == "/system/reboot"));
+    }
+
+    #[tokio::test]
+    async fn password_baru_tersimpan_terenkripsi_setelah_berhasil() {
+        use crate::monitor::SharedStore;
+        use crate::store::{AuditQuery, Store};
+        use std::sync::Arc;
+        let sim = Sim::new();
+        let mut st = Store::open_in_memory().unwrap();
+        st.unlock(&crate::vault::generate_key().unwrap()).unwrap();
+        let store: SharedStore = Arc::new(Mutex::new(st));
+
+        let add = plan_add_user(&sim, &NewUser { name: "tika".into(), password: "tika-rahasia".into(), profile: "10M".into(), ..Default::default() }).await.unwrap();
+        assert_eq!(add.new_password(), Some("tika-rahasia"));
+        apply_audited(&sim, &store, "r1", "admin", 10, &add).await.unwrap();
+        assert_eq!(store.lock().unwrap().user_password("r1:tika").unwrap().as_deref(), Some("tika-rahasia"));
+
+        let edit = plan_edit_user(&sim, "budi", &UserPatch { password: Some("budi-baru-baru".into()), ..Default::default() }).await.unwrap();
+        apply_audited(&sim, &store, "r1", "admin", 20, &edit).await.unwrap();
+        assert_eq!(store.lock().unwrap().user_password("r1:budi").unwrap().as_deref(), Some("budi-baru-baru"));
+
+        // Gagal di router: salinan lokal tidak berubah. Rencana tanpa password: tidak menyentuhnya.
+        let bad = Plan { action: "user.edit".into(), target: "budi".into(), title: "x".into(), changes: vec![], steps: vec![Step { cmd: "/ppp/secret/set".into(), attrs: vec![attr(".id", "*tidakada"), attr("password", "tidak-boleh")], optional: false }] };
+        assert!(apply_audited(&sim, &store, "r1", "admin", 30, &bad).await.is_err());
+        assert_eq!(store.lock().unwrap().user_password("r1:budi").unwrap().as_deref(), Some("budi-baru-baru"));
+        let comment = plan_edit_user(&sim, "budi", &UserPatch { comment: Some(Some("x".into())), ..Default::default() }).await.unwrap();
+        assert_eq!(comment.new_password(), None);
+
+        // Riwayat tetap tanpa password.
+        let log = store.lock().unwrap().list_audit(&AuditQuery { limit: 10, ..Default::default() }).unwrap();
+        let dump = format!("{log:?}");
+        assert!(!dump.contains("tika-rahasia") && !dump.contains("budi-baru-baru") && !dump.contains("tidak-boleh"));
     }
 
     #[tokio::test]

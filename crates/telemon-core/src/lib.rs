@@ -8,12 +8,14 @@ pub mod monitor;
 pub mod poller;
 pub mod router;
 pub mod store;
+pub mod vault;
 pub mod write;
 
 pub use model::{PppActive, PppProfile, PppSecret};
 pub use router::{Error, MikrotikClient, Row, RouterApi, ppp_active, ppp_profiles, ppp_secrets};
 pub use events::{Detector, Event, EventKind, LogLine};
 pub use poller::{poll_once, run_poller, user_status, UserStatus};
-pub use store::{AuditEntry, AuditOutcome, AuditQuery, StoredAudit, EventQuery, PurgeCounts, RetentionPolicy, Store, StoredEvent, SyncReport, UserMeta, UserRow};
+pub use store::{PasswordError, AuditEntry, AuditOutcome, AuditQuery, StoredAudit, EventQuery, PurgeCounts, RetentionPolicy, Store, StoredEvent, SyncReport, UserMeta, UserRow};
 pub use monitor::{MonitorConfig, SharedStore, run_purge, run_router, sync_router};
 pub use write::{Change, Plan, apply, apply_audited};
+pub use vault::{VaultError, generate_key};
