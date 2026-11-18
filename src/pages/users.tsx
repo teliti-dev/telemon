@@ -1,7 +1,14 @@
 import * as React from "react"
 import { LayoutGridIcon, ListIcon, SearchIcon } from "lucide-react"
 
-import { EVENT_META, EventIcon, USER_STATUS, UserStatusBadge } from "@/components/status"
+import {
+  EVENT_META,
+  EventIcon,
+  USER_TONE,
+  USER_TONES,
+  UserToneBadge,
+  userTone,
+} from "@/components/status"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -194,10 +201,20 @@ export function UsersPage({
         </div>
       </div>
 
-      <p className="-mb-1 text-xs text-muted-foreground" aria-live="polite">
-        {formatNumber(filtered.length)} user
-        {filtered.length > shown.length && `, menampilkan ${formatNumber(shown.length)}`}
-      </p>
+      <div className="-mb-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+        <p aria-live="polite">
+          {formatNumber(filtered.length)} user
+          {filtered.length > shown.length && `, menampilkan ${formatNumber(shown.length)}`}
+        </p>
+        <ul className="flex flex-wrap gap-x-3 gap-y-1 sm:ml-auto" aria-label="Keterangan warna">
+          {USER_TONES.map((t) => (
+            <li key={t} className="flex items-center gap-1.5">
+              <span className={cn("size-2 rounded-full", USER_TONE[t].dot)} />
+              {USER_TONE[t].label}
+            </li>
+          ))}
+        </ul>
+      </div>
 
       {filtered.length === 0 ? (
         <Card className="items-center py-12 text-sm text-muted-foreground">
@@ -223,15 +240,16 @@ export function UsersPage({
               <TableBody>
                 {shown.map((u) => {
                   const t = uptimeOrSeen(u, now)
+                  const tone = USER_TONE[userTone(u)]
                   return (
                     <TableRow
                       key={u.id}
                       tabIndex={0}
                       onClick={() => onOpenUser(u.id)}
                       onKeyDown={(e) => e.key === "Enter" && onOpenUser(u.id)}
-                      className="cursor-pointer"
+                      className={cn("cursor-pointer", tone.row)}
                     >
-                      <TableCell className="pl-3 font-mono text-[13px]" title={u.comment}>
+                      <TableCell className={cn("pl-3 font-mono text-[13px]", tone.bar)} title={u.comment}>
                         {u.username}
                         {u.comment && (
                           <span className="ml-1.5 font-sans text-xs text-muted-foreground">· {u.comment}</span>
@@ -239,7 +257,7 @@ export function UsersPage({
                       </TableCell>
                       <TableCell className="hidden text-muted-foreground lg:table-cell">{u.profile}</TableCell>
                       <TableCell>
-                        <UserStatusBadge status={u.status} />
+                        <UserToneBadge tone={userTone(u)} />
                       </TableCell>
                       <TableCell>{routerById.get(u.routerId)?.name}</TableCell>
                       <TableCell className="font-mono text-[13px]">{u.address ?? "-"}</TableCell>
@@ -275,14 +293,15 @@ export function UsersPage({
               <ul className="divide-y">
                 {shown.map((u) => {
                   const t = uptimeOrSeen(u, now)
+                  const tone = USER_TONE[userTone(u)]
                   return (
                     <li key={u.id}>
                       <button
                         type="button"
                         onClick={() => onOpenUser(u.id)}
-                        className="flex w-full items-center gap-2.5 px-3 py-2 text-left active:bg-muted/50"
+                        className={cn("flex w-full items-center gap-2.5 px-3 py-2 text-left active:bg-muted/50", tone.row, tone.bar)}
                       >
-                        <span className={cn("size-2 shrink-0 rounded-full", USER_STATUS[u.status].dot)} aria-label={USER_STATUS[u.status].label} />
+                        <span className={cn("size-2 shrink-0 rounded-full", tone.dot)} aria-label={tone.label} />
                         <div className="min-w-0 flex-1">
                           <div className="truncate font-mono text-[13px]">{u.username}</div>
                           <div className="truncate text-xs text-muted-foreground">
@@ -312,18 +331,22 @@ export function UsersPage({
             <ul className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
               {shown.map((u) => {
                 const t = uptimeOrSeen(u, now)
+                const tone = userTone(u)
                 return (
                   <li key={u.id} className="min-w-0">
                     <button
                       type="button"
                       onClick={() => onOpenUser(u.id)}
-                      className="flex h-full w-full flex-col gap-1.5 rounded-xl bg-card p-3 text-left ring-1 ring-foreground/10 transition-colors hover:bg-muted/40 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+                      className={cn(
+                        "flex h-full w-full flex-col gap-1.5 rounded-xl border border-l-4 bg-card p-3 text-left transition-colors hover:bg-muted/40 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
+                        USER_TONE[tone].card
+                      )}
                     >
                       <div className="flex items-start justify-between gap-2">
                         <span className="min-w-0 truncate font-mono text-[13px] font-medium" title={u.username}>
                           {u.username}
                         </span>
-                        <UserStatusBadge status={u.status} className="shrink-0" />
+                        <UserToneBadge tone={tone} className="shrink-0" />
                       </div>
                       <div className="truncate text-xs text-muted-foreground">
                         {routerById.get(u.routerId)?.name} · {u.profile}

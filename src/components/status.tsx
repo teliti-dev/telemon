@@ -11,13 +11,13 @@ import {
 
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
-import type { PppEventType, RouterStatus, UserStatus } from "@/lib/types"
+import type { PppEventType, PppUser, RouterStatus, UserStatus } from "@/lib/types"
 
 /* Warna status hanya untuk titik/ikon; teks tetap memakai token teks. */
 
 export const USER_STATUS: Record<UserStatus, { label: string; dot: string }> = {
   active: { label: "Aktif", dot: "bg-good" },
-  inactive: { label: "Tidak aktif", dot: "bg-muted-foreground/45" },
+  inactive: { label: "Tidak aktif", dot: "bg-serious" },
   disabled: {
     label: "Dinonaktifkan",
     dot: "border-[1.5px] border-muted-foreground bg-transparent",
@@ -36,6 +36,70 @@ export function UserStatusBadge({
     <Badge variant="outline" className={cn("gap-1.5 font-normal", className)}>
       <span className={cn("size-2 shrink-0 rounded-full", s.dot)} />
       {s.label}
+    </Badge>
+  )
+}
+
+/**
+ * Kondisi tampilan user: status dari router + gagal auth terakhir.
+ * Warna untuk border/latar/titik; label selalu ikut ditampilkan.
+ */
+export type UserTone = "active" | "inactive" | "auth_failed" | "disabled"
+
+export function userTone(u: Pick<PppUser, "status" | "lastEvent">): UserTone {
+  if (u.status === "active") return "active"
+  if (u.status === "disabled") return "disabled"
+  return u.lastEvent === "auth_failed" ? "auth_failed" : "inactive"
+}
+
+export const USER_TONE: Record<
+  UserTone,
+  { label: string; dot: string; card: string; row: string; bar: string }
+> = {
+  active: {
+    label: "Aktif",
+    dot: "bg-good",
+    card: "border-good/40 border-l-good",
+    row: "bg-good/[0.05]",
+    bar: "shadow-[inset_3px_0_0_var(--color-good)]",
+  },
+  inactive: {
+    label: "Tidak aktif",
+    dot: "bg-serious",
+    card: "border-serious/45 border-l-serious",
+    row: "bg-serious/[0.08]",
+    bar: "shadow-[inset_3px_0_0_var(--color-serious)]",
+  },
+  auth_failed: {
+    label: "Gagal auth",
+    dot: "bg-critical",
+    card: "border-critical/45 border-l-critical",
+    row: "bg-critical/[0.08]",
+    bar: "shadow-[inset_3px_0_0_var(--color-critical)]",
+  },
+  disabled: {
+    label: "Dinonaktifkan",
+    dot: "border-[1.5px] border-muted-foreground bg-transparent",
+    card: "border-dashed border-muted-foreground/45 border-l-muted-foreground/70",
+    row: "bg-muted/60",
+    bar: "shadow-[inset_3px_0_0_var(--color-muted-foreground)]",
+  },
+}
+
+export const USER_TONES = Object.keys(USER_TONE) as UserTone[]
+
+export function UserToneBadge({
+  tone,
+  className,
+}: {
+  tone: UserTone
+  className?: string
+}) {
+  const t = USER_TONE[tone]
+  return (
+    <Badge variant="outline" className={cn("gap-1.5 bg-background font-normal", className)}>
+      <span className={cn("size-2 shrink-0 rounded-full", t.dot)} />
+      {t.label}
     </Badge>
   )
 }
