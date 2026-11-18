@@ -30,7 +30,7 @@ import { useStore } from "@/lib/store-context"
 
 const NAV: { page: Page; label: string; icon: typeof GaugeIcon }[] = [
   { page: "ringkasan", label: "Ringkasan", icon: GaugeIcon },
-  { page: "user", label: "User PPPoE", icon: UsersIcon },
+  { page: "user", label: "Users", icon: UsersIcon },
   { page: "event", label: "Event", icon: ActivityIcon },
   { page: "router", label: "Router", icon: RadioTowerIcon },
   { page: "berbagi", label: "Berbagi", icon: Share2Icon },

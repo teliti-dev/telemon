@@ -20,7 +20,7 @@ import { UsersPage } from "@/pages/users"
 
 const TITLES: Record<Page, string> = {
   ringkasan: "Ringkasan",
-  user: "User PPPoE",
+  user: "Users",
   event: "Event",
   router: "Router",
   berbagi: "Berbagi",

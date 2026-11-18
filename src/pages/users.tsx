@@ -1,7 +1,7 @@
 import * as React from "react"
-import { SearchIcon } from "lucide-react"
+import { LayoutGridIcon, ListIcon, SearchIcon } from "lucide-react"
 
-import { EVENT_META, EventIcon, UserStatusBadge } from "@/components/status"
+import { EVENT_META, EventIcon, USER_STATUS, UserStatusBadge } from "@/components/status"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -24,11 +24,29 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { useNow } from "@/hooks/use-now"
 import { formatDuration, formatNumber, formatRelative } from "@/lib/format"
 import { useStore } from "@/lib/store-context"
+import { cn } from "@/lib/utils"
 import type { PppUser, UserStatus } from "@/lib/types"
 
-const PAGE_SIZE = 50
+const PAGE_SIZE = 60
 type StatusFilter = UserStatus | "all"
 type SortKey = "recent" | "username" | "uptime"
+type ViewMode = "list" | "grid"
+
+const VIEW_KEY = "telemon.users.view"
+function loadView(): ViewMode {
+  try {
+    return localStorage.getItem(VIEW_KEY) === "grid" ? "grid" : "list"
+  } catch {
+    return "list"
+  }
+}
+function saveView(v: ViewMode) {
+  try {
+    localStorage.setItem(VIEW_KEY, v)
+  } catch {
+    /* penyimpanan browser tidak tersedia; pilihan hanya berlaku sesi ini */
+  }
+}
 
 const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
   { value: "all", label: "Semua" },
@@ -59,6 +77,7 @@ export function UsersPage({
   )
   const [routerId, setRouterId] = React.useState(params.get("router") ?? "all")
   const [sort, setSort] = React.useState<SortKey>("recent")
+  const [view, setView] = React.useState<ViewMode>(loadView)
   const [limit, setLimit] = React.useState(PAGE_SIZE)
 
   const filtered = React.useMemo(() => {
@@ -121,7 +140,7 @@ export function UsersPage({
             ))}
           </ToggleGroup>
         </div>
-        <div className="grid grid-cols-2 gap-2 lg:ml-auto lg:flex">
+        <div className="flex gap-2 lg:ml-auto">
           <Select
             value={routerId}
             onValueChange={(v) => {
@@ -129,7 +148,7 @@ export function UsersPage({
               setLimit(PAGE_SIZE)
             }}
           >
-            <SelectTrigger className="w-full lg:w-44" aria-label="Router">
+            <SelectTrigger className="min-w-0 flex-1 lg:w-44 lg:flex-none" aria-label="Router">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -142,7 +161,7 @@ export function UsersPage({
             </SelectContent>
           </Select>
           <Select value={sort} onValueChange={(v) => setSort(v as SortKey)}>
-            <SelectTrigger className="w-full lg:w-40" aria-label="Urutkan">
+            <SelectTrigger className="min-w-0 flex-1 lg:w-40 lg:flex-none" aria-label="Urutkan">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -151,6 +170,26 @@ export function UsersPage({
               <SelectItem value="uptime">Uptime terlama</SelectItem>
             </SelectContent>
           </Select>
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            value={view}
+            onValueChange={(v) => {
+              if (v) {
+                setView(v as ViewMode)
+                saveView(v as ViewMode)
+              }
+            }}
+            aria-label="Tampilan"
+            className="shrink-0"
+          >
+            <ToggleGroupItem value="list" aria-label="Tampilan list" title="List">
+              <ListIcon />
+            </ToggleGroupItem>
+            <ToggleGroupItem value="grid" aria-label="Tampilan grid" title="Grid">
+              <LayoutGridIcon />
+            </ToggleGroupItem>
+          </ToggleGroup>
         </div>
       </div>
 
@@ -166,7 +205,7 @@ export function UsersPage({
       ) : (
         <>
           {/* Desktop: tabel */}
-          <Card className="hidden py-0 md:block">
+          <Card className={view === "list" ? "hidden py-0 md:block" : "hidden"}>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -229,44 +268,95 @@ export function UsersPage({
             </Table>
           </Card>
 
-          {/* Mobile: kartu */}
-          <ul className="flex flex-col gap-1.5 md:hidden">
-            {shown.map((u) => {
-              const t = uptimeOrSeen(u, now)
-              return (
-                <li key={u.id}>
-                  <button
-                    type="button"
-                    onClick={() => onOpenUser(u.id)}
-                    className="w-full rounded-lg border bg-card px-2.5 py-2 text-left text-sm active:bg-muted/50"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="min-w-0 font-mono text-[13px] break-all">{u.username}</span>
-                      <UserStatusBadge status={u.status} className="shrink-0" />
-                    </div>
-                    <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                      {routerById.get(u.routerId)?.name} · {u.profile}
-                      {u.address && ` · ${u.address}`}
-                    </div>
-                    <div className="mt-1 flex items-center justify-between gap-2 text-xs">
-                      <span className="text-muted-foreground">
-                        {t.label} <span className="text-foreground tabular-nums">{t.value}</span>
-                      </span>
-                      {u.lastEvent && u.lastEventAt && (
-                        <span className="flex items-center gap-1.5">
-                          <EventIcon type={u.lastEvent} className="size-3.5" />
-                          {EVENT_META[u.lastEvent].label}
-                          <span className="text-muted-foreground">
-                            {formatRelative(u.lastEventAt, now)}
-                          </span>
+          {/* List di HP: daftar rapat dalam satu card */}
+          {view === "list" && (
+            <Card className="gap-0 py-0 md:hidden">
+              <ul className="divide-y">
+                {shown.map((u) => {
+                  const t = uptimeOrSeen(u, now)
+                  return (
+                    <li key={u.id}>
+                      <button
+                        type="button"
+                        onClick={() => onOpenUser(u.id)}
+                        className="flex w-full items-center gap-2.5 px-3 py-2 text-left active:bg-muted/50"
+                      >
+                        <span className={cn("size-2 shrink-0 rounded-full", USER_STATUS[u.status].dot)} aria-label={USER_STATUS[u.status].label} />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate font-mono text-[13px]">{u.username}</div>
+                          <div className="truncate text-xs text-muted-foreground">
+                            {routerById.get(u.routerId)?.name}
+                            {u.address && ` · ${u.address}`}
+                          </div>
+                        </div>
+                        <div className="shrink-0 text-right text-xs">
+                          <div className={u.connectedAt ? "tabular-nums" : "text-muted-foreground tabular-nums"}>{t.value}</div>
+                          {u.lastEvent && (
+                            <div className="flex items-center justify-end gap-1 text-muted-foreground">
+                              <EventIcon type={u.lastEvent} className="size-3" />
+                              {EVENT_META[u.lastEvent].label}
+                            </div>
+                          )}
+                        </div>
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            </Card>
+          )}
+
+          {/* Grid: kartu per user */}
+          {view === "grid" && (
+            <ul className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+              {shown.map((u) => {
+                const t = uptimeOrSeen(u, now)
+                return (
+                  <li key={u.id} className="min-w-0">
+                    <button
+                      type="button"
+                      onClick={() => onOpenUser(u.id)}
+                      className="flex h-full w-full flex-col gap-1.5 rounded-xl bg-card p-3 text-left ring-1 ring-foreground/10 transition-colors hover:bg-muted/40 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="min-w-0 truncate font-mono text-[13px] font-medium" title={u.username}>
+                          {u.username}
                         </span>
-                      )}
-                    </div>
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
+                        <UserStatusBadge status={u.status} className="shrink-0" />
+                      </div>
+                      <div className="truncate text-xs text-muted-foreground">
+                        {routerById.get(u.routerId)?.name} · {u.profile}
+                        {u.comment && ` · ${u.comment}`}
+                      </div>
+                      <dl className="grid grid-cols-2 gap-x-2 text-xs">
+                        <div className="min-w-0">
+                          <dt className="text-muted-foreground">IP</dt>
+                          <dd className="truncate font-mono">{u.address ?? "-"}</dd>
+                        </div>
+                        <div className="min-w-0">
+                          <dt className="text-muted-foreground">{t.label || "Uptime"}</dt>
+                          <dd className="truncate tabular-nums">{t.value}</dd>
+                        </div>
+                      </dl>
+                      <div className="mt-auto flex items-center gap-1.5 border-t pt-1.5 text-xs">
+                        {u.lastEvent && u.lastEventAt ? (
+                          <>
+                            <EventIcon type={u.lastEvent} className="size-3.5" />
+                            <span className="truncate">{EVENT_META[u.lastEvent].label}</span>
+                            <span className="ml-auto shrink-0 text-muted-foreground">
+                              {formatRelative(u.lastEventAt, now)}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-muted-foreground">Belum ada event</span>
+                        )}
+                      </div>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
 
           {filtered.length > shown.length && (
             <Button
