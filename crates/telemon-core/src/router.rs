@@ -68,7 +68,33 @@ pub struct MikrotikClient {
     device: MikrotikDevice,
 }
 
+/// Cara menyambung ke router.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TlsMode {
+    /// API biasa (port 8728), tanpa enkripsi. Hanya untuk jaringan tepercaya.
+    Plain,
+    /// api-ssl (port 8729) dengan sertifikat yang di-pin lewat sidik jarinya.
+    #[cfg(feature = "tls")]
+    Pinned(crate::tls::Fingerprint),
+}
+
 impl MikrotikClient {
+    pub async fn connect_with(addr: &str, username: &str, password: &str, mode: TlsMode) -> Result<Self, Error> {
+        match mode {
+            TlsMode::Plain => Self::connect(addr, username, password).await,
+            #[cfg(feature = "tls")]
+            TlsMode::Pinned(pin) => {
+                let device = MikrotikDevice::builder(addr)
+                    .credentials(username, Some(password))
+                    .tls_config(crate::tls::pinned_config(pin)?, crate::tls::server_name())
+                    .connect()
+                    .await
+                    .map_err(|e| Error::Connect(e.to_string()))?;
+                Ok(Self { device })
+            }
+        }
+    }
+
     pub async fn connect(addr: &str, username: &str, password: &str) -> Result<Self, Error> {
         let device = MikrotikDevice::connect(addr, username, Some(password))
             .await
@@ -113,8 +139,8 @@ impl RouterApi for MikrotikClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::net::{TcpListener, TcpStream};
+    use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+    use tokio::net::TcpListener;
 
     // ---- Router tiruan: protokol kalimat RouterOS (panjang-kata + kata, diakhiri kata kosong) ----
 
@@ -137,7 +163,7 @@ mod tests {
         out
     }
 
-    async fn read_len(s: &mut TcpStream) -> Option<usize> {
+    async fn read_len<S: AsyncRead + Unpin>(s: &mut S) -> Option<usize> {
         let mut b = [0u8; 1];
         s.read_exact(&mut b).await.ok()?;
         let b0 = b[0] as usize;
@@ -149,7 +175,7 @@ mod tests {
         Some(((b0 & 0x3f) << 8) | b1[0] as usize)
     }
 
-    async fn read_sentence(s: &mut TcpStream) -> Option<Vec<String>> {
+    async fn read_sentence<S: AsyncRead + Unpin>(s: &mut S) -> Option<Vec<String>> {
         let mut words = Vec::new();
         loop {
             let n = read_len(s).await?;
@@ -170,15 +196,18 @@ mod tests {
     type WordLog = std::sync::Arc<std::sync::Mutex<Vec<Vec<String>>>>;
 
     /// Seperti `fake_router`, dan mencatat setiap kalimat yang diterima.
+    #[cfg(feature = "tls")]
+    type Acceptor = tokio_rustls::TlsAcceptor;
+    #[cfg(not(feature = "tls"))]
+    type Acceptor = ();
+
     async fn fake_router_log(secret_pw: &'static str, log: WordLog) -> String {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap().to_string();
-        tokio::spawn(async move {
-            loop {
-                let (mut s, _) = listener.accept().await.unwrap();
-                let log = log.clone();
-                tokio::spawn(async move {
-                    while let Some(words) = read_sentence(&mut s).await {
+        fake_router_with(secret_pw, log, None).await
+    }
+
+    /// Satu sambungan: balas kalimat RouterOS dengan data tetap (stream apa pun: TCP atau TLS).
+    async fn serve<S: AsyncRead + AsyncWrite + Unpin>(mut s: S, secret_pw: &'static str, log: WordLog) {
+        while let Some(words) = read_sentence(&mut s).await {
                         log.lock().unwrap().push(words.clone());
                         let tag = words.iter().find(|w| w.starts_with(".tag=")).cloned().unwrap_or_default();
                         let cmd = words.first().cloned().unwrap_or_default();
@@ -205,7 +234,27 @@ mod tests {
                         if s.write_all(&out).await.is_err() {
                             return;
                         }
+        }
+    }
+
+    async fn fake_router_with(secret_pw: &'static str, log: WordLog, acceptor: Option<Acceptor>) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+        tokio::spawn(async move {
+            loop {
+                let (tcp, _) = listener.accept().await.unwrap();
+                let log = log.clone();
+                #[cfg(feature = "tls")]
+                let acceptor = acceptor.clone();
+                tokio::spawn(async move {
+                    #[cfg(feature = "tls")]
+                    if let Some(acc) = acceptor {
+                        if let Ok(tls) = acc.accept(tcp).await {
+                            serve(tls, secret_pw, log).await;
+                        }
+                        return;
                     }
+                    serve(tcp, secret_pw, log).await;
                 });
             }
         });
@@ -263,6 +312,84 @@ mod tests {
             Err(Error::Connect(_)) => {}
             Err(e) => panic!("jenis error salah: {e:?}"),
             Ok(_) => panic!("seharusnya gagal"),
+        }
+    }
+
+    // ---------------- TLS (api-ssl) ----------------
+
+    #[cfg(feature = "tls")]
+    mod tls_tests {
+        use super::*;
+        use crate::tls::{Fingerprint, fetch_fingerprint};
+        use rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
+        use std::sync::Arc;
+        use std::time::Duration;
+
+        /// Router tiruan ber-TLS dengan sertifikat self-signed baru; mengembalikan alamat dan sidik jarinya.
+        async fn tls_router() -> (String, Fingerprint) {
+            let ck = rcgen::generate_simple_self_signed(vec!["mikrotik".to_string()]).unwrap();
+            let der = ck.cert.der().clone();
+            let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(ck.signing_key.serialize_der()));
+            let provider = Arc::new(rustls::crypto::ring::default_provider());
+            let cfg = rustls::ServerConfig::builder_with_provider(provider)
+                .with_safe_default_protocol_versions()
+                .unwrap()
+                .with_no_client_auth()
+                .with_single_cert(vec![der.clone()], key)
+                .unwrap();
+            let addr = fake_router_with("rahasia123", Default::default(), Some(tokio_rustls::TlsAcceptor::from(Arc::new(cfg)))).await;
+            (addr, Fingerprint::of_cert(&der))
+        }
+
+        const WAIT: Duration = Duration::from_secs(5);
+
+        #[tokio::test]
+        async fn pin_cocok_membaca_data_lewat_tls() {
+            let (addr, fp) = tls_router().await;
+            let c = MikrotikClient::connect_with(&addr, "api", "x", TlsMode::Pinned(fp)).await.expect("terhubung lewat TLS");
+            let secrets = ppp_secrets(&c).await.unwrap();
+            assert_eq!(secrets[0].password.as_deref(), Some("rahasia123"));
+            assert_eq!(ppp_active(&c).await.unwrap()[0].name, "budi");
+        }
+
+        #[tokio::test]
+        async fn pin_salah_ditolak() {
+            let (addr, mut fp) = tls_router().await;
+            fp.0[0] ^= 0xff;
+            match tokio::time::timeout(WAIT, MikrotikClient::connect_with(&addr, "api", "x", TlsMode::Pinned(fp))).await.expect("tidak menggantung") {
+                Err(Error::Connect(m)) => assert!(m.contains("sidik jari sertifikat router tidak cocok"), "{m}"),
+                Err(e) => panic!("jenis error salah: {e:?}"),
+                Ok(_) => panic!("sertifikat tak dipercaya harus ditolak"),
+            }
+        }
+
+        #[tokio::test]
+        async fn percaya_saat_pertama_lalu_pin() {
+            let (addr, real) = tls_router().await;
+            let seen = fetch_fingerprint(&addr, WAIT).await.expect("sidik jari terbaca");
+            assert_eq!(seen, real);
+            assert_eq!(Fingerprint::parse(&seen.to_hex()), Some(seen));
+            MikrotikClient::connect_with(&addr, "api", "x", TlsMode::Pinned(seen)).await.expect("pin dari fetch diterima");
+            // Router lain (sertifikat berbeda) di alamat yang sama tidak diterima dengan pin lama.
+            let (other, _) = tls_router().await;
+            assert!(MikrotikClient::connect_with(&other, "api", "x", TlsMode::Pinned(seen)).await.is_err());
+        }
+
+        #[tokio::test]
+        async fn salah_protokol_gagal_bukan_menggantung() {
+            // Klien TLS ke server API biasa, dan klien biasa ke server TLS.
+            let plain = fake_router("x").await;
+            let (tls_addr, fp) = tls_router().await;
+            let a = tokio::time::timeout(WAIT, MikrotikClient::connect_with(&plain, "a", "b", TlsMode::Pinned(fp))).await;
+            assert!(matches!(a, Ok(Err(_))), "TLS ke server biasa harus gagal cepat");
+            assert!(fetch_fingerprint(&plain, Duration::from_millis(500)).await.is_err());
+            let b = tokio::time::timeout(WAIT, MikrotikClient::connect(&tls_addr, "a", "b")).await;
+            assert!(matches!(b, Ok(Err(_))) || b.is_err(), "klien biasa ke server TLS tidak boleh berhasil");
+        }
+
+        #[tokio::test]
+        async fn fetch_ke_port_tertutup_gagal() {
+            assert!(matches!(fetch_fingerprint("127.0.0.1:1", Duration::from_secs(1)).await, Err(Error::Connect(_))));
         }
     }
 }
