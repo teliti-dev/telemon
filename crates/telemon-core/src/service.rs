@@ -386,6 +386,24 @@ impl<C: Connector> Telemon<C> {
         *slot = Some(Monitor { stop: stop_tx, tasks: vec![task] });
     }
 
+    /// Terapkan pengaturan: interval polling untuk pemantau berikutnya dan kebijakan retensi.
+    /// Pemantau yang sedang berjalan dimulai ulang agar memakai interval baru.
+    pub fn apply_settings(&self, s: &crate::settings::Settings) -> Res<()> {
+        self.set_config(s.runtime_config());
+        let running: Vec<String> = self.monitors.lock().expect("lock").keys().cloned().collect();
+        for id in running {
+            self.stop_monitor(&id);
+            let _ = self.start_monitor(&id);
+        }
+        Ok(())
+    }
+
+    /// Purge berkala yang membaca kebijakan retensi dari pengaturan tersimpan tiap putaran.
+    pub fn start_purge_from_settings(&self, every: Duration) {
+        let store = self.store.clone();
+        self.start_purge(every, move || store.lock().expect("store lock").get_settings().map(|s| s.retention_policy()).unwrap_or_else(|_| crate::settings::Settings::default().retention_policy()));
+    }
+
     pub fn purge_now(&self, policy: &RetentionPolicy) -> Res<PurgeCounts> {
         Ok(self.with_store(|s| s.purge(now_ms(), policy))?)
     }

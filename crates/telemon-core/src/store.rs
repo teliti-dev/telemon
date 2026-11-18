@@ -152,6 +152,11 @@ CREATE TABLE sessions (
   expires_at INTEGER NOT NULL
 );
 CREATE INDEX sessions_account ON sessions(account_id);
+", "
+CREATE TABLE settings (
+  k TEXT PRIMARY KEY,
+  v TEXT NOT NULL
+);
 "];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -1043,6 +1048,34 @@ impl Store {
             ))
         })?;
         rows.collect()
+    }
+
+    // ---------------- pengaturan ----------------
+
+    /// Pengaturan tersimpan; kolom yang belum pernah disimpan memakai nilai bawaan.
+    pub fn get_settings(&self) -> Result<crate::settings::Settings> {
+        let mut stmt = self.conn.prepare("SELECT k, v FROM settings")?;
+        let rows: Vec<(String, String)> = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<Result<_>>()?;
+        Ok(crate::settings::Settings::from_pairs(rows.iter().map(|(k, v)| (k.as_str(), v.as_str()))))
+    }
+
+    /// Simpan (setelah `Settings::validate`). Semua kolom ditulis dalam satu transaksi.
+    pub fn save_settings(&mut self, s: &crate::settings::Settings) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        for (k, v) in s.to_pairs() {
+            tx.execute("INSERT INTO settings (k, v) VALUES (?1, ?2) ON CONFLICT(k) DO UPDATE SET v = ?2", params![k, v])?;
+        }
+        tx.commit()
+    }
+
+    /// Jumlah baris untuk kartu Penyimpanan: (event, user, user terhapus, profile terhapus).
+    pub fn storage_counts(&self) -> Result<(u64, u64, u64, u64)> {
+        Ok((
+            self.scalar("SELECT COUNT(*) FROM events", [])?,
+            self.scalar("SELECT COUNT(*) FROM users WHERE deleted_at IS NULL", [])?,
+            self.scalar("SELECT COUNT(*) FROM users WHERE deleted_at IS NOT NULL", [])?,
+            self.scalar("SELECT COUNT(*) FROM profiles WHERE deleted_at IS NOT NULL", [])?,
+        ))
     }
 
     // ---------------- catatan lokal ----------------

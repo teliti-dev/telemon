@@ -50,6 +50,10 @@ pub fn routes<C: Connector>() -> Router<Arc<AppState<C>>> {
         .route("/api/roles", get(roles_list::<C>).post(roles_create::<C>))
         .route("/api/roles/{id}", put(roles_update::<C>).delete(roles_delete::<C>))
         .route("/api/roles/{id}/reset", post(roles_reset::<C>))
+        // pengaturan dan penyimpanan
+        .route("/api/settings", get(settings_get::<C>).put(settings_put::<C>))
+        .route("/api/storage", get(storage_get::<C>))
+        .route("/api/storage/purge", post(storage_purge::<C>))
         // data
         .route("/api/snapshot", get(snapshot::<C>))
         .route("/api/events", get(events::<C>))
@@ -484,4 +488,90 @@ async fn plan_apply<C: Connector>(State(st): St<C>, c: Caller, Path(id): Path<St
     need(&st, &c, p.resource, Level::Update)?;
     let done = st.telemon.apply(&p.router_id, &c.session.username, &p.plan).await?;
     Ok(Json(json!({ "stepsDone": done })))
+}
+
+// ---------------- pengaturan dan penyimpanan ----------------
+
+async fn settings_get<C: Connector>(State(st): St<C>, c: Caller) -> ApiResult<Json<SettingsDto>> {
+    need(&st, &c, Resource::Pengaturan, Level::Read)?;
+    let s = st.telemon.with_store(|s| s.get_settings().map_err(rusqlite_err::wrap)).map_err(|e| ApiError::internal(e.0))?;
+    Ok(Json(SettingsDto::from(&s)))
+}
+
+/// Simpan pengaturan. Izin tulis lewat akses publik hanya bisa diubah dari aplikasi desktop (ADR 0006).
+async fn settings_put<C: Connector>(State(st): St<C>, c: Caller, Json(req): Json<SettingsDto>) -> ApiResult<Json<SettingsDto>> {
+    need(&st, &c, Resource::Pengaturan, Level::Update)?;
+    let next = telemon_core::Settings::from(&req);
+    let old = st.telemon.with_store(|s| s.get_settings().map_err(rusqlite_err::wrap)).map_err(|e| ApiError::internal(e.0))?;
+    if next.remote.allow_public_write != old.remote.allow_public_write {
+        return Err(ApiError::forbidden("Izin tulis lewat akses publik hanya bisa diubah dari aplikasi desktop"));
+    }
+    next.validate().map_err(ApiError::bad)?;
+    st.telemon.with_store(|s| s.save_settings(&next).map_err(rusqlite_err::wrap)).map_err(|e| ApiError::internal(e.0))?;
+    st.apply_policy(&next);
+    st.telemon.apply_settings(&next)?;
+    let changes: Vec<Change> = old.diff(&next).into_iter().map(|(k, from, to)| Change { field: k.into(), from: Some(from), to: Some(to) }).collect();
+    if !changes.is_empty() {
+        let entry = AuditEntry {
+            at_ms: st.now(),
+            actor: c.session.username.clone(),
+            router_id: "-".into(),
+            action: "settings.update".into(),
+            target: "pengaturan".into(),
+            title: "Ubah pengaturan".into(),
+            changes,
+            outcome: AuditOutcome::Ok,
+        };
+        let _ = st.telemon.with_store(|s| s.record_audit(&entry));
+    }
+    Ok(Json(SettingsDto::from(&next)))
+}
+
+fn purge_json(c: telemon_core::store::PurgeCounts) -> Value {
+    json!({ "events": c.events, "users": c.users, "profiles": c.profiles, "chats": 0 })
+}
+
+/// Kartu Penyimpanan: ukuran, jumlah, dan yang akan dihapus bila "Bersihkan sekarang" dijalankan
+/// dengan pengaturan tersimpan.
+async fn storage_get<C: Connector>(State(st): St<C>, c: Caller) -> ApiResult<Json<Value>> {
+    need(&st, &c, Resource::Pengaturan, Level::Read)?;
+    let t = &st.telemon;
+    let io = |e: rusqlite_err::E| ApiError::internal(e.0);
+    let settings = t.with_store(|s| s.get_settings().map_err(rusqlite_err::wrap)).map_err(io)?;
+    let (events, users, deleted_users, deleted_profiles) = t.with_store(|s| s.storage_counts().map_err(rusqlite_err::wrap)).map_err(io)?;
+    let size = t.with_store(|s| s.size_bytes().map_err(rusqlite_err::wrap)).map_err(io)?;
+    let preview = t.purge_preview(&settings.retention_policy())?;
+    Ok(Json(json!({
+        "path": st.cfg.db_path,
+        "sizeBytes": size,
+        "events": events,
+        "users": users,
+        "deletedUsers": deleted_users,
+        "deletedProfiles": deleted_profiles,
+        "chats": 0,
+        "purgeable": purge_json(preview),
+    })))
+}
+
+async fn storage_purge<C: Connector>(State(st): St<C>, c: Caller) -> ApiResult<Json<Value>> {
+    need(&st, &c, Resource::Pengaturan, Level::Update)?;
+    let settings = st.telemon.with_store(|s| s.get_settings().map_err(rusqlite_err::wrap)).map_err(|e| ApiError::internal(e.0))?;
+    let done = st.telemon.purge_now(&settings.retention_policy())?;
+    let entry = AuditEntry {
+        at_ms: st.now(),
+        actor: c.session.username.clone(),
+        router_id: "-".into(),
+        action: "storage.purge".into(),
+        target: "penyimpanan".into(),
+        title: "Bersihkan data lama".into(),
+        changes: vec![
+            Change { field: "event".into(), from: None, to: Some(done.events.to_string()) },
+            Change { field: "user".into(), from: None, to: Some(done.users.to_string()) },
+            Change { field: "profile".into(), from: None, to: Some(done.profiles.to_string()) },
+            Change { field: "riwayat perubahan".into(), from: None, to: Some(done.audit.to_string()) },
+        ],
+        outcome: AuditOutcome::Ok,
+    };
+    let _ = st.telemon.with_store(|s| s.record_audit(&entry));
+    Ok(Json(purge_json(done)))
 }

@@ -22,6 +22,8 @@ pub struct HttpConfig {
     pub plan_ttl: Duration,
     /// Batas ukuran badan permintaan.
     pub max_body: usize,
+    /// Jalur berkas basis data untuk kartu Penyimpanan (hanya ditampilkan).
+    pub db_path: String,
 }
 
 impl Default for HttpConfig {
@@ -33,6 +35,7 @@ impl Default for HttpConfig {
             csp: Some("default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'".into()),
             plan_ttl: Duration::from_secs(600),
             max_body: 64 * 1024,
+            db_path: String::new(),
         }
     }
 }
@@ -44,6 +47,8 @@ pub struct AppState<C: Connector> {
     pub limiter: RateLimiter,
     pub plans: PlanCache,
     pub(crate) clock: Arc<dyn Fn() -> i64 + Send + Sync>,
+    /// (wajib 2FA untuk semua, akses publik aktif): berasal dari halaman Berbagi di aplikasi desktop.
+    share: Mutex<(bool, bool)>,
 }
 
 impl<C: Connector> AppState<C> {
@@ -53,7 +58,30 @@ impl<C: Connector> AppState<C> {
 
     pub fn with_clock(telemon: Arc<Telemon<C>>, auth: Arc<Auth>, cfg: HttpConfig, clock: Arc<dyn Fn() -> i64 + Send + Sync>) -> Arc<Self> {
         let limiter = RateLimiter::new(cfg.login_per_minute, 60_000);
-        Arc::new(Self { telemon, auth, cfg, limiter, plans: PlanCache::default(), clock })
+        let st = Arc::new(Self { telemon, auth, cfg, limiter, plans: PlanCache::default(), clock, share: Mutex::new((false, false)) });
+        // Pengaturan tersimpan langsung berlaku (sesi, penguncian, izin tulis publik).
+        let _ = st.reload_settings();
+        st
+    }
+
+    /// Baca pengaturan tersimpan dan terapkan ke kebijakan akun dan pemantau.
+    pub fn reload_settings(&self) -> Result<telemon_core::Settings, String> {
+        let s = self.telemon.with_store(|st| st.get_settings()).map_err(|e| e.to_string())?;
+        self.apply_policy(&s);
+        Ok(s)
+    }
+
+    pub(crate) fn apply_policy(&self, s: &telemon_core::Settings) {
+        let (require_2fa, public_on) = *self.share.lock().expect("lock");
+        self.auth.set_policy(s.auth_policy(telemon_core::auth::AuthPolicy { require_2fa, public_on, ..Default::default() }));
+    }
+
+    /// Status Berbagi dari aplikasi desktop: saklar "Wajib 2FA" dan akses Publik aktif.
+    pub fn set_share(&self, require_2fa: bool, public_on: bool) {
+        *self.share.lock().expect("lock") = (require_2fa, public_on);
+        if let Ok(s) = self.telemon.with_store(|st| st.get_settings()) {
+            self.apply_policy(&s);
+        }
     }
 
     pub fn now(&self) -> i64 {

@@ -661,6 +661,95 @@ async fn daftar_event_dan_kursor() {
     assert_eq!(t.get("/api/events", Some(&cb)).await.status, StatusCode::FORBIDDEN);
 }
 
+// ---------------- pengaturan dan penyimpanan ----------------
+
+#[tokio::test]
+async fn pengaturan_izin_validasi_dan_berlaku_langsung() {
+    let t = harness_with(HttpConfig { login_per_minute: 1000, db_path: "/data/telemon.db".into(), ..Default::default() });
+    t.account("operator", "role-operator");
+    t.account("admin", "role-admin");
+    t.account("budi", "role-viewer");
+    let (co, ca) = (t.login("operator").await, t.login("admin").await);
+    assert_eq!(t.get("/api/settings", Some(&co)).await.status, StatusCode::FORBIDDEN, "Operator tidak punya izin Pengaturan");
+
+    let cur = t.get("/api/settings", Some(&ca)).await;
+    assert_eq!(cur.status, StatusCode::OK);
+    assert_eq!((cur.body["retention"]["eventDays"].as_u64(), cur.body["polling"]["sessionSeconds"].as_u64(), cur.body["remote"]["maxFailures"].as_u64()), (Some(30), Some(30), Some(5)));
+    assert_eq!(cur.body["remote"]["allowPublicWrite"], false);
+
+    let put = |b: Value| t.call(Method::PUT, "/api/settings", Some(b), Some(&ca), &[], LAN);
+    // Validasi: pesan siap tampil.
+    let mut bad = cur.body.clone();
+    bad["polling"]["sessionSeconds"] = json!(5);
+    let r = put(bad).await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+    assert!(r.body["error"]["message"].as_str().unwrap().contains("Interval sesi aktif"));
+    // Izin tulis lewat publik tidak bisa diubah dari sesi jarak jauh.
+    let mut pw = cur.body.clone();
+    pw["remote"]["allowPublicWrite"] = json!(true);
+    assert_eq!(put(pw).await.status, StatusCode::FORBIDDEN);
+
+    // Perubahan sah: tersimpan, dan kebijakan akun langsung berlaku.
+    let mut next = cur.body.clone();
+    next["remote"]["maxFailures"] = json!(3);
+    next["remote"]["sessionHours"] = json!(2);
+    next["retention"]["eventDays"] = Value::Null;
+    let r = put(next).await;
+    assert_eq!((r.status, r.body["remote"]["maxFailures"].as_u64(), r.body["retention"]["eventDays"].is_null()), (StatusCode::OK, Some(3), true));
+    assert_eq!(t.get("/api/settings", Some(&ca)).await.body["remote"]["sessionHours"], 2);
+    for _ in 0..3 {
+        let _ = t.post("/api/login", json!({"username": "budi", "password": "salah"}), None).await;
+    }
+    let locked = t.post("/api/login", json!({"username": "budi", "password": "password-uji"}), None).await;
+    assert_eq!((locked.status, locked.code()), (StatusCode::TOO_MANY_REQUESTS, "locked"), "batas gagal baru (3) berlaku tanpa memulai ulang");
+    t.account("pantau", "role-monitor");
+    let ok = t.post("/api/login", json!({"username": "pantau", "password": "password-uji"}), None).await;
+    assert!(ok.set_cookie().contains("Max-Age=7200"), "masa sesi baru (2 jam): {}", ok.set_cookie());
+
+    // Perubahan tercatat di riwayat dengan nilai lama dan baru.
+    let log = t.get("/api/audit?limit=100", Some(&ca)).await;
+    let entry = log.body["entries"].as_array().unwrap().iter().find(|e| e["action"] == "settings.update").expect("tercatat");
+    let ch = entry["changes"].as_array().unwrap();
+    assert!(ch.iter().any(|c| c["field"] == "remote.max_failures" && c["from"] == "5" && c["to"] == "3"));
+    assert!(ch.iter().any(|c| c["field"] == "retention.event_days" && c["to"] == "null"));
+    // Dari aplikasi desktop (tanpa sesi) izin tulis publik boleh diubah dan langsung berlaku.
+    let mut s = t.telemon.with_store(|st| st.get_settings()).unwrap();
+    s.remote.allow_public_write = true;
+    t.telemon.with_store(|st| st.save_settings(&s)).unwrap();
+    t.st.reload_settings().unwrap();
+    assert!(t.auth.policy().allow_public_write);
+}
+
+#[tokio::test]
+async fn status_berbagi_mewajibkan_2fa_dan_penyimpanan_dibersihkan() {
+    let t = harness();
+    t.account("pantau", "role-monitor");
+    t.st.set_share(true, false);
+    let r = t.post("/api/login", json!({"username": "pantau", "password": "password-uji"}), None).await;
+    assert_eq!(r.body["status"], "2fa_setup_required", "saklar Wajib 2FA dari desktop");
+    t.st.set_share(false, false);
+    assert_eq!(t.post("/api/login", json!({"username": "pantau", "password": "password-uji"}), None).await.body["status"], "ok");
+
+    // Penyimpanan: hitungan, pratinjau, lalu bersihkan.
+    let rid = t.router(false);
+    let old = telemon_core::Event { at_ms: 1, kind: telemon_core::EventKind::Connected, username: None, address: None, caller_id: None, message: "lama".into() };
+    t.telemon.with_store(|s| s.insert_events(&rid, &[old])).unwrap();
+    t.account("admin", "role-admin");
+    let ca = t.login("admin").await;
+    let st = t.get("/api/storage", Some(&ca)).await;
+    assert_eq!(st.status, StatusCode::OK);
+    assert_eq!((st.body["events"].as_u64(), st.body["purgeable"]["events"].as_u64(), st.body["chats"].as_u64()), (Some(1), Some(1), Some(0)));
+    assert!(st.body["sizeBytes"].as_u64().unwrap() > 0);
+    t.account("viewer", "role-viewer");
+    let cv = t.login("viewer").await;
+    assert_eq!(t.post("/api/storage/purge", json!({}), Some(&cv)).await.status, StatusCode::FORBIDDEN);
+    let done = t.post("/api/storage/purge", json!({}), Some(&ca)).await;
+    assert_eq!((done.status, done.body["events"].as_u64()), (StatusCode::OK, Some(1)));
+    assert_eq!(t.get("/api/storage", Some(&ca)).await.body["events"], 0);
+    let log = t.get("/api/audit?limit=100", Some(&ca)).await;
+    assert!(log.body["entries"].as_array().unwrap().iter().any(|e| e["action"] == "storage.purge"));
+}
+
 // ---------------- UI statis ----------------
 
 #[tokio::test]

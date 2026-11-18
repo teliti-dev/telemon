@@ -9,6 +9,7 @@ pub mod monitor;
 pub mod poller;
 pub mod router;
 pub mod service;
+pub mod settings;
 pub mod store;
 #[cfg(feature = "tls")]
 pub mod tls;
@@ -26,3 +27,4 @@ pub use vault::{VaultError, generate_key};
 #[cfg(feature = "tls")]
 pub use tls::{Fingerprint, fetch_fingerprint, pinned_config};
 pub use service::{Connector, MemorySecrets, NetConnector, Probe, Resilient, RouterEvent, RuntimeConfig, SecretStore, ServiceError, Telemon};
+pub use settings::Settings;

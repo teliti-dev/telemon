@@ -500,3 +500,72 @@ pub struct AuditParams {
     pub before: Option<i64>,
     pub limit: Option<usize>,
 }
+
+// ---------------- pengaturan ----------------
+
+#[derive(Serialize, Deserialize, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+pub struct RetentionDto {
+    pub event_days: Option<u32>,
+    pub ai_chat_days: Option<u32>,
+    pub max_events: u32,
+    pub deleted_days: Option<u32>,
+    pub audit_days: Option<u32>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+pub struct PollingDto {
+    pub session_seconds: u32,
+    pub log_seconds: u32,
+    pub auto_import_hours: Option<u32>,
+    pub timeout_seconds: u32,
+    pub retries: u32,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteDto {
+    pub session_hours: u32,
+    pub max_failures: u32,
+    pub lock_minutes: u32,
+    pub allow_public_write: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+pub struct AiDto {
+    pub enabled: bool,
+    pub mask_sensitive: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy)]
+pub struct SettingsDto {
+    pub retention: RetentionDto,
+    pub polling: PollingDto,
+    pub remote: RemoteDto,
+    pub ai: AiDto,
+}
+
+impl From<&telemon_core::Settings> for SettingsDto {
+    fn from(s: &telemon_core::Settings) -> Self {
+        Self {
+            retention: RetentionDto { event_days: s.retention.event_days, ai_chat_days: s.retention.ai_chat_days, max_events: s.retention.max_events, deleted_days: s.retention.deleted_days, audit_days: s.retention.audit_days },
+            polling: PollingDto { session_seconds: s.polling.session_seconds, log_seconds: s.polling.log_seconds, auto_import_hours: s.polling.auto_import_hours, timeout_seconds: s.polling.timeout_seconds, retries: s.polling.retries },
+            remote: RemoteDto { session_hours: s.remote.session_hours, max_failures: s.remote.max_failures, lock_minutes: s.remote.lock_minutes, allow_public_write: s.remote.allow_public_write },
+            ai: AiDto { enabled: s.ai.enabled, mask_sensitive: s.ai.mask_sensitive },
+        }
+    }
+}
+
+impl From<&SettingsDto> for telemon_core::Settings {
+    fn from(d: &SettingsDto) -> Self {
+        use telemon_core::settings::{Ai, Polling, Remote, Retention};
+        telemon_core::Settings {
+            retention: Retention { event_days: d.retention.event_days, ai_chat_days: d.retention.ai_chat_days, max_events: d.retention.max_events, deleted_days: d.retention.deleted_days, audit_days: d.retention.audit_days },
+            polling: Polling { session_seconds: d.polling.session_seconds, log_seconds: d.polling.log_seconds, auto_import_hours: d.polling.auto_import_hours, timeout_seconds: d.polling.timeout_seconds, retries: d.polling.retries },
+            remote: Remote { session_hours: d.remote.session_hours, max_failures: d.remote.max_failures, lock_minutes: d.remote.lock_minutes, allow_public_write: d.remote.allow_public_write },
+            ai: Ai { enabled: d.ai.enabled, mask_sensitive: d.ai.mask_sensitive },
+        }
+    }
+}
