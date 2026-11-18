@@ -150,6 +150,8 @@ export interface ShareState {
     error?: string
   }
   auth: ShareAuth
+  /** Fitur yang dinyalakan pemilik; diketahui semua klien. */
+  features: { ai: boolean; aiMask: boolean }
 }
 
 export interface ShareAuth {
@@ -160,7 +162,7 @@ export interface ShareAuth {
 }
 
 /** Menu yang bisa diatur izinnya per peran. Berbagi (menyalakan serve/publik) hanya dari aplikasi desktop. */
-export type Resource = "ringkasan" | "user" | "profile" | "event" | "router" | "admin" | "pengaturan"
+export type Resource = "ringkasan" | "user" | "profile" | "event" | "router" | "admin" | "pengaturan" | "ai"
 
 /** Tanpa akses (bawaan), lihat, atau ubah (tambah, edit, soft delete, pulihkan, import). Ubah mencakup lihat. */
 export type Level = "none" | "read" | "update"
@@ -183,10 +185,81 @@ export interface RoleInput {
   permissions: Permissions
 }
 
+/** Tautan ke halaman Telemon (hash route), mis. { page: "event", params: { type: "auth_failed" } }. */
+export interface AiLink {
+  page: string
+  params?: Record<string, string>
+}
+
+export type AiTone = "good" | "warn" | "bad" | "muted"
+
+/** Komponen visual di dalam jawaban AI. Berisi data jadi, bukan HTML. */
+export type AiWidget =
+  | { kind: "stats"; items: { label: string; value: string; tone?: AiTone }[] }
+  | { kind: "bars"; title: string; data: { label: string; value: number }[] }
+  | { kind: "list"; title?: string; rows: { primary: string; secondary?: string; trailing?: string; tone?: AiTone; to?: AiLink }[] }
+  | { kind: "user"; username: string; router: string; status: string; tone: AiTone; fields: { label: string; value: string }[]; to: AiLink }
+
+/** Tombol pintasan di bawah jawaban: buka halaman, atau salin teks. */
+export interface AiAction {
+  id: string
+  label: string
+  to?: AiLink
+  copy?: string
+}
+
+export interface AiMessage {
+  id: string
+  role: "user" | "assistant"
+  text: string
+  at: number
+  /** Jawaban gagal dibuat; text berisi alasannya. */
+  error?: boolean
+  widgets?: AiWidget[]
+  actions?: AiAction[]
+  /** Saran pertanyaan lanjutan (kunci terjemahan atau teks jadi). */
+  followUps?: string[]
+  /** Data yang dipakai AI untuk menjawab. */
+  sources?: string[]
+  /** Langkah yang dikerjakan AI (transparansi). */
+  steps?: string[]
+  feedback?: "up" | "down"
+}
+
+/** Potongan jawaban yang dialirkan bertahap. */
+export type AiStreamEvent =
+  | { type: "step"; text: string }
+  | { type: "text"; text: string }
+  | { type: "widget"; widget: AiWidget }
+  | { type: "actions"; actions: AiAction[] }
+  | { type: "followups"; items: string[] }
+  | { type: "sources"; items: string[] }
+
+export interface AiChat {
+  id: string
+  title: string
+  pinned: boolean
+  createdAt: number
+  updatedAt: number
+  messages: AiMessage[]
+}
+
+export interface AiChatSummary {
+  id: string
+  title: string
+  pinned: boolean
+  updatedAt: number
+  messageCount: number
+  /** Awal jawaban terakhir, untuk pratinjau di riwayat. */
+  preview: string
+}
+
 export interface AppSettings {
   retention: {
     /** Hari; null = selamanya. */
     eventDays: number | null
+    /** Riwayat chat AI disimpan N hari; null = selamanya. */
+    aiChatDays: number | null
     maxEvents: number
     /** Hapus permanen item soft delete setelah N hari; null = tidak pernah. */
     deletedDays: number | null
@@ -206,12 +279,19 @@ export interface AppSettings {
     lockMinutes: number
     allowPublicWrite: boolean
   }
+  ai: {
+    /** Tombol dan jawaban AI chat; mati = disembunyikan untuk semua. */
+    enabled: boolean
+    /** Samarkan IP dan MAC pelanggan dalam jawaban. */
+    maskSensitive: boolean
+  }
 }
 
 export interface PurgeCounts {
   events: number
   users: number
   profiles: number
+  chats: number
 }
 
 export interface StorageInfo {
@@ -221,6 +301,7 @@ export interface StorageInfo {
   users: number
   deletedUsers: number
   deletedProfiles: number
+  chats: number
   /** Yang akan dihapus bila "Bersihkan sekarang" dijalankan dengan pengaturan tersimpan. */
   purgeable: PurgeCounts
 }

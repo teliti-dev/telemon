@@ -16,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
 export interface FilterOption {
@@ -45,13 +46,14 @@ export function FilterSelect({
   onChange: (v: string) => void
   className?: string
 }) {
+  const t = useT()
   const active = value !== defaultValue
   const selected = options.find((o) => o.value === value)
-  const text = active ? (selected?.short ?? selected?.label ?? label) : label
+  const text = active ? t(selected?.short ?? selected?.label ?? label) : t(label) // i18n-ignore: etiket sudah berupa kunci (tk)
   return (
     <Select value={value} onValueChange={onChange}>
       <SelectTrigger
-        aria-label={label}
+        aria-label={t(label)} // i18n-ignore: etiket sudah berupa kunci (tk)
         className={cn("min-w-0 flex-1", active ? "font-medium text-brand" : "text-muted-foreground", className)}
       >
         <SelectValue>{text}</SelectValue>
@@ -59,7 +61,7 @@ export function FilterSelect({
       <SelectContent>
         {options.map((o) => (
           <SelectItem key={o.value} value={o.value}>
-            {o.label}
+            {t(o.label) /* i18n-ignore: etiket sudah berupa kunci (tk) */}
           </SelectItem>
         ))}
       </SelectContent>
@@ -87,15 +89,20 @@ export function FilterMulti<T extends string>({
   onChange: (v: T[]) => void
   className?: string
 }) {
+  const t = useT()
   const n = values.length
   const text =
-    n === 0 ? label : n === 1 ? (options.find((o) => o.value === values[0])?.label ?? label) : `${n} ${label.toLowerCase()}`
+    n === 0
+      ? t(label) // i18n-ignore: etiket sudah berupa kunci (tk)
+      : n === 1
+        ? t(options.find((o) => o.value === values[0])?.label ?? label) // i18n-ignore: etiket sudah berupa kunci (tk)
+        : t("{n} {label}", { n, label: t(label).toLowerCase() }) // i18n-ignore: etiket sudah berupa kunci (tk)
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
           variant="outline"
-          aria-label={label}
+          aria-label={t(label)} // i18n-ignore: etiket sudah berupa kunci (tk)
           className={cn(
             "min-w-0 flex-1 justify-between gap-1.5 px-2.5 font-normal",
             n > 0 ? "font-medium text-brand" : "text-muted-foreground",
@@ -115,13 +122,13 @@ export function FilterMulti<T extends string>({
             onSelect={(e) => e.preventDefault()}
           >
             {o.icon}
-            {o.label}
+            {t(o.label) /* i18n-ignore: etiket sudah berupa kunci (tk) */}
           </DropdownMenuCheckboxItem>
         ))}
         {n > 0 && (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => onChange([])}>Hapus filter</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => onChange([])}>{t("Hapus filter")}</DropdownMenuItem>
           </>
         )}
       </DropdownMenuContent>

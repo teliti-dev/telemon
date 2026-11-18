@@ -23,13 +23,14 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { useWriteGate } from "@/hooks/use-write-gate"
+import { tk, useT } from "@/lib/i18n"
 import { useStore } from "@/lib/store-context"
 import type { OnlyOne, PppProfile, ProfilePatch } from "@/lib/types"
 
 export const ONLY_ONE_LABEL: Record<OnlyOne, string> = {
-  default: "Bawaan router",
-  yes: "Ya (satu sesi per user)",
-  no: "Tidak (boleh banyak sesi)",
+  default: tk("Bawaan router"),
+  yes: tk("Ya (satu sesi per user)"),
+  no: tk("Tidak (boleh banyak sesi)"),
 }
 
 const dash = (v?: string) => (v && v.trim() ? v.trim() : "-")
@@ -59,6 +60,7 @@ function ProfileForm({
   defaultRouterId,
   onClose,
 }: Omit<Props, "open" | "onOpenChange"> & { onClose: () => void }) {
+  const t = useT()
   const { routers, routerById, api } = useStore()
   const gate = useWriteGate("profile")
   const editing = mode === "edit" && !!profile
@@ -91,32 +93,32 @@ function ProfileForm({
   if (editing && profile) {
     if (rateLimit.trim() !== (profile.rateLimit ?? "")) {
       patch.rateLimit = rateLimit.trim()
-      changes.push({ label: "Rate limit", from: dash(profile.rateLimit), to: dash(rateLimit) })
+      changes.push({ label: t("Rate limit"), from: dash(profile.rateLimit), to: dash(rateLimit) })
     }
     if (localAddress.trim() !== (profile.localAddress ?? "")) {
       patch.localAddress = localAddress.trim()
-      changes.push({ label: "Local address", from: dash(profile.localAddress), to: dash(localAddress) })
+      changes.push({ label: t("Local address"), from: dash(profile.localAddress), to: dash(localAddress) })
     }
     if (remoteAddress.trim() !== (profile.remoteAddress ?? "")) {
       patch.remoteAddress = remoteAddress.trim()
-      changes.push({ label: "Remote address", from: dash(profile.remoteAddress), to: dash(remoteAddress) })
+      changes.push({ label: t("Remote address"), from: dash(profile.remoteAddress), to: dash(remoteAddress) })
     }
     if (onlyOne !== profile.onlyOne) {
       patch.onlyOne = onlyOne
-      changes.push({ label: "Only one", from: ONLY_ONE_LABEL[profile.onlyOne], to: ONLY_ONE_LABEL[onlyOne] })
+      changes.push({ label: t("Only one"), from: t(ONLY_ONE_LABEL[profile.onlyOne]), to: t(ONLY_ONE_LABEL[onlyOne]) }) // i18n-ignore: etiket sudah berupa kunci (tk)
     }
     if (comment.trim() !== (profile.comment ?? "")) {
       patch.comment = comment.trim()
-      changes.push({ label: "Komentar", from: dash(profile.comment), to: dash(comment) })
+      changes.push({ label: t("Komentar"), from: dash(profile.comment), to: dash(comment) })
     }
   } else {
-    changes.push({ label: "Router", to: router?.name ?? "-" })
-    changes.push({ label: "Nama", to: name.trim() })
-    changes.push({ label: "Rate limit", to: dash(rateLimit) })
-    changes.push({ label: "Local address", to: dash(localAddress) })
-    changes.push({ label: "Remote address", to: dash(remoteAddress) })
-    changes.push({ label: "Only one", to: ONLY_ONE_LABEL[onlyOne] })
-    if (comment.trim()) changes.push({ label: "Komentar", to: comment.trim() })
+    changes.push({ label: t("Router"), to: router?.name ?? "-" })
+    changes.push({ label: t("Nama"), to: name.trim() })
+    changes.push({ label: t("Rate limit"), to: dash(rateLimit) })
+    changes.push({ label: t("Local address"), to: dash(localAddress) })
+    changes.push({ label: t("Remote address"), to: dash(remoteAddress) })
+    changes.push({ label: t("Only one"), to: t(ONLY_ONE_LABEL[onlyOne]) }) // i18n-ignore: etiket sudah berupa kunci (tk)
+    if (comment.trim()) changes.push({ label: t("Komentar"), to: comment.trim() })
   }
 
   const valid = editing
@@ -129,7 +131,7 @@ function ProfileForm({
     try {
       if (editing && profile) {
         await api.updateProfile(profile.id, patch)
-        toast.success(`Profil PPP ${profile.name} diperbarui di ${router?.name}`)
+        toast.success(t("Profil PPP {name} diperbarui di {router}", { name: profile.name, router: router?.name ?? "" }))
       } else {
         const p = await api.createProfile({
           routerId,
@@ -140,7 +142,7 @@ function ProfileForm({
           onlyOne,
           comment: comment.trim() || undefined,
         })
-        toast.success(`Profil PPP ${p.name} dibuat di ${router?.name}`)
+        toast.success(t("Profil PPP {name} dibuat di {router}", { name: p.name, router: router?.name ?? "" }))
       }
       onClose()
     } catch (e) {
@@ -154,10 +156,9 @@ function ProfileForm({
     return (
       <>
         <DialogHeader>
-          <DialogTitle>Tulis ke {router?.name}?</DialogTitle>
+          <DialogTitle>{t("Tulis ke {router}?", { router: router?.name ?? "" })}</DialogTitle>
           <DialogDescription>
-            Perubahan profil PPP langsung dikirim ke router. Sesi yang sedang berjalan bisa
-            terpengaruh, misalnya saat rate limit diubah.
+            {t("Perubahan profil PPP langsung dikirim ke router. Sesi yang sedang berjalan bisa terpengaruh, misalnya saat rate limit diubah.")}
           </DialogDescription>
         </DialogHeader>
         <ReviewChanges changes={changes} />
@@ -169,10 +170,10 @@ function ProfileForm({
         )}
         <DialogFooter>
           <Button variant="outline" onClick={() => setStep("form")} disabled={busy}>
-            Kembali
+            {t("Kembali")}
           </Button>
           <Button onClick={submit} disabled={busy}>
-            {busy ? "Menulis ke router…" : "Tulis ke router"}
+            {busy ? t("Menulis ke router…") : t("Tulis ke router")}
           </Button>
         </DialogFooter>
       </>
@@ -188,9 +189,9 @@ function ProfileForm({
       }}
     >
       <DialogHeader>
-        <DialogTitle>{editing ? `Edit profil PPP ${profile?.name}` : "Tambah profil PPP"}</DialogTitle>
+        <DialogTitle>{editing ? t("Edit profil PPP {name}", { name: profile?.name ?? "" }) : t("Tambah profil PPP")}</DialogTitle>
         <DialogDescription>
-          {editing ? "Mengubah /ppp/profile di router." : "Membuat /ppp/profile baru di router."}
+          {editing ? t("Mengubah /ppp/profile di router.") : t("Membuat /ppp/profile baru di router.")}
         </DialogDescription>
       </DialogHeader>
 
@@ -203,10 +204,10 @@ function ProfileForm({
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="grid gap-1.5">
-          <Label htmlFor="p-router">Router</Label>
+          <Label htmlFor="p-router">{t("Router")}</Label>
           <Select value={routerId} onValueChange={setRouterId} disabled={editing}>
             <SelectTrigger id="p-router" className="w-full">
-              <SelectValue placeholder="Pilih router" />
+              <SelectValue placeholder={t("Pilih router")} />
             </SelectTrigger>
             <SelectContent>
               {(editing ? routers : writable).map((r) => (
@@ -219,7 +220,7 @@ function ProfileForm({
           </Select>
         </div>
         <div className="grid gap-1.5">
-          <Label htmlFor="p-name">Nama</Label>
+          <Label htmlFor="p-name">{t("Nama")}</Label>
           <Input
             id="p-name"
             value={name}
@@ -227,6 +228,7 @@ function ProfileForm({
             onChange={(e) => setName(e.target.value)}
             autoComplete="off"
             spellCheck={false}
+            // i18n-ignore: contoh nama profil
             placeholder="20Mbps"
             className="font-mono"
             autoFocus={!editing}
@@ -235,7 +237,7 @@ function ProfileForm({
       </div>
 
       <div className="grid gap-1.5">
-        <Label htmlFor="p-rate">Rate limit (rx/tx)</Label>
+        <Label htmlFor="p-rate">{t("Rate limit (rx/tx)")}</Label>
         <Input
           id="p-rate"
           value={rateLimit}
@@ -246,15 +248,15 @@ function ProfileForm({
           aria-invalid={!rateOk}
         />
         {!rateOk ? (
-          <p className="text-xs text-destructive">Format tidak valid. Contoh: 10M/10M atau 5M.</p>
+          <p className="text-xs text-destructive">{t("Format tidak valid. Contoh: 10M/10M atau 5M.")}</p>
         ) : (
-          <p className="text-xs text-muted-foreground">Unggah/unduh dari sisi router. Kosong = tanpa batas.</p>
+          <p className="text-xs text-muted-foreground">{t("Unggah/unduh dari sisi router. Kosong = tanpa batas.")}</p>
         )}
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="grid gap-1.5">
-          <Label htmlFor="p-local">Local address</Label>
+          <Label htmlFor="p-local">{t("Local address")}</Label>
           <Input
             id="p-local"
             value={localAddress}
@@ -264,7 +266,7 @@ function ProfileForm({
           />
         </div>
         <div className="grid gap-1.5">
-          <Label htmlFor="p-remote">Remote address (pool)</Label>
+          <Label htmlFor="p-remote">{t("Remote address (pool)")}</Label>
           <Input
             id="p-remote"
             value={remoteAddress}
@@ -277,7 +279,7 @@ function ProfileForm({
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="grid gap-1.5">
-          <Label htmlFor="p-only">Only one</Label>
+          <Label htmlFor="p-only">{t("Only one")}</Label>
           <Select value={onlyOne} onValueChange={(v) => setOnlyOne(v as OnlyOne)}>
             <SelectTrigger id="p-only" className="w-full">
               <SelectValue />
@@ -285,34 +287,34 @@ function ProfileForm({
             <SelectContent>
               {(Object.keys(ONLY_ONE_LABEL) as OnlyOne[]).map((k) => (
                 <SelectItem key={k} value={k}>
-                  {ONLY_ONE_LABEL[k]}
+                  {t(ONLY_ONE_LABEL[k]) /* i18n-ignore: etiket sudah berupa kunci (tk) */}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
         <div className="grid gap-1.5">
-          <Label htmlFor="p-comment">Komentar</Label>
+          <Label htmlFor="p-comment">{t("Komentar")}</Label>
           <Input
             id="p-comment"
             value={comment}
             onChange={(e) => setComment(e.target.value)}
             maxLength={120}
-            placeholder="opsional"
+            placeholder={t("opsional")}
           />
         </div>
       </div>
 
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onClose}>
-          Batal
+          {t("Batal")}
         </Button>
         <Button type="submit" disabled={!valid || !!blocked}>
-          Tinjau
+          {t("Tinjau")}
         </Button>
       </DialogFooter>
       {!valid && editing && changes.length === 0 && (
-        <p className="-mt-1 text-right text-xs text-muted-foreground">Belum ada perubahan.</p>
+        <p className="-mt-1 text-right text-xs text-muted-foreground">{t("Belum ada perubahan.")}</p>
       )}
     </form>
   )

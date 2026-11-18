@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { useWriteGate } from "@/hooks/use-write-gate"
+import { useT } from "@/lib/i18n"
 import { randomPassword } from "@/lib/random"
 import { useStore } from "@/lib/store-context"
 import type { PppUser, UserPatch } from "@/lib/types"
@@ -56,6 +57,7 @@ function UserForm({
   defaultRouterId,
   onClose,
 }: Omit<Props, "open" | "onOpenChange"> & { onClose: () => void }) {
+  const t = useT()
   const { routers, profiles, routerById, api } = useStore()
   const gate = useWriteGate("user")
   const editing = mode === "edit" && !!user
@@ -95,36 +97,36 @@ function UserForm({
   if (editing && user) {
     if (profile !== user.profile) {
       patch.profile = profile
-      changes.push({ label: "Profil", from: user.profile, to: profile })
+      changes.push({ label: t("Profil"), from: user.profile, to: profile })
     }
     if (staticAddress.trim() !== (user.staticAddress ?? "")) {
       patch.staticAddress = staticAddress.trim()
-      changes.push({ label: "IP statis", from: dash(user.staticAddress), to: dash(staticAddress) })
+      changes.push({ label: t("IP statis"), from: dash(user.staticAddress), to: dash(staticAddress) })
     }
     if (comment.trim() !== (user.comment ?? "")) {
       patch.comment = comment.trim()
-      changes.push({ label: "Komentar", from: dash(user.comment), to: dash(comment) })
+      changes.push({ label: t("Komentar"), from: dash(user.comment), to: dash(comment) })
     }
     if (disabled !== (user.status === "disabled")) {
       patch.disabled = disabled
       changes.push({
-        label: "Secret",
-        from: user.status === "disabled" ? "Nonaktif" : "Aktif",
-        to: disabled ? "Nonaktif" : "Aktif",
+        label: t("Secret"),
+        from: user.status === "disabled" ? t("Nonaktif") : t("Aktif"),
+        to: disabled ? t("Nonaktif") : t("Aktif"),
       })
     }
     if (password) {
       patch.password = password
-      changes.push({ label: "Password", to: "diganti" })
+      changes.push({ label: t("Password"), to: t("diganti") })
     }
   } else {
-    changes.push({ label: "Router", to: router?.name ?? "-" })
-    changes.push({ label: "Username", to: username.trim() })
-    changes.push({ label: "Password", to: "diatur" })
-    changes.push({ label: "Profil", to: profile || "-" })
-    if (staticAddress.trim()) changes.push({ label: "IP statis", to: staticAddress.trim() })
-    if (comment.trim()) changes.push({ label: "Komentar", to: comment.trim() })
-    if (disabled) changes.push({ label: "Secret", to: "Nonaktif" })
+    changes.push({ label: t("Router"), to: router?.name ?? "-" })
+    changes.push({ label: t("Username"), to: username.trim() })
+    changes.push({ label: t("Password"), to: t("diatur") })
+    changes.push({ label: t("Profil"), to: profile || "-" })
+    if (staticAddress.trim()) changes.push({ label: t("IP statis"), to: staticAddress.trim() })
+    if (comment.trim()) changes.push({ label: t("Komentar"), to: comment.trim() })
+    if (disabled) changes.push({ label: t("Secret"), to: t("Nonaktif") })
   }
 
   const valid = editing
@@ -137,7 +139,7 @@ function UserForm({
     try {
       if (editing && user) {
         await api.updateUser(user.id, patch)
-        toast.success(`${user.username} diperbarui di ${router?.name}`)
+        toast.success(t("{user} diperbarui di {router}", { user: user.username, router: router?.name ?? "" }))
       } else {
         const u = await api.createUser({
           routerId,
@@ -148,7 +150,7 @@ function UserForm({
           comment: comment.trim() || undefined,
           disabled,
         })
-        toast.success(`${u.username} dibuat di ${router?.name}`)
+        toast.success(t("{user} dibuat di {router}", { user: u.username, router: router?.name ?? "" }))
       }
       onClose()
     } catch (e) {
@@ -162,9 +164,9 @@ function UserForm({
     return (
       <>
         <DialogHeader>
-          <DialogTitle>Tulis ke {router?.name}?</DialogTitle>
+          <DialogTitle>{t("Tulis ke {router}?", { router: router?.name ?? "" })}</DialogTitle>
           <DialogDescription>
-            Perubahan langsung dikirim ke router dan berlaku untuk pelanggan.
+            {t("Perubahan langsung dikirim ke router dan berlaku untuk pelanggan.")}
           </DialogDescription>
         </DialogHeader>
         <ReviewChanges changes={changes} />
@@ -176,10 +178,10 @@ function UserForm({
         )}
         <DialogFooter>
           <Button variant="outline" onClick={() => setStep("form")} disabled={busy}>
-            Kembali
+            {t("Kembali")}
           </Button>
           <Button onClick={submit} disabled={busy}>
-            {busy ? "Menulis ke router…" : "Tulis ke router"}
+            {busy ? t("Menulis ke router…") : t("Tulis ke router")}
           </Button>
         </DialogFooter>
       </>
@@ -195,11 +197,11 @@ function UserForm({
       }}
     >
       <DialogHeader>
-        <DialogTitle>{editing ? `Edit ${user?.username}` : "Tambah user"}</DialogTitle>
+        <DialogTitle>{editing ? t("Edit {user}", { user: user?.username ?? "" }) : t("Tambah user")}</DialogTitle>
         <DialogDescription>
           {editing
-            ? "Mengubah secret PPPoE di router."
-            : "Membuat secret PPPoE baru di router."}
+            ? t("Mengubah secret PPPoE di router.")
+            : t("Membuat secret PPPoE baru di router.")}
         </DialogDescription>
       </DialogHeader>
 
@@ -211,7 +213,7 @@ function UserForm({
       )}
 
       <div className="grid gap-1.5">
-        <Label htmlFor="u-router">Router</Label>
+        <Label htmlFor="u-router">{t("Router")}</Label>
         <Select
           value={routerId}
           disabled={editing}
@@ -221,7 +223,7 @@ function UserForm({
           }}
         >
           <SelectTrigger id="u-router" className="w-full">
-            <SelectValue placeholder="Pilih router" />
+            <SelectValue placeholder={t("Pilih router")} />
           </SelectTrigger>
           <SelectContent>
             {(editing ? routers : writable).map((r) => (
@@ -234,14 +236,14 @@ function UserForm({
         </Select>
         {!editing && writable.length === 0 && (
           <p className="text-xs text-destructive">
-            Belum ada router dengan hak write. Aktifkan di halaman Router.
+            {t("Belum ada router dengan hak write. Aktifkan di halaman Router.")}
           </p>
         )}
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="grid gap-1.5">
-          <Label htmlFor="u-name">Username</Label>
+          <Label htmlFor="u-name">{t("Username")}</Label>
           <Input
             id="u-name"
             value={username}
@@ -257,8 +259,8 @@ function UserForm({
         </div>
         <div className="grid gap-1.5">
           <Label htmlFor="u-pass">
-            Password{" "}
-            {editing && <span className="font-normal text-muted-foreground">(kosong = tetap)</span>}
+            {t("Password")}{" "}
+            {editing && <span className="font-normal text-muted-foreground">{t("(kosong = tetap)")}</span>}
           </Label>
           <div className="flex gap-1.5">
             <Input
@@ -275,8 +277,8 @@ function UserForm({
               type="button"
               variant="outline"
               size="icon"
-              aria-label="Buat password acak"
-              title="Buat password acak"
+              aria-label={t("Buat password acak")}
+              title={t("Buat password acak")}
               onClick={() => setPassword(randomPassword())}
             >
               <DicesIcon />
@@ -286,10 +288,10 @@ function UserForm({
       </div>
 
       <div className="grid gap-1.5">
-        <Label htmlFor="u-profile">Profil</Label>
+        <Label htmlFor="u-profile">{t("Profil")}</Label>
         <Select value={profile} onValueChange={setProfile} disabled={profileOptions.length === 0}>
           <SelectTrigger id="u-profile" className="w-full">
-            <SelectValue placeholder="Pilih profil PPP" />
+            <SelectValue placeholder={t("Pilih profil PPP")} />
           </SelectTrigger>
           <SelectContent>
             {profileOptions.map((n) => (
@@ -303,46 +305,46 @@ function UserForm({
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="grid gap-1.5">
-          <Label htmlFor="u-ip">IP statis</Label>
+          <Label htmlFor="u-ip">{t("IP statis")}</Label>
           <Input
             id="u-ip"
             value={staticAddress}
             onChange={(e) => setStaticAddress(e.target.value)}
             inputMode="decimal"
-            placeholder="opsional"
+            placeholder={t("opsional")}
             className="font-mono"
           />
         </div>
         <div className="grid gap-1.5">
-          <Label htmlFor="u-comment">Komentar</Label>
+          <Label htmlFor="u-comment">{t("Komentar")}</Label>
           <Input
             id="u-comment"
             value={comment}
             onChange={(e) => setComment(e.target.value)}
             maxLength={120}
-            placeholder="opsional"
+            placeholder={t("opsional")}
           />
         </div>
       </div>
 
       <div className="flex items-center justify-between gap-4 rounded-lg border p-2.5">
         <div className="grid gap-0.5">
-          <Label htmlFor="u-disabled">Nonaktifkan secret</Label>
-          <p className="text-xs text-muted-foreground">User tidak bisa login dan sesi aktif diputus.</p>
+          <Label htmlFor="u-disabled">{t("Nonaktifkan secret")}</Label>
+          <p className="text-xs text-muted-foreground">{t("User tidak bisa login dan sesi aktif diputus.")}</p>
         </div>
         <Switch id="u-disabled" checked={disabled} onCheckedChange={setDisabled} />
       </div>
 
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onClose}>
-          Batal
+          {t("Batal")}
         </Button>
         <Button type="submit" disabled={!valid || !!blocked}>
-          Tinjau
+          {t("Tinjau")}
         </Button>
       </DialogFooter>
       {!valid && editing && changes.length === 0 && (
-        <p className="-mt-1 text-right text-xs text-muted-foreground">Belum ada perubahan.</p>
+        <p className="-mt-1 text-right text-xs text-muted-foreground">{t("Belum ada perubahan.")}</p>
       )}
     </form>
   )

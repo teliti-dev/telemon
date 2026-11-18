@@ -13,6 +13,7 @@ export const AuthContext = React.createContext<AuthValue | undefined>(undefined)
 
 export function useAuth() {
   const v = React.useContext(AuthContext)
-  if (!v) throw new Error("useAuth harus dipakai di dalam AuthGate")
+  if (!v) // i18n-ignore: pesan untuk developer
+throw new Error("useAuth harus dipakai di dalam AuthGate")
   return v
 }

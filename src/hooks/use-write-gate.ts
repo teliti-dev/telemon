@@ -1,5 +1,6 @@
 import type { Access } from "@/lib/access"
 import { useAuth } from "@/lib/auth-context"
+import { t } from "@/lib/i18n"
 import { RESOURCES } from "@/lib/permissions"
 import { useStore } from "@/lib/store-context"
 import type { Resource, RouterInfo, SessionInfo, ShareState } from "@/lib/types"
@@ -17,13 +18,13 @@ export function permissionReason(opts: {
 }): string | null {
   const { access, session, share, resource, need } = opts
   if (access === "desktop") return null
-  const label = RESOURCES.find((r) => r.key === resource)?.label ?? resource
+  const label = t(RESOURCES.find((r) => r.key === resource)?.label ?? resource) // i18n-ignore: etiket sudah berupa kunci (tk)
   const level = session?.permissions[resource] ?? "none"
-  if (level === "none") return `Peran Anda tidak punya akses ke ${label}`
+  if (level === "none") return t("Peran Anda tidak punya akses ke {label}", { label })
   if (need === "update") {
-    if (level !== "update") return `Peran ${session?.roleName} hanya bisa membaca ${label}`
+    if (level !== "update") return t("Peran {role} hanya bisa membaca {label}", { role: session?.roleName ?? "", label })
     if (session?.via === "publik" && !share?.auth.allowPublicWrite) {
-      return "Tulis lewat akses publik dimatikan oleh pemilik Telemon"
+      return t("Tulis lewat akses publik dimatikan oleh pemilik Telemon")
     }
   }
   return null
@@ -31,10 +32,12 @@ export function permissionReason(opts: {
 
 /** Alasan router tidak bisa ditulis (hak write akun API dan status online). */
 export function routerWriteReason(router: RouterInfo | undefined): string | null {
-  if (!router) return "Pilih router terlebih dulu"
-  if (!router.canWrite) return `Akun API ${router.name} tidak punya hak write`
+  if (!router) return t("Pilih router terlebih dulu")
+  if (!router.canWrite) return t("Akun API {name} tidak punya hak write", { name: router.name })
   if (router.status !== "online") {
-    return `Router ${router.name} sedang ${router.status === "offline" ? "offline" : "error"}`
+    return router.status === "offline"
+      ? t("Router {name} sedang offline", { name: router.name })
+      : t("Router {name} sedang error", { name: router.name })
   }
   return null
 }

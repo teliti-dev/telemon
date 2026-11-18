@@ -10,6 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { useT } from "@/lib/i18n"
 
 export function ConfirmDialog({
   open,
@@ -28,6 +29,7 @@ export function ConfirmDialog({
   destructive?: boolean
   onConfirm: () => Promise<void>
 }) {
+  const t = useT()
   const [busy, setBusy] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
 
@@ -68,10 +70,10 @@ export function ConfirmDialog({
         )}
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
-            Batal
+            {t("Batal")}
           </Button>
           <Button variant={destructive ? "destructive" : "default"} onClick={run} disabled={busy}>
-            {busy ? "Memproses…" : confirmLabel}
+            {busy ? t("Memproses…") : confirmLabel}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -31,6 +31,7 @@ export const StoreContext = React.createContext<StoreValue | undefined>(
 
 export function useStore() {
   const v = React.useContext(StoreContext)
-  if (!v) throw new Error("useStore harus dipakai di dalam StoreProvider")
+  if (!v) // i18n-ignore: pesan untuk developer
+throw new Error("useStore harus dipakai di dalam StoreProvider")
   return v
 }

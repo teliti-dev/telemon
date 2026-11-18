@@ -16,6 +16,10 @@ import type {
   RouterEdit,
   RouterInfo,
   AccountSummary,
+  AiChat,
+  AiChatSummary,
+  AiMessage,
+  AiStreamEvent,
   AppSettings,
   LoginResult,
   Permissions,
@@ -34,7 +38,9 @@ import type {
   UserPatch,
   UserStatus,
 } from "../types"
+import { answerQuestion } from "./ai-engine"
 import { DEFAULT_ROLES, DEFAULT_SETTINGS } from "../defaults"
+import { t, tk } from "../i18n"
 import { hasUpdate, RESOURCES } from "../permissions"
 import type { LiveUpdate, Snapshot, TelemonApi } from "./api"
 
@@ -298,8 +304,11 @@ export class MockApi implements TelemonApi {
     lan: { enabled: false, bind: "lan", port: 7878 },
     publik: { status: "off", durationHours: 8 },
     auth: { require2fa: false, allowPublicWrite: DEFAULT_SETTINGS.remote.allowPublicWrite },
+    features: { ai: DEFAULT_SETTINGS.ai.enabled, aiMask: DEFAULT_SETTINGS.ai.maskSensitive },
   }
   private accounts: MockAccount[]
+  /** Riwayat chat AI per akun ("desktop" untuk aplikasi desktop). Disimpan di data, bukan di browser. */
+  private chats = new Map<string, AiChat[]>()
   private roles: MockRole[] = DEFAULT_ROLES.map((r) => ({ ...r, permissions: { ...r.permissions }, builtin: true }))
   private settings: AppSettings = structuredClone(DEFAULT_SETTINGS)
   private sessions: MockSession[]
@@ -319,6 +328,7 @@ export class MockApi implements TelemonApi {
     this.metas = makeMetas(this.users, now)
     this.accounts = makeAccounts(now)
     this.sessions = makeSessions(now)
+    this.seedChats(now)
   }
 
   async snapshot(): Promise<Snapshot> {
@@ -396,7 +406,7 @@ export class MockApi implements TelemonApi {
     this.authorize("router")
     await delay(900)
     if (!input.username || !input.password) {
-      throw new Error("Username dan password API wajib diisi")
+      throw new Error(t("Username dan password API wajib diisi"))
     }
     const router: RouterInfo = {
       id: `r${Date.now().toString(36)}`,
@@ -443,15 +453,15 @@ export class MockApi implements TelemonApi {
   private authorize(resource: Resource | "desktop", need: "read" | "update" = "update") {
     if (!this.currentSessionId) return
     const { a, s } = this.current()
-    if (resource === "desktop") throw new Error("Hanya bisa dilakukan dari aplikasi desktop")
+    if (resource === "desktop") throw new Error(t("Hanya bisa dilakukan dari aplikasi desktop"))
     const level = this.roleOf(a).permissions[resource]
     if (need === "read") {
-      if (level === "none") throw new Error("Peran Anda tidak punya akses ke data ini")
+      if (level === "none") throw new Error(t("Peran Anda tidak punya akses ke data ini"))
       return
     }
-    if (level !== "update") throw new Error("Peran Anda tidak boleh mengubah data ini")
+    if (level !== "update") throw new Error(t("Peran Anda tidak boleh mengubah data ini"))
     if (s.via === "publik" && !this.share.auth.allowPublicWrite) {
-      throw new Error("Tulis lewat akses publik dimatikan oleh pemilik Telemon")
+      throw new Error(t("Tulis lewat akses publik dimatikan oleh pemilik Telemon"))
     }
   }
 
@@ -466,7 +476,7 @@ export class MockApi implements TelemonApi {
     const rank = { none: 0, read: 1, update: 2 } as const
     const mine = this.roleOf(me).permissions
     for (const r of RESOURCES) {
-      if (rank[perms[r.key]] > rank[mine[r.key]]) throw new Error("Anda tidak bisa memberi izin melebihi peran Anda")
+      if (rank[perms[r.key]] > rank[mine[r.key]]) throw new Error(t("Anda tidak bisa memberi izin melebihi peran Anda"))
     }
   }
 
@@ -474,13 +484,13 @@ export class MockApi implements TelemonApi {
   private assertManageable(target: MockAccount) {
     const me = this.caller()
     if (!me) return
-    if (me.id === target.id) throw new Error("Tidak bisa mengubah akun Anda sendiri dari sini; pakai halaman Akun saya")
+    if (me.id === target.id) throw new Error(t("Tidak bisa mengubah akun Anda sendiri dari sini; pakai halaman Akun saya"))
     this.assertGrantable(this.roleOf(target).permissions)
   }
 
   private assertNotOwnRole(roleId: string) {
     const me = this.caller()
-    if (me && me.roleId === roleId) throw new Error("Tidak bisa mengubah peran yang sedang Anda pakai")
+    if (me && me.roleId === roleId) throw new Error(t("Tidak bisa mengubah peran yang sedang Anda pakai"))
   }
 
   private openSession(a: MockAccount, touch = true): SessionInfo {
@@ -502,7 +512,7 @@ export class MockApi implements TelemonApi {
   private current(): { a: MockAccount; s: MockSession } {
     const s = this.sessions.find((x) => x.id === this.currentSessionId)
     const a = s && this.accounts.find((x) => x.id === s.accountId && !x.disabled)
-    if (!s || !a) throw new Error("Belum login")
+    if (!s || !a) throw new Error(t("Belum login"))
     return { a, s }
   }
 
@@ -525,7 +535,7 @@ export class MockApi implements TelemonApi {
   private takeChallenge(id: string) {
     const c = this.challenges.get(id)
     const a = c && this.accounts.find((x) => x.id === c.accountId)
-    if (!c || !a || c.expires < Date.now()) throw new Error("Sesi login kedaluwarsa. Masuk ulang")
+    if (!c || !a || c.expires < Date.now()) throw new Error(t("Sesi login kedaluwarsa. Masuk ulang"))
     return a
   }
 
@@ -534,7 +544,7 @@ export class MockApi implements TelemonApi {
   }
 
   private checkPassword(a: MockAccount, password: string) {
-    if (a.password !== password) throw new Error("Password salah")
+    if (a.password !== password) throw new Error(t("Password salah"))
   }
 
   async session(): Promise<SessionInfo | null> {
@@ -558,14 +568,14 @@ export class MockApi implements TelemonApi {
     const key = username.trim().toLowerCase()
     const f = this.failures.get(key)
     if (f && f.until > Date.now()) {
-      throw new Error(`Terlalu banyak percobaan. Coba lagi dalam ${Math.ceil((f.until - Date.now()) / 60_000)} menit`)
+      throw new Error(t("Terlalu banyak percobaan. Coba lagi dalam {n} menit", { n: Math.ceil((f.until - Date.now()) / 60_000) }))
     }
     const a = this.accounts.find((x) => x.username === key)
     if (!a || a.password !== password) {
       this.fail(key)
-      throw new Error("Username atau password salah")
+      throw new Error(t("Username atau password salah"))
     }
-    if (a.disabled) throw new Error("Akun dinonaktifkan. Hubungi pemilik Telemon")
+    if (a.disabled) throw new Error(t("Akun dinonaktifkan. Hubungi pemilik Telemon"))
     this.failures.delete(key)
     if (a.totp) return { status: "2fa_required", challengeId: this.newChallenge(a) }
     if (this.must2fa(a)) {
@@ -592,7 +602,7 @@ export class MockApi implements TelemonApi {
     }
     if (!ok) {
       this.fail(a.username)
-      throw new Error(opts?.recovery ? "Kode pemulihan salah atau sudah dipakai" : "Kode salah")
+      throw new Error(opts?.recovery ? t("Kode pemulihan salah atau sudah dipakai") : t("Kode salah"))
     }
     this.challenges.delete(challengeId)
     return this.openSession(a)
@@ -601,7 +611,7 @@ export class MockApi implements TelemonApi {
   async complete2faSetup(challengeId: string, code: string) {
     await delay(500)
     const a = this.takeChallenge(challengeId)
-    if (code.replace(/\s/g, "") !== DEMO_TOTP) throw new Error("Kode salah")
+    if (code.replace(/\s/g, "") !== DEMO_TOTP) throw new Error(t("Kode salah"))
     this.challenges.delete(challengeId)
     a.totp = true
     a.pendingSecret = undefined
@@ -624,7 +634,7 @@ export class MockApi implements TelemonApi {
     await delay(300)
     const { a, s } = this.current()
     const name = input.displayName.trim()
-    if (!name || name.length > 60) throw new Error("Nama 1-60 karakter")
+    if (!name || name.length > 60) throw new Error(t("Nama 1-60 karakter"))
     a.displayName = name
     return this.info(a, s.id)
   }
@@ -633,15 +643,15 @@ export class MockApi implements TelemonApi {
     await delay(500)
     const { a } = this.current()
     this.checkPassword(a, current)
-    if (next.length < 8) throw new Error("Password baru minimal 8 karakter")
-    if (next === current) throw new Error("Password baru harus berbeda")
+    if (next.length < 8) throw new Error(t("Password baru minimal 8 karakter"))
+    if (next === current) throw new Error(t("Password baru harus berbeda"))
     a.password = next
   }
 
   async start2faSetup(): Promise<TwoFactorSetup> {
     await delay(300)
     const { a } = this.current()
-    if (a.totp) throw new Error("2FA sudah aktif")
+    if (a.totp) throw new Error(t("2FA sudah aktif"))
     const secret = newSecret()
     a.pendingSecret = secret
     return { secret, otpauthUrl: this.otpauth(a, secret) }
@@ -650,8 +660,8 @@ export class MockApi implements TelemonApi {
   async confirm2faSetup(code: string) {
     await delay(500)
     const { a } = this.current()
-    if (!a.pendingSecret) throw new Error("Mulai pendaftaran 2FA terlebih dulu")
-    if (code.replace(/\s/g, "") !== DEMO_TOTP) throw new Error("Kode salah")
+    if (!a.pendingSecret) throw new Error(t("Mulai pendaftaran 2FA terlebih dulu"))
+    if (code.replace(/\s/g, "") !== DEMO_TOTP) throw new Error(t("Kode salah"))
     a.totp = true
     a.pendingSecret = undefined
     a.recovery = newRecoveryCodes()
@@ -662,7 +672,7 @@ export class MockApi implements TelemonApi {
     await delay(500)
     const { a } = this.current()
     this.checkPassword(a, password)
-    if (this.must2fa(a)) throw new Error("2FA diwajibkan untuk akun ini")
+    if (this.must2fa(a)) throw new Error(t("2FA diwajibkan untuk akun ini"))
     a.totp = false
     a.recovery = []
   }
@@ -671,7 +681,7 @@ export class MockApi implements TelemonApi {
     await delay(500)
     const { a } = this.current()
     this.checkPassword(a, password)
-    if (!a.totp) throw new Error("Aktifkan 2FA terlebih dulu")
+    if (!a.totp) throw new Error(t("Aktifkan 2FA terlebih dulu"))
     a.recovery = newRecoveryCodes()
     return [...a.recovery]
   }
@@ -687,7 +697,7 @@ export class MockApi implements TelemonApi {
 
   async revokeSession(id: string) {
     await delay(300)
-    if (id === this.currentSessionId) throw new Error("Gunakan Keluar untuk sesi ini")
+    if (id === this.currentSessionId) throw new Error(t("Gunakan Keluar untuk sesi ini"))
     this.sessions = this.sessions.filter((x) => x.id !== id)
   }
 
@@ -702,7 +712,7 @@ export class MockApi implements TelemonApi {
 
   private accountOrThrow(id: string) {
     const a = this.accounts.find((x) => x.id === id)
-    if (!a) throw new Error("Akun tidak ditemukan")
+    if (!a) throw new Error(t("Akun tidak ditemukan"))
     return a
   }
 
@@ -716,13 +726,13 @@ export class MockApi implements TelemonApi {
     this.authorize("admin")
     await delay(500)
     const grant = this.roles.find((r) => r.id === input.roleId)
-    if (!grant) throw new Error("Pilih peran untuk akun ini")
+    if (!grant) throw new Error(t("Pilih peran untuk akun ini"))
     this.assertGrantable(grant.permissions)
     const username = input.username.trim().toLowerCase()
-    if (!/^[a-z0-9._-]{3,30}$/.test(username)) throw new Error("Username 3-30 karakter: huruf kecil, angka, titik, garis bawah, atau strip")
-    if (this.accounts.some((a) => a.username === username)) throw new Error("Username sudah dipakai")
-    if (!input.displayName.trim()) throw new Error("Nama wajib diisi")
-    if (input.password.length < 8) throw new Error("Password minimal 8 karakter")
+    if (!/^[a-z0-9._-]{3,30}$/.test(username)) throw new Error(t("Username 3-30 karakter: huruf kecil, angka, titik, garis bawah, atau strip"))
+    if (this.accounts.some((a) => a.username === username)) throw new Error(t("Username sudah dipakai"))
+    if (!input.displayName.trim()) throw new Error(t("Nama wajib diisi"))
+    if (input.password.length < 8) throw new Error(t("Password minimal 8 karakter"))
     const a: MockAccount = {
       id: `a${Date.now().toString(36)}`, username, displayName: input.displayName.trim(), roleId: input.roleId, password: input.password,
       totp: false, recovery: [], disabled: false, createdAt: Date.now(),
@@ -734,7 +744,7 @@ export class MockApi implements TelemonApi {
   async resetAccountPassword(id: string, password: string) {
     this.authorize("admin")
     await delay(400)
-    if (password.length < 8) throw new Error("Password minimal 8 karakter")
+    if (password.length < 8) throw new Error(t("Password minimal 8 karakter"))
     const a = this.accountOrThrow(id)
     this.assertManageable(a)
     a.password = password
@@ -769,7 +779,7 @@ export class MockApi implements TelemonApi {
     this.assertManageable(a)
     const rest = this.accounts.filter((x) => x.id !== a.id && !x.disabled)
     if (rest.length === 0 && this.share.publik.status === "on") {
-      throw new Error("Akses publik sedang aktif; matikan dulu sebelum menghapus akun terakhir")
+      throw new Error(t("Akses publik sedang aktif; matikan dulu sebelum menghapus akun terakhir"))
     }
     this.accounts = this.accounts.filter((x) => x.id !== id)
     this.sessions = this.sessions.filter((x) => x.accountId !== id)
@@ -778,9 +788,139 @@ export class MockApi implements TelemonApi {
   async setRequire2fa(required: boolean) {
     this.authorize("admin")
     await delay(300)
-    if (!required && this.share.publik.status === "on") throw new Error("Wajib selama akses publik aktif")
+    if (!required && this.share.publik.status === "on") throw new Error(t("Wajib selama akses publik aktif"))
     this.share.auth.require2fa = required
     return this.shareChanged()
+  }
+
+  // ---- AI chat (hanya membaca) ----
+
+  private aiContext(can: (r: Resource) => boolean, now = Date.now()) {
+    return {
+      routers: this.routers.map((r) => ({ ...r })),
+      users: can("user") ? this.users.filter((u) => !u.deletedAt) : [],
+      profiles: can("profile") ? this.profiles.filter((p) => !p.deletedAt) : [],
+      events: can("event") ? this.events : [],
+      metas: can("user") ? this.metas : {},
+      now,
+      mask: this.settings.ai.maskSensitive,
+      can,
+    }
+  }
+
+  async *askAi(messages: AiMessage[], opts?: { signal?: AbortSignal }): AsyncGenerator<AiStreamEvent> {
+    this.authorize("ai", "read")
+    if (!this.settings.ai.enabled) throw new Error(t("AI dimatikan oleh pemilik Telemon"))
+    const question = [...messages].reverse().find((m) => m.role === "user")?.text ?? ""
+    const perms = this.currentSessionId ? this.roleOf(this.current().a).permissions : null
+    const ans = answerQuestion(question, this.aiContext((r) => !perms || perms[r] !== "none"))
+    const stopped = () => !!opts?.signal?.aborted
+    for (const text of ans.steps ?? []) {
+      if (stopped()) return
+      yield { type: "step", text }
+      await delay(230)
+    }
+    await delay(150)
+    for (let i = 0; i < ans.text.length; i += 4) {
+      if (stopped()) return
+      yield { type: "text", text: ans.text.slice(i, i + 4) }
+      await delay(14)
+    }
+    for (const widget of ans.widgets ?? []) {
+      if (stopped()) return
+      await delay(160)
+      yield { type: "widget", widget }
+    }
+    if (stopped()) return
+    if (ans.actions?.length) yield { type: "actions", actions: ans.actions }
+    if (ans.sources?.length) yield { type: "sources", items: ans.sources }
+    if (ans.followUps?.length) yield { type: "followups", items: ans.followUps }
+  }
+
+  // ---- Riwayat chat AI ----
+
+  private chatKey() {
+    return this.currentSessionId ? this.current().a.id : "desktop"
+  }
+
+  private chatList(): AiChat[] {
+    const key = this.chatKey()
+    const days = this.settings.retention.aiChatDays
+    let list = this.chats.get(key) ?? []
+    if (days !== null) list = list.filter((c) => c.updatedAt >= Date.now() - days * 86400_000)
+    this.chats.set(key, list)
+    return list
+  }
+
+  private chatSummary(c: AiChat): AiChatSummary {
+    const last = [...c.messages].reverse().find((m) => m.role === "assistant" && m.text)
+    return {
+      id: c.id,
+      title: c.title,
+      pinned: c.pinned,
+      updatedAt: c.updatedAt,
+      messageCount: c.messages.length,
+      preview: (last?.text ?? "").replace(/[*`]/g, "").split("\n").find((l) => l.trim()) ?? "",
+    }
+  }
+
+  private seedChats(now: number) {
+    const perms = null
+    const ctx = this.aiContext(() => true, now)
+    const mk = (id: string, title: string, ageMs: number, questions: string[], pinned = false): AiChat => {
+      let at = now - ageMs
+      const messages: AiMessage[] = []
+      for (const q of questions) {
+        const a = answerQuestion(q, { ...ctx, now: at })
+        messages.push({ id: `${id}-u${messages.length}`, role: "user", text: q, at })
+        at += 4000
+        messages.push({ id: `${id}-a${messages.length}`, role: "assistant", text: a.text, at, widgets: a.widgets, actions: a.actions, followUps: a.followUps, sources: a.sources, steps: a.steps })
+        at += 60_000
+      }
+      return { id, title, pinned, createdAt: now - ageMs, updatedAt: at, messages }
+    }
+    void perms
+    const seed = [
+      mk("c-seed-1", "Ringkasan jaringan pagi", 3 * 3600_000, ["Berapa user aktif sekarang?"], true),
+      mk("c-seed-2", "Router bermasalah", 26 * 3600_000, ["Router mana yang bermasalah?", "Tampilkan event terbaru"]),
+      mk("c-seed-3", "User gagal auth", 4 * 86400_000, ["Siapa yang sering gagal auth?"]),
+    ]
+    this.chats.set("desktop", seed)
+    this.chats.set("a1", seed.map((c) => structuredClone(c)))
+  }
+
+  async listAiChats(): Promise<AiChatSummary[]> {
+    this.authorize("ai", "read")
+    await delay(180)
+    return this.chatList()
+      .map((c) => this.chatSummary(c))
+      .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt)
+  }
+
+  async getAiChat(id: string): Promise<AiChat> {
+    this.authorize("ai", "read")
+    await delay(120)
+    const c = this.chatList().find((x) => x.id === id)
+    if (!c) throw new Error(t("Percakapan tidak ditemukan"))
+    return structuredClone(c)
+  }
+
+  async saveAiChat(chat: AiChat): Promise<AiChatSummary> {
+    this.authorize("ai", "read")
+    const list = this.chatList()
+    const title = chat.title.trim().slice(0, 80) || t("Percakapan baru")
+    const next: AiChat = { ...structuredClone(chat), title, messages: structuredClone(chat.messages).slice(-200) }
+    const i = list.findIndex((x) => x.id === chat.id)
+    if (i >= 0) list[i] = next
+    else list.push(next)
+    this.chats.set(this.chatKey(), list.slice(-100))
+    return this.chatSummary(next)
+  }
+
+  async deleteAiChat(id: string): Promise<void> {
+    this.authorize("ai", "read")
+    await delay(120)
+    this.chats.set(this.chatKey(), this.chatList().filter((x) => x.id !== id))
   }
 
   // ---- Peran, pengaturan, dan penyimpanan (hanya aplikasi desktop) ----
@@ -794,12 +934,13 @@ export class MockApi implements TelemonApi {
 
   private validateRole(input: RoleInput, ignoreId?: string) {
     const name = input.name.trim()
-    if (name.length < 2 || name.length > 30) throw new Error("Nama peran 2-30 karakter")
+    if (name.length < 2 || name.length > 30) throw new Error(t("Nama peran 2-30 karakter"))
     if (this.roles.some((r) => r.id !== ignoreId && r.name.toLowerCase() === name.toLowerCase())) {
-      throw new Error("Nama peran sudah dipakai")
+      throw new Error(t("Nama peran sudah dipakai"))
     }
     for (const res of RESOURCES) {
-      if (!res.levels.includes(input.permissions[res.key])) throw new Error(`Izin untuk ${res.label} tidak valid`)
+      // i18n-ignore: label ditandai tk() di permissions
+      if (!res.levels.includes(input.permissions[res.key])) throw new Error(t("Izin untuk {label} tidak valid", { label: t(res.label) }))
     }
     return name
   }
@@ -827,7 +968,7 @@ export class MockApi implements TelemonApi {
     this.authorize("admin")
     await delay(400)
     const role = this.roles.find((r) => r.id === id)
-    if (!role) throw new Error("Peran tidak ditemukan")
+    if (!role) throw new Error(t("Peran tidak ditemukan"))
     this.assertNotOwnRole(id)
     this.assertGrantable(input.permissions)
     role.name = this.validateRole(input, id)
@@ -840,11 +981,11 @@ export class MockApi implements TelemonApi {
     this.authorize("admin")
     await delay(300)
     const role = this.roles.find((r) => r.id === id)
-    if (!role) throw new Error("Peran tidak ditemukan")
+    if (!role) throw new Error(t("Peran tidak ditemukan"))
     this.assertNotOwnRole(id)
-    if (role.builtin) throw new Error("Peran bawaan tidak bisa dihapus")
+    if (role.builtin) throw new Error(t("Peran bawaan tidak bisa dihapus"))
     const used = this.accounts.filter((a) => a.roleId === id).length
-    if (used > 0) throw new Error(`Peran masih dipakai ${used} akun; pindahkan akun-nya dulu`)
+    if (used > 0) throw new Error(t("Peran masih dipakai {n} akun; pindahkan akun-nya dulu", { n: used }))
     this.roles = this.roles.filter((r) => r.id !== id)
   }
 
@@ -853,7 +994,7 @@ export class MockApi implements TelemonApi {
     await delay(300)
     const a = this.accountOrThrow(id)
     const target = this.roles.find((r) => r.id === roleId)
-    if (!target) throw new Error("Peran tidak ditemukan")
+    if (!target) throw new Error(t("Peran tidak ditemukan"))
     this.assertManageable(a)
     this.assertGrantable(target.permissions)
     a.roleId = roleId
@@ -863,9 +1004,11 @@ export class MockApi implements TelemonApi {
   private checkRange(label: string, v: number | null, min: number, max: number, nullable = false) {
     if (v === null) {
       if (nullable) return
-      throw new Error(`${label} wajib diisi`)
+      // i18n-ignore: label ditandai tk() di pemanggil
+      throw new Error(t("{label} wajib diisi", { label: t(label) }))
     }
-    if (!Number.isInteger(v) || v < min || v > max) throw new Error(`${label} harus ${min}-${max}`)
+    // i18n-ignore: label ditandai tk() di pemanggil
+    if (!Number.isInteger(v) || v < min || v > max) throw new Error(t("{label} harus {min}-{max}", { label: t(label), min, max }))
   }
 
   async getSettings(): Promise<AppSettings> {
@@ -878,23 +1021,26 @@ export class MockApi implements TelemonApi {
     this.authorize("pengaturan")
     await delay(400)
     if (this.currentSessionId && next.remote.allowPublicWrite !== this.settings.remote.allowPublicWrite) {
-      throw new Error("Izin tulis lewat akses publik hanya bisa diubah dari aplikasi desktop")
+      throw new Error(t("Izin tulis lewat akses publik hanya bisa diubah dari aplikasi desktop"))
     }
     const { retention: r, polling: p, remote: m } = next
-    this.checkRange("Simpan event (hari)", r.eventDays, 1, 3650, true)
-    this.checkRange("Maksimum event", r.maxEvents, 1000, 5_000_000)
-    this.checkRange("Hapus permanen item terhapus (hari)", r.deletedDays, 1, 3650, true)
-    this.checkRange("Simpan riwayat perubahan (hari)", r.auditDays, 30, 3650, true)
-    this.checkRange("Interval sesi aktif (detik)", p.sessionSeconds, 10, 600)
-    this.checkRange("Interval log router (detik)", p.logSeconds, 10, 600)
-    this.checkRange("Import otomatis (jam)", p.autoImportHours, 1, 168, true)
-    this.checkRange("Timeout koneksi (detik)", p.timeoutSeconds, 3, 60)
-    this.checkRange("Percobaan ulang", p.retries, 0, 5)
-    this.checkRange("Masa sesi login (jam)", m.sessionHours, 1, 720)
-    this.checkRange("Batas gagal login", m.maxFailures, 3, 20)
-    this.checkRange("Lama penguncian (menit)", m.lockMinutes, 1, 1440)
+    this.checkRange(tk("Simpan event (hari)"), r.eventDays, 1, 3650, true)
+    this.checkRange(tk("Simpan riwayat chat AI (hari)"), r.aiChatDays, 1, 3650, true)
+    this.checkRange(tk("Maksimum event"), r.maxEvents, 1000, 5_000_000)
+    this.checkRange(tk("Hapus permanen item terhapus (hari)"), r.deletedDays, 1, 3650, true)
+    this.checkRange(tk("Simpan riwayat perubahan (hari)"), r.auditDays, 30, 3650, true)
+    this.checkRange(tk("Interval sesi aktif (detik)"), p.sessionSeconds, 10, 600)
+    this.checkRange(tk("Interval log router (detik)"), p.logSeconds, 10, 600)
+    this.checkRange(tk("Import otomatis (jam)"), p.autoImportHours, 1, 168, true)
+    this.checkRange(tk("Timeout koneksi (detik)"), p.timeoutSeconds, 3, 60)
+    this.checkRange(tk("Percobaan ulang"), p.retries, 0, 5)
+    this.checkRange(tk("Masa sesi login (jam)"), m.sessionHours, 1, 720)
+    this.checkRange(tk("Batas gagal login"), m.maxFailures, 3, 20)
+    this.checkRange(tk("Lama penguncian (menit)"), m.lockMinutes, 1, 1440)
     this.settings = structuredClone(next)
     this.share.auth.allowPublicWrite = m.allowPublicWrite
+    this.share.features.ai = next.ai.enabled
+    this.share.features.aiMask = next.ai.maskSensitive
     this.shareChanged()
     return structuredClone(this.settings)
   }
@@ -906,10 +1052,13 @@ export class MockApi implements TelemonApi {
     if (r.eventDays !== null) events = this.events.filter((e) => e.at < now - r.eventDays! * 86400_000).length
     events += Math.max(0, this.events.length - events - r.maxEvents)
     const old = (t?: number) => r.deletedDays !== null && t !== undefined && t < now - r.deletedDays * 86400_000
+    const chatCutoff = r.aiChatDays === null ? null : now - r.aiChatDays * 86400_000
+    const chats = chatCutoff === null ? 0 : [...this.chats.values()].flat().filter((c) => c.updatedAt < chatCutoff).length
     return {
       events,
       users: this.users.filter((u) => old(u.deletedAt)).length,
       profiles: this.profiles.filter((p) => old(p.deletedAt)).length,
+      chats,
     }
   }
 
@@ -923,6 +1072,7 @@ export class MockApi implements TelemonApi {
       users: this.users.length,
       deletedUsers: this.users.filter((u) => u.deletedAt).length,
       deletedProfiles: this.profiles.filter((p) => p.deletedAt).length,
+      chats: [...this.chats.values()].flat().length,
       purgeable: this.purgeCounts(),
     }
   }
@@ -940,6 +1090,10 @@ export class MockApi implements TelemonApi {
     this.users = this.users.filter(keep)
     this.profiles = this.profiles.filter(keep)
     for (const u of goneUsers) delete this.metas[u.id]
+    if (r.aiChatDays !== null) {
+      const cutoff = now - r.aiChatDays * 86400_000
+      for (const [k, list] of this.chats) this.chats.set(k, list.filter((c) => c.updatedAt >= cutoff))
+    }
     for (const router of this.routers) {
       this.emit({
         kind: "inventory",
@@ -955,30 +1109,30 @@ export class MockApi implements TelemonApi {
 
   private writableRouter(routerId: string): RouterInfo {
     const r = this.routers.find((x) => x.id === routerId)
-    if (!r) throw new Error("Router tidak ditemukan")
-    if (!r.canWrite) throw new Error(`Akun API ${r.name} tidak punya hak write`)
+    if (!r) throw new Error(t("Router tidak ditemukan"))
+    if (!r.canWrite) throw new Error(t("Akun API {name} tidak punya hak write", { name: r.name }))
     if (r.status !== "online") {
-      throw new Error(`Router ${r.name} sedang ${r.status === "offline" ? "offline" : "error"}; tidak bisa menulis`)
+      throw new Error(t("Router {name} sedang {status}; tidak bisa menulis", { name: r.name, status: r.status === "offline" ? "offline" : "error" }))
     }
     return r
   }
 
   private userOrThrow(id: string) {
     const u = this.users.find((x) => x.id === id)
-    if (!u) throw new Error("User tidak ditemukan")
+    if (!u) throw new Error(t("User tidak ditemukan"))
     return u
   }
 
   private profileOrThrow(id: string) {
     const p = this.profiles.find((x) => x.id === id)
-    if (!p) throw new Error("Profil PPP tidak ditemukan")
+    if (!p) throw new Error(t("Profil PPP tidak ditemukan"))
     return p
   }
 
   private checkProfileExists(routerId: string, name: string) {
     const p = this.profiles.find((x) => x.routerId === routerId && x.name === name)
-    if (!p) throw new Error(`Profil PPP "${name}" tidak ada di router`)
-    if (p.deletedAt) throw new Error(`Profil PPP "${name}" sudah dihapus; pulihkan dulu`)
+    if (!p) throw new Error(t("Profil PPP \"{name}\" tidak ada di router", { name }))
+    if (p.deletedAt) throw new Error(t("Profil PPP \"{name}\" sudah dihapus; pulihkan dulu", { name }))
   }
 
   private emitUser(u: PppUser) {
@@ -1002,7 +1156,7 @@ export class MockApi implements TelemonApi {
 
   private validateRate(v?: string) {
     if (v && !/^\d+[kKmMgG]?(\/\d+[kKmMgG]?)?$/.test(v.trim())) {
-      throw new Error("Rate limit tidak valid. Contoh: 10M/10M atau 5M")
+      throw new Error(t("Rate limit tidak valid. Contoh: 10M/10M atau 5M"))
     }
   }
 
@@ -1012,12 +1166,12 @@ export class MockApi implements TelemonApi {
     const r = this.writableRouter(input.routerId)
     const username = input.username.trim()
     if (!/^[\w.@-]{2,40}$/.test(username)) {
-      throw new Error("Username 2-40 karakter: huruf, angka, titik, garis bawah, strip, atau @")
+      throw new Error(t("Username 2-40 karakter: huruf, angka, titik, garis bawah, strip, atau @"))
     }
     if (this.users.some((u) => u.routerId === r.id && u.username === username)) {
-      throw new Error("Username sudah ada di router ini (cek juga yang sudah dihapus)")
+      throw new Error(t("Username sudah ada di router ini (cek juga yang sudah dihapus)"))
     }
-    if (!input.password || input.password.length < 6) throw new Error("Password minimal 6 karakter")
+    if (!input.password || input.password.length < 6) throw new Error(t("Password minimal 6 karakter"))
     this.checkProfileExists(r.id, input.profile)
     const u: PppUser = {
       id: `${r.id}:${username}`,
@@ -1036,9 +1190,9 @@ export class MockApi implements TelemonApi {
     this.authorize("user")
     await delay(800)
     const u = this.userOrThrow(id)
-    if (u.deletedAt) throw new Error("User sudah dihapus; pulihkan dulu")
+    if (u.deletedAt) throw new Error(t("User sudah dihapus; pulihkan dulu"))
     const r = this.writableRouter(u.routerId)
-    if (patch.password && patch.password.length < 6) throw new Error("Password minimal 6 karakter")
+    if (patch.password && patch.password.length < 6) throw new Error(t("Password minimal 6 karakter"))
     if (patch.profile !== undefined) {
       this.checkProfileExists(r.id, patch.profile)
       u.profile = patch.profile
@@ -1084,10 +1238,10 @@ export class MockApi implements TelemonApi {
     const r = this.writableRouter(input.routerId)
     const name = input.name.trim()
     if (!/^[\w.-]{1,40}$/.test(name)) {
-      throw new Error("Nama profil PPP 1-40 karakter: huruf, angka, titik, garis bawah, atau strip")
+      throw new Error(t("Nama profil PPP 1-40 karakter: huruf, angka, titik, garis bawah, atau strip"))
     }
     if (this.profiles.some((p) => p.routerId === r.id && p.name === name)) {
-      throw new Error("Nama profil PPP sudah ada di router ini (cek juga yang sudah dihapus)")
+      throw new Error(t("Nama profil PPP sudah ada di router ini (cek juga yang sudah dihapus)"))
     }
     this.validateRate(input.rateLimit)
     const p: PppProfile = {
@@ -1108,7 +1262,7 @@ export class MockApi implements TelemonApi {
     this.authorize("profile")
     await delay(800)
     const p = this.profileOrThrow(id)
-    if (p.deletedAt) throw new Error("Profil PPP sudah dihapus; pulihkan dulu")
+    if (p.deletedAt) throw new Error(t("Profil PPP sudah dihapus; pulihkan dulu"))
     this.writableRouter(p.routerId)
     if ("rateLimit" in patch) {
       this.validateRate(patch.rateLimit)
@@ -1126,7 +1280,7 @@ export class MockApi implements TelemonApi {
     await delay(400)
     const p = this.profileOrThrow(id)
     const used = this.users.filter((u) => u.routerId === p.routerId && u.profile === p.name && !u.deletedAt).length
-    if (used > 0) throw new Error(`Profil PPP masih dipakai ${used} user; pindahkan user-nya dulu`)
+    if (used > 0) throw new Error(t("Profil PPP masih dipakai {n} user; pindahkan user-nya dulu", { n: used }))
     p.deletedAt = Date.now()
     p.deletedReason = "manual"
     return this.emitProfile(p)
@@ -1145,9 +1299,9 @@ export class MockApi implements TelemonApi {
     this.authorize("router")
     await delay(1400)
     const r = this.routers.find((x) => x.id === routerId)
-    if (!r) throw new Error("Router tidak ditemukan")
+    if (!r) throw new Error(t("Router tidak ditemukan"))
     if (r.status !== "online") {
-      throw new Error(`Router ${r.name} sedang ${r.status === "offline" ? "offline" : "error"}; tidak bisa import`)
+      throw new Error(t("Router {name} sedang {status}; tidak bisa import", { name: r.name, status: r.status === "offline" ? "offline" : "error" }))
     }
     const now = Date.now()
     const result: ImportResult = {
@@ -1208,12 +1362,12 @@ export class MockApi implements TelemonApi {
     this.authorize("router")
     await delay(700)
     const r = this.routers.find((x) => x.id === id)
-    if (!r) throw new Error("Router tidak ditemukan")
+    if (!r) throw new Error(t("Router tidak ditemukan"))
     const name = input.name.trim()
     const host = input.host.trim()
-    if (!name || name.length > 40) throw new Error("Nama router 1-40 karakter")
-    if (!host) throw new Error("Host/IP wajib diisi")
-    if (!Number.isInteger(input.port) || input.port < 1 || input.port > 65535) throw new Error("Port 1-65535")
+    if (!name || name.length > 40) throw new Error(t("Nama router 1-40 karakter"))
+    if (!host) throw new Error(t("Host/IP wajib diisi"))
+    if (!Number.isInteger(input.port) || input.port < 1 || input.port > 65535) throw new Error(t("Port 1-65535"))
     Object.assign(r, { name, host, port: input.port, tls: input.tls, canWrite: input.allowWrite })
     this.emit({ kind: "router", router: { ...r } })
     return { ...r }
@@ -1231,7 +1385,7 @@ export class MockApi implements TelemonApi {
   async saveUserMeta(userId: string, input: UserMetaInput): Promise<UserMeta> {
     this.authorize("user")
     await delay(300)
-    if (!this.users.some((u) => u.id === userId)) throw new Error("User tidak ditemukan")
+    if (!this.users.some((u) => u.id === userId)) throw new Error(t("User tidak ditemukan"))
     const clean = (v?: string) => v?.trim() || undefined
     const meta: UserMeta = {
       customerName: clean(input.customerName),
@@ -1282,8 +1436,8 @@ export class MockApi implements TelemonApi {
       this.stopPublic()
       return this.shareChanged()
     }
-    if (!this.share.lan.enabled) throw new Error("Nyalakan Serve ke browser terlebih dulu")
-    if (this.accounts.every((a) => a.disabled)) throw new Error("Buat minimal satu akun jarak jauh terlebih dulu")
+    if (!this.share.lan.enabled) throw new Error(t("Nyalakan Serve ke browser terlebih dulu"))
+    if (this.accounts.every((a) => a.disabled)) throw new Error(t("Buat minimal satu akun jarak jauh terlebih dulu"))
     this.share.auth.require2fa = true
     p.status = "connecting"
     p.error = undefined

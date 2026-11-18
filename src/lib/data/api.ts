@@ -1,5 +1,9 @@
 import type {
   AccountSummary,
+  AiChat,
+  AiChatSummary,
+  AiMessage,
+  AiStreamEvent,
   AppSettings,
   PurgeCounts,
   Role,
@@ -123,6 +127,16 @@ export interface TelemonApi {
   resetAccount2fa(id: string): Promise<AccountSummary>
   deleteAccount(id: string): Promise<void>
   setRequire2fa(required: boolean): Promise<ShareState>
+  /**
+   * AI chat (hanya membaca): jawaban datang bertahap. Server menjawab dari data yang boleh
+   * dibaca peran penanya dan menolak bila AI dimatikan atau peran tanpa akses.
+   */
+  askAi(messages: AiMessage[], opts?: { signal?: AbortSignal }): AsyncGenerator<AiStreamEvent>
+  // Riwayat chat AI: disimpan di data Telemon per akun (bukan di browser), mengikuti retensi.
+  listAiChats(): Promise<AiChatSummary[]>
+  getAiChat(id: string): Promise<AiChat>
+  saveAiChat(chat: AiChat): Promise<AiChatSummary>
+  deleteAiChat(id: string): Promise<void>
   /** Menyimpan catatan lokal. Tidak menulis apa pun ke router. */
   saveUserMeta(userId: string, meta: UserMetaInput): Promise<UserMeta>
   setLanShare(opts: {

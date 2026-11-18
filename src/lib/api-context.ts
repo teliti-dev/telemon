@@ -13,6 +13,7 @@ export const ApiContext = React.createContext<ApiValue | undefined>(undefined)
 
 export function useApi() {
   const v = React.useContext(ApiContext)
-  if (!v) throw new Error("useApi harus dipakai di dalam ApiProvider")
+  if (!v) // i18n-ignore: pesan untuk developer
+throw new Error("useApi harus dipakai di dalam ApiProvider")
   return v
 }

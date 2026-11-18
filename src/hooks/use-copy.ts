@@ -1,8 +1,10 @@
 import { toast } from "sonner"
 
-export function copyText(text: string, label = "Disalin") {
+import { t } from "@/lib/i18n"
+
+export function copyText(text: string, label = t("Disalin")) {
   navigator.clipboard
     .writeText(text)
     .then(() => toast.success(label))
-    .catch(() => toast.error("Gagal menyalin; salin manual"))
+    .catch(() => toast.error(t("Gagal menyalin; salin manual")))
 }

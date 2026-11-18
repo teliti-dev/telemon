@@ -5,6 +5,7 @@ import {
   PencilIcon,
   PhoneIcon,
   RotateCcwIcon,
+  SparklesIcon,
   Trash2Icon,
   TriangleAlertIcon,
 } from "lucide-react"
@@ -13,6 +14,7 @@ import { toast } from "sonner"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { UserFormDialog } from "@/components/user-form-dialog"
 import { useUpdateGate, useWriteGate } from "@/hooks/use-write-gate"
+import { useAiChat } from "@/lib/ai-context"
 import {
   EVENT_META,
   EventIcon,
@@ -42,6 +44,7 @@ import {
   formatRelative,
   formatTime,
 } from "@/lib/format"
+import { tk, useT } from "@/lib/i18n"
 import { useStore } from "@/lib/store-context"
 import { cn } from "@/lib/utils"
 import type { PppEvent, PppUser, RouterInfo, UserMeta } from "@/lib/types"
@@ -60,9 +63,11 @@ function Field({
   mono?: boolean
   copy?: string
 }) {
+  const t = useT()
+  const l = t(label) // i18n-ignore: etiket sudah berupa kunci (tk)
   return (
     <div className="min-w-0">
-      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dt className="text-xs text-muted-foreground">{l}</dt>
       <dd className="flex items-center gap-1">
         <span className={cn("min-w-0 truncate", mono && "font-mono text-[13px]")}>
           {value ?? "-"}
@@ -70,9 +75,9 @@ function Field({
         {copy && (
           <button
             type="button"
-            aria-label={`Salin ${label}`}
-            title={`Salin ${label}`}
-            onClick={() => copyText(copy, `${label} disalin`)}
+            aria-label={t("Salin {label}", { label: l })}
+            title={t("Salin {label}", { label: l })}
+            onClick={() => copyText(copy, t("{label} disalin", { label: l }))}
             className="shrink-0 rounded p-1 text-muted-foreground md:p-0.5 hover:bg-muted hover:text-foreground"
           >
             <CopyIcon className="size-3.5" />
@@ -85,6 +90,7 @@ function Field({
 
 /** 24 batang, satu per jam; warna = kejadian terburuk pada jam itu. */
 function ActivityStrip({ events, now }: { events: PppEvent[]; now: number }) {
+  const t = useT()
   const buckets = Array.from({ length: 24 }, () => ({ c: 0, d: 0, a: 0 }))
   for (const e of events) {
     const age = now - e.at
@@ -95,14 +101,14 @@ function ActivityStrip({ events, now }: { events: PppEvent[]; now: number }) {
     else if (e.type === "auth_failed") b.a++
   }
   const summary = buckets.reduce(
-    (t, b) => ({ c: t.c + b.c, d: t.d + b.d, a: t.a + b.a }),
+    (s, b) => ({ c: s.c + b.c, d: s.d + b.d, a: s.a + b.a }),
     { c: 0, d: 0, a: 0 }
   )
   return (
     <div>
       <div
         role="img"
-        aria-label={`24 jam terakhir: ${summary.c} terhubung, ${summary.d} terputus, ${summary.a} gagal auth`}
+        aria-label={t("24 jam terakhir: {c} terhubung, {d} terputus, {a} gagal auth", { c: summary.c, d: summary.d, a: summary.a })}
         className="flex h-6 items-end gap-0.5"
       >
         {buckets.map((b, i) => {
@@ -112,15 +118,15 @@ function ActivityStrip({ events, now }: { events: PppEvent[]; now: number }) {
           return (
             <div
               key={i}
-              title={`${String(hour).padStart(2, "0")}:00 · ${b.c} terhubung, ${b.d} terputus, ${b.a} gagal auth`}
+              title={`${String(hour).padStart(2, "0")}:00 · ${t("{c} terhubung, {d} terputus, {a} gagal auth", { c: b.c, d: b.d, a: b.a })}`}
               className={cn("min-w-0 flex-1 rounded-sm", tone, tone === "bg-muted" ? "h-1.5" : "h-6")}
             />
           )
         })}
       </div>
       <div className="mt-1 flex justify-between text-[11px] text-muted-foreground">
-        <span>24 jam lalu</span>
-        <span>sekarang</span>
+        <span>{t("24 jam lalu")}</span>
+        <span>{t("sekarang")}</span>
       </div>
     </div>
   )
@@ -137,8 +143,9 @@ function InfoTab({
   history: PppEvent[]
   now: number
 }) {
+  const t = useT()
   const day = history.filter((e) => now - e.at < DAY)
-  const count = (t: PppEvent["type"]) => day.filter((e) => e.type === t).length
+  const count = (ty: PppEvent["type"]) => day.filter((e) => e.type === ty).length
   const connected = count("connected")
   const disconnected = count("disconnected")
   const failed = count("auth_failed")
@@ -151,9 +158,10 @@ function InfoTab({
       <Alert key="deleted">
         <InfoIcon />
         <AlertDescription>
-          Dihapus (soft) {formatRelative(user.deletedAt, now)}
-          {user.deletedReason === "router" ? ", karena sudah tidak ada di router saat import" : ""}.
-          Secret dinonaktifkan di router dan bisa dipulihkan.
+          {user.deletedReason === "router"
+            ? t("Dihapus (soft) {when}, karena sudah tidak ada di router saat import.", { when: formatRelative(user.deletedAt, now) })
+            : t("Dihapus (soft) {when}.", { when: formatRelative(user.deletedAt, now) })}{" "}
+          {t("Secret dinonaktifkan di router dan bisa dipulihkan.")}
         </AlertDescription>
       </Alert>
     )
@@ -163,8 +171,9 @@ function InfoTab({
       <Alert key="router">
         <InfoIcon />
         <AlertDescription>
-          Router {router.name} sedang {router.status === "offline" ? "offline" : "error"};
-          status user ini mungkin bukan yang terbaru.
+          {router.status === "offline"
+            ? t("Router {name} sedang offline; status user ini mungkin bukan yang terbaru.", { name: router.name })
+            : t("Router {name} sedang error; status user ini mungkin bukan yang terbaru.", { name: router.name })}
         </AlertDescription>
       </Alert>
     )
@@ -174,9 +183,10 @@ function InfoTab({
       <Alert key="auth" variant="destructive">
         <TriangleAlertIcon />
         <AlertDescription>
-          Gagal autentikasi {failed}× dalam 24 jam
-          {lastFail && `, terakhir ${formatRelative(lastFail.at, now)}`}. Cek username
-          dan password di perangkat pelanggan, atau secret di router.
+          {lastFail
+            ? t("Gagal autentikasi {n}× dalam 24 jam, terakhir {when}.", { n: failed, when: formatRelative(lastFail.at, now) })
+            : t("Gagal autentikasi {n}× dalam 24 jam.", { n: failed })}{" "}
+          {t("Cek username dan password di perangkat pelanggan, atau secret di router.")}
         </AlertDescription>
       </Alert>
     )
@@ -186,7 +196,7 @@ function InfoTab({
       <Alert key="flap">
         <TriangleAlertIcon />
         <AlertDescription>
-          Sering putus: {disconnected}× dalam 24 jam. Cek kabel, ONU, atau sinyal.
+          {t("Sering putus: {n}× dalam 24 jam. Cek kabel, ONU, atau sinyal.", { n: disconnected })}
         </AlertDescription>
       </Alert>
     )
@@ -196,7 +206,7 @@ function InfoTab({
       <Alert key="disabled">
         <InfoIcon />
         <AlertDescription>
-          Secret dinonaktifkan di router, jadi user ini tidak bisa login.
+          {t("Secret dinonaktifkan di router, jadi user ini tidak bisa login.")}
         </AlertDescription>
       </Alert>
     )
@@ -206,15 +216,15 @@ function InfoTab({
     <div className="grid gap-3 p-3">
       {notices}
 
-      <section aria-label="Sesi">
-        <h3 className="mb-1.5 text-xs font-medium text-muted-foreground">Sesi</h3>
+      <section aria-label={t("Sesi")}>
+        <h3 className="mb-1.5 text-xs font-medium text-muted-foreground">{t("Sesi")}</h3>
         <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-[13px]">
           <Field
-            label="Uptime"
-            value={user.connectedAt ? formatDuration(now - user.connectedAt) : "Tidak terhubung"}
+            label={tk("Uptime")}
+            value={user.connectedAt ? formatDuration(now - user.connectedAt) : t("Tidak terhubung")}
           />
           <Field
-            label={user.connectedAt ? "Mulai sesi" : "Terakhir terlihat"}
+            label={user.connectedAt ? tk("Mulai sesi") : tk("Terakhir terlihat")}
             value={
               user.connectedAt
                 ? formatDateTime(user.connectedAt)
@@ -224,20 +234,20 @@ function InfoTab({
             }
           />
           <Field label="IP" value={user.address} mono copy={user.address} />
-          <Field label="MAC (Caller ID)" value={user.callerId} mono copy={user.callerId} />
-          <Field label="Profil" value={user.profile} />
-          <Field label="IP statis" value={user.staticAddress} mono />
-          <Field label="Router" value={router?.name} />
+          <Field label={tk("MAC (Caller ID)")} value={user.callerId} mono copy={user.callerId} />
+          <Field label={tk("Profil")} value={user.profile} />
+          <Field label={tk("IP statis")} value={user.staticAddress} mono />
+          <Field label={tk("Router")} value={router?.name} />
         </dl>
       </section>
 
-      <section aria-label="24 jam terakhir">
+      <section aria-label={t("24 jam terakhir")}>
         <div className="mb-1.5 flex items-baseline justify-between gap-2">
-          <h3 className="text-xs font-medium text-muted-foreground">24 jam terakhir</h3>
+          <h3 className="text-xs font-medium text-muted-foreground">{t("24 jam terakhir")}</h3>
           <p className="text-xs text-muted-foreground tabular-nums">
-            {connected} terhubung · {disconnected} terputus ·{" "}
+            {t("{n} terhubung", { n: connected })} · {t("{n} terputus", { n: disconnected })} ·{" "}
             <span className={failed > 0 ? "font-medium text-foreground" : undefined}>
-              {failed} gagal auth
+              {t("{n} gagal auth", { n: failed })}
             </span>
           </p>
         </div>
@@ -245,8 +255,8 @@ function InfoTab({
       </section>
 
       {user.comment && (
-        <section aria-label="Komentar di router">
-          <h3 className="mb-1 text-xs font-medium text-muted-foreground">Komentar di router</h3>
+        <section aria-label={t("Komentar di router")}>
+          <h3 className="mb-1 text-xs font-medium text-muted-foreground">{t("Komentar di router")}</h3>
           <p className="text-[13px]">{user.comment}</p>
         </section>
       )}
@@ -255,8 +265,9 @@ function InfoTab({
 }
 
 function HistoryTab({ history, now }: { history: PppEvent[]; now: number }) {
+  const t = useT()
   if (history.length === 0) {
-    return <p className="p-3 text-sm text-muted-foreground">Belum ada event untuk user ini.</p>
+    return <p className="p-3 text-sm text-muted-foreground">{t("Belum ada event untuk user ini.")}</p>
   }
   return (
     <ol className="divide-y">
@@ -265,7 +276,7 @@ function HistoryTab({ history, now }: { history: PppEvent[]; now: number }) {
           <EventIcon type={e.type} className="mt-0.5" />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-baseline justify-between gap-x-2">
-              <span className="font-medium">{EVENT_META[e.type].label}</span>
+              <span className="font-medium">{t(EVENT_META[e.type].label) /* i18n-ignore: etiket sudah berupa kunci (tk) */}</span>
               <time
                 className="text-xs text-muted-foreground tabular-nums"
                 dateTime={new Date(e.at).toISOString()}
@@ -291,6 +302,7 @@ function NotesTab({
   meta?: UserMeta
   canEdit: boolean
 }) {
+  const t = useT()
   const { api } = useStore()
   const [editing, setEditing] = React.useState(false)
   const [busy, setBusy] = React.useState(false)
@@ -306,7 +318,7 @@ function NotesTab({
         note: String(f.get("note") ?? ""),
         tags: String(f.get("tags") ?? "").split(","),
       })
-      toast.success("Catatan disimpan")
+      toast.success(t("Catatan disimpan"))
       setEditing(false)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err))
@@ -319,37 +331,37 @@ function NotesTab({
     return (
       <form onSubmit={onSubmit} className="grid gap-3 p-3">
         <div className="grid gap-1.5">
-          <Label htmlFor="n-name">Nama pelanggan</Label>
+          <Label htmlFor="n-name">{t("Nama pelanggan")}</Label>
           <Input id="n-name" name="customerName" defaultValue={meta?.customerName} maxLength={80} autoFocus />
         </div>
         <div className="grid gap-1.5">
-          <Label htmlFor="n-phone">Telepon / WhatsApp</Label>
+          <Label htmlFor="n-phone">{t("Telepon / WhatsApp")}</Label>
           <Input id="n-phone" name="phone" type="tel" inputMode="tel" defaultValue={meta?.phone} maxLength={20} />
         </div>
         <div className="grid gap-1.5">
-          <Label htmlFor="n-tags">Label</Label>
+          <Label htmlFor="n-tags">{t("Label")}</Label>
           <Input
             id="n-tags"
             name="tags"
             defaultValue={meta?.tags.join(", ")}
-            placeholder="VIP, Tunggakan"
+            placeholder={t("VIP, Tunggakan")}
             maxLength={120}
           />
-          <p className="text-xs text-muted-foreground">Pisahkan dengan koma, maksimal 8.</p>
+          <p className="text-xs text-muted-foreground">{t("Pisahkan dengan koma, maksimal 8.")}</p>
         </div>
         <div className="grid gap-1.5">
-          <Label htmlFor="n-note">Catatan</Label>
+          <Label htmlFor="n-note">{t("Catatan")}</Label>
           <Textarea id="n-note" name="note" rows={4} defaultValue={meta?.note} maxLength={500} />
         </div>
         <p className="text-xs text-muted-foreground">
-          Disimpan di Telemon saja. Secret di router tidak diubah.
+          {t("Disimpan di Telemon saja. Secret di router tidak diubah.")}
         </p>
         <div className="flex justify-end gap-2">
           <Button type="button" variant="outline" onClick={() => setEditing(false)} disabled={busy}>
-            Batal
+            {t("Batal")}
           </Button>
           <Button type="submit" disabled={busy}>
-            {busy ? "Menyimpan…" : "Simpan"}
+            {busy ? t("Menyimpan…") : t("Simpan")}
           </Button>
         </div>
       </form>
@@ -362,13 +374,13 @@ function NotesTab({
     <div className="grid gap-3 p-3">
       {empty ? (
         <p className="text-sm text-muted-foreground">
-          Belum ada catatan. Tambahkan nama pelanggan, kontak, atau label agar user ini mudah dikenali.
+          {t("Belum ada catatan. Tambahkan nama pelanggan, kontak, atau label agar user ini mudah dikenali.")}
         </p>
       ) : (
         <dl className="grid gap-2.5 text-[13px]">
-          <Field label="Nama pelanggan" value={meta?.customerName} />
+          <Field label={tk("Nama pelanggan")} value={meta?.customerName} />
           <div className="min-w-0">
-            <dt className="text-xs text-muted-foreground">Telepon / WhatsApp</dt>
+            <dt className="text-xs text-muted-foreground">{t("Telepon / WhatsApp")}</dt>
             <dd>
               {meta?.phone ? (
                 <a
@@ -384,35 +396,35 @@ function NotesTab({
             </dd>
           </div>
           <div className="min-w-0">
-            <dt className="text-xs text-muted-foreground">Label</dt>
+            <dt className="text-xs text-muted-foreground">{t("Label")}</dt>
             <dd className="flex flex-wrap gap-1">
               {meta && meta.tags.length > 0
-                ? meta.tags.map((t) => (
-                    <Badge key={t} variant="secondary">
-                      {t}
+                ? meta.tags.map((tag) => (
+                    <Badge key={tag} variant="secondary">
+                      {tag}
                     </Badge>
                   ))
                 : "-"}
             </dd>
           </div>
           <div className="min-w-0">
-            <dt className="text-xs text-muted-foreground">Catatan</dt>
+            <dt className="text-xs text-muted-foreground">{t("Catatan")}</dt>
             <dd className="whitespace-pre-wrap">{meta?.note ?? "-"}</dd>
           </div>
           {meta && (
             <p className="text-xs text-muted-foreground">
-              Diubah {formatDateTime(meta.updatedAt)}
+              {t("Diubah {when}", { when: formatDateTime(meta.updatedAt) })}
             </p>
           )}
         </dl>
       )}
       {canEdit ? (
         <Button variant="outline" className="w-fit" onClick={() => setEditing(true)}>
-          <PencilIcon /> {empty ? "Tambah catatan" : "Edit"}
+          <PencilIcon /> {empty ? t("Tambah catatan") : t("Edit")}
         </Button>
       ) : (
         <p className="text-xs text-muted-foreground">
-          Catatan hanya bisa diubah dari aplikasi desktop.
+          {t("Catatan hanya bisa diubah dari aplikasi desktop.")}
         </p>
       )}
     </div>
@@ -426,10 +438,12 @@ export function UserDetailSheet({
   userId: string | null
   onOpenChange: (open: boolean) => void
 }) {
+  const t = useT()
   const { users, events, routerById, metas, api } = useStore()
   const now = useNow(5_000)
   const gate = useWriteGate("user")
   const noteGate = useUpdateGate("user")
+  const ai = useAiChat()
   const [editing, setEditing] = React.useState(false)
   const [removing, setRemoving] = React.useState(false)
   const user = userId ? users.find((u) => u.id === userId) : undefined
@@ -451,7 +465,7 @@ export function UserDetailSheet({
     if (!user) return
     try {
       await api.restoreUser(user.id)
-      toast.success(`${user.username} dipulihkan`)
+      toast.success(t("{user} dipulihkan", { user: user.username }))
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
     }
@@ -472,9 +486,9 @@ export function UserDetailSheet({
                     <span className="text-sm text-foreground">{meta.customerName}</span>
                   )}
                   <span className="text-xs">{router?.name}</span>
-                  {meta?.tags.map((t) => (
-                    <Badge key={t} variant="secondary">
-                      {t}
+                  {meta?.tags.map((tag) => (
+                    <Badge key={tag} variant="secondary">
+                      {tag}
                     </Badge>
                   ))}
                 </div>
@@ -482,17 +496,29 @@ export function UserDetailSheet({
               <div className="flex flex-wrap items-center gap-1.5 pt-1">
                 {user.deletedAt ? (
                   <Button size="sm" variant="outline" disabled={!!blocked} onClick={restore}>
-                    <RotateCcwIcon /> Pulihkan
+                    <RotateCcwIcon /> {t("Pulihkan")}
                   </Button>
                 ) : (
                   <>
                     <Button size="sm" variant="outline" disabled={!!blocked} onClick={() => setEditing(true)}>
-                      <PencilIcon /> Edit
+                      <PencilIcon /> {t("Edit")}
                     </Button>
                     <Button size="sm" variant="outline" disabled={!!blocked} onClick={() => setRemoving(true)}>
-                      <Trash2Icon /> Hapus
+                      <Trash2Icon /> {t("Hapus")}
                     </Button>
                   </>
+                )}
+                {ai.available && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      onOpenChange(false)
+                      ai.ask(`${t("cek")} ${user.username}`)
+                    }}
+                  >
+                    <SparklesIcon /> {t("Tanya AI")}
+                  </Button>
                 )}
                 {blocked && <span className="text-xs text-muted-foreground">{blocked}.</span>}
               </div>
@@ -501,12 +527,12 @@ export function UserDetailSheet({
             <Tabs key={user.id} defaultValue="info" className="min-h-0 flex-1 gap-0">
               <div className="border-b px-3 py-2">
                 <TabsList className="w-full">
-                  <TabsTrigger value="info">Info</TabsTrigger>
+                  <TabsTrigger value="info">{t("Info")}</TabsTrigger>
                   <TabsTrigger value="riwayat">
-                    Riwayat
+                    {t("Riwayat")}
                     <span className="text-xs text-muted-foreground tabular-nums">{history.length}</span>
                   </TabsTrigger>
-                  <TabsTrigger value="catatan">Catatan</TabsTrigger>
+                  <TabsTrigger value="catatan">{t("Catatan")}</TabsTrigger>
                 </TabsList>
               </div>
               <ScrollArea className="min-h-0 flex-1">
@@ -531,18 +557,18 @@ export function UserDetailSheet({
         <ConfirmDialog
           open={removing}
           onOpenChange={setRemoving}
-          title={`Hapus ${user.username}?`}
+          title={t("Hapus {user}?", { user: user.username })}
           description={
             <p>
-              Soft delete: secret di <b>{router?.name}</b> dinonaktifkan dan sesi yang sedang berjalan
-              diputus. Secret tidak dihapus dari router dan bisa dipulihkan dari Telemon.
+              {t("Soft delete: secret di")} <b>{router?.name}</b>{" "}
+              {t("dinonaktifkan dan sesi yang sedang berjalan diputus. Secret tidak dihapus dari router dan bisa dipulihkan dari Telemon.")}
             </p>
           }
-          confirmLabel="Hapus"
+          confirmLabel={t("Hapus")}
           destructive
           onConfirm={async () => {
             await api.softDeleteUser(user.id)
-            toast.success(`${user.username} dihapus (soft)`)
+            toast.success(t("{user} dihapus (soft)", { user: user.username }))
           }}
         />
       </>

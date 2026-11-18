@@ -46,12 +46,14 @@ import { Switch } from "@/components/ui/switch"
 import { useNow } from "@/hooks/use-now"
 import { formatRelative } from "@/lib/format"
 import { useUpdateGate } from "@/hooks/use-write-gate"
+import { useT } from "@/lib/i18n"
 import { navigate } from "@/lib/route"
 import { useStore } from "@/lib/store-context"
 import type { RouterInfo } from "@/lib/types"
 
 export function RoutersPage() {
   const { routers, liveUsers: users, api } = useStore()
+  const t = useT()
   const importReason = useUpdateGate("router")()
   const [editing, setEditing] = React.useState<RouterInfo | null>(null)
   const now = useNow(10_000)
@@ -63,12 +65,12 @@ export function RoutersPage() {
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
-          Mikrotik adalah source of truth; Telemon membaca dan (bila diizinkan) menulis lewat RouterOS API.
+          {t("Mikrotik adalah source of truth; Telemon membaca dan (bila diizinkan) menulis lewat RouterOS API.")}
         </p>
         <Button onClick={() => setAdding(true)} disabled={!!importReason} title={importReason ?? undefined}>
           <PlusIcon />
-          <span className="hidden sm:inline">Tambah router</span>
-          <span className="sm:hidden">Tambah</span>
+          <span className="hidden sm:inline">{t("Tambah router")}</span>
+          <span className="sm:hidden">{t("Tambah")}</span>
         </Button>
       </div>
 
@@ -78,18 +80,18 @@ export function RoutersPage() {
           const c = { active: 0, inactive: 0, disabled: 0 }
           for (const u of mine) c[u.status]++
           const facts: [string, React.ReactNode][] = [
-            ["Model", r.model],
+            [t("Model"), r.model],
             ["RouterOS", r.version],
             [
-              "Koneksi",
+              t("Koneksi"),
               <span className="inline-flex items-center gap-1.5" key="tls">
                 {r.tls ? <LockIcon className="size-3.5" /> : <LockOpenIcon className="size-3.5" />}
-                {r.tls ? "API-SSL" : "API tanpa TLS"}
+                {r.tls ? "API-SSL" : t("API tanpa TLS")}
               </span>,
             ],
-            ["Polling", r.lastPollAt ? formatRelative(r.lastPollAt, now) : "Belum pernah"],
-            ["Izin API", r.canWrite ? "Baca & tulis" : "Hanya baca"],
-            ["Import terakhir", r.lastImportAt ? formatRelative(r.lastImportAt, now) : "Belum pernah"],
+            [t("Polling"), r.lastPollAt ? formatRelative(r.lastPollAt, now) : t("Belum pernah")],
+            [t("Izin API"), r.canWrite ? t("Baca & tulis") : t("Hanya baca")],
+            [t("Import terakhir"), r.lastImportAt ? formatRelative(r.lastImportAt, now) : t("Belum pernah")],
           ]
           return (
             <Card key={r.id} className="gap-2.5">
@@ -104,26 +106,26 @@ export function RoutersPage() {
                 <CardAction>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" aria-label={`Aksi ${r.name}`}>
+                      <Button variant="ghost" size="icon" aria-label={t("Aksi {name}", { name: r.name })}>
                         <MoreVerticalIcon />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onSelect={() => navigate("user", { router: r.id })}>
-                        <UsersIcon /> Lihat user
+                        <UsersIcon /> {t("Lihat user")}
                       </DropdownMenuItem>
                       <DropdownMenuItem disabled={!!importReason} onSelect={() => setEditing(r)}>
-                        <PencilIcon /> Edit router
+                        <PencilIcon /> {t("Edit router")}
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         disabled={r.status !== "online" || !!importReason}
                         onSelect={() => setImportFor(r)}
                       >
-                        <DownloadIcon /> Import dari Mikrotik
+                        <DownloadIcon /> {t("Import dari Mikrotik")}
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem variant="destructive" disabled={!!importReason} onSelect={() => setRemoving(r)}>
-                        <Trash2Icon /> Hapus dari Telemon
+                        <Trash2Icon /> {t("Hapus dari Telemon")}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -147,9 +149,9 @@ export function RoutersPage() {
                 <div className="space-y-1.5">
                   <UserMixBar active={c.active} inactive={c.inactive} disabled={c.disabled} />
                   <p className="text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground tabular-nums">{c.active}</span> aktif ·{" "}
-                    <span className="font-medium text-foreground tabular-nums">{c.inactive}</span> tidak aktif ·{" "}
-                    <span className="font-medium text-foreground tabular-nums">{c.disabled}</span> dinonaktifkan
+                    <span className="font-medium text-foreground tabular-nums">{c.active}</span> {t("aktif")} ·{" "}
+                    <span className="font-medium text-foreground tabular-nums">{c.inactive}</span> {t("tidak aktif")} ·{" "}
+                    <span className="font-medium text-foreground tabular-nums">{c.disabled}</span> {t("dinonaktifkan")}
                   </p>
                 </div>
               </CardContent>
@@ -169,15 +171,14 @@ export function RoutersPage() {
       <Dialog open={!!removing} onOpenChange={(o) => !o && setRemoving(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Hapus {removing?.name}?</DialogTitle>
+            <DialogTitle>{t("Hapus {name}?", { name: removing?.name ?? "" })}</DialogTitle>
             <DialogDescription>
-              Router berhenti dipantau dan data user serta event-nya dihapus dari
-              Telemon. Konfigurasi di router tidak diubah.
+              {t("Router berhenti dipantau dan data user serta event-nya dihapus dari Telemon. Konfigurasi di router tidak diubah.")}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <DialogClose asChild>
-              <Button variant="outline">Batal</Button>
+              <Button variant="outline">{t("Batal")}</Button>
             </DialogClose>
             <Button
               variant="destructive"
@@ -187,11 +188,11 @@ export function RoutersPage() {
                 if (r)
                   api
                     .removeRouter(r.id)
-                    .then(() => toast.success(`${r.name} dihapus`))
+                    .then(() => toast.success(t("{name} dihapus", { name: r.name })))
                     .catch((e: Error) => toast.error(e.message))
               }}
             >
-              Hapus
+              {t("Hapus")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -221,6 +222,7 @@ function RouterDialog({
 
 function RouterForm({ router, onClose }: { router?: RouterInfo; onClose: () => void }) {
   const { api } = useStore()
+  const t = useT()
   const editing = !!router
   const [tls, setTls] = React.useState(router?.tls ?? true)
   const [allowWrite, setAllowWrite] = React.useState(router?.canWrite ?? false)
@@ -243,10 +245,10 @@ function RouterForm({ router, onClose }: { router?: RouterInfo; onClose: () => v
       }
       if (router) {
         const r = await api.updateRouter(router.id, { ...base, username: username || undefined, password: password || undefined })
-        toast.success(`${r.name} diperbarui`)
+        toast.success(t("{name} diperbarui", { name: r.name }))
       } else {
         const r = await api.addRouter({ ...base, username, password })
-        toast.success(`${r.name} ditambahkan`)
+        toast.success(t("{name} ditambahkan", { name: r.name }))
       }
       onClose()
     } catch (err) {
@@ -259,24 +261,24 @@ function RouterForm({ router, onClose }: { router?: RouterInfo; onClose: () => v
   return (
     <form onSubmit={onSubmit} className="grid gap-4">
       <DialogHeader>
-        <DialogTitle>{editing ? `Edit ${router?.name}` : "Tambah router"}</DialogTitle>
+        <DialogTitle>{editing ? t("Edit {name}", { name: router?.name ?? "" }) : t("Tambah router")}</DialogTitle>
         <DialogDescription>
-          Pakai akun API khusus. Grup <code>read</code> cukup untuk memantau; tambah hak <code>write</code> bila user dan
-          profil PPP ingin diedit dari Telemon. Password disimpan di keyring sistem operasi
-          {editing && "; kosongkan username dan password bila tidak diubah"}.
+          {t("Pakai akun API khusus. Grup")} <code>read</code> {t("cukup untuk memantau; tambah hak")} <code>write</code>{" "}
+          {t("bila user dan profil PPP ingin diedit dari Telemon. Password disimpan di keyring sistem operasi")}
+          {editing && t("; kosongkan username dan password bila tidak diubah")}.
         </DialogDescription>
       </DialogHeader>
       <div className="grid gap-2">
-        <Label htmlFor="r-name">Nama</Label>
-        <Input id="r-name" name="name" required defaultValue={router?.name} placeholder="RB-Utara" />
+        <Label htmlFor="r-name">{t("Nama")}</Label>
+        <Input id="r-name" name="name" required defaultValue={router?.name} placeholder={t("RB-Utara")} />
       </div>
       <div className="grid grid-cols-[1fr_6rem] gap-3">
         <div className="grid gap-2">
-          <Label htmlFor="r-host">Host / IP</Label>
+          <Label htmlFor="r-host">{t("Host / IP")}</Label>
           <Input id="r-host" name="host" required defaultValue={router?.host} placeholder="10.10.5.1" inputMode="url" />
         </div>
         <div className="grid gap-2">
-          <Label htmlFor="r-port">Port</Label>
+          <Label htmlFor="r-port">{t("Port")}</Label>
           <Input
             id="r-port"
             required
@@ -290,7 +292,7 @@ function RouterForm({ router, onClose }: { router?: RouterInfo; onClose: () => v
       <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
         <div className="grid gap-0.5">
           <Label htmlFor="r-tls">API-SSL (TLS)</Label>
-          <p className="text-xs text-muted-foreground">Disarankan. Port bawaan 8729; tanpa TLS 8728.</p>
+          <p className="text-xs text-muted-foreground">{t("Disarankan. Port bawaan 8729; tanpa TLS 8728.")}</p>
         </div>
         <Switch
           id="r-tls"
@@ -303,29 +305,29 @@ function RouterForm({ router, onClose }: { router?: RouterInfo; onClose: () => v
       </div>
       <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
         <div className="grid gap-0.5">
-          <Label htmlFor="r-write">Izinkan edit user dan profil PPP</Label>
+          <Label htmlFor="r-write">{t("Izinkan edit user dan profil PPP")}</Label>
           <p className="text-xs text-muted-foreground">
-            Nyalakan hanya bila akun API di bawah punya hak write. Setiap tulis ke router tetap meminta konfirmasi.
+            {t("Nyalakan hanya bila akun API di bawah punya hak write. Setiap tulis ke router tetap meminta konfirmasi.")}
           </p>
         </div>
         <Switch id="r-write" checked={allowWrite} onCheckedChange={setAllowWrite} />
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="grid gap-2">
-          <Label htmlFor="r-user">Username API</Label>
-          <Input id="r-user" name="username" required={!editing} autoComplete="off" placeholder={editing ? "tetap" : "telemon"} />
+          <Label htmlFor="r-user">{t("Username API")}</Label>
+          <Input id="r-user" name="username" required={!editing} autoComplete="off" placeholder={editing ? t("tetap") : "telemon"} />
         </div>
         <div className="grid gap-2">
-          <Label htmlFor="r-pass">Password</Label>
-          <Input id="r-pass" name="password" type="password" required={!editing} autoComplete="new-password" placeholder={editing ? "tetap" : undefined} />
+          <Label htmlFor="r-pass">{t("Password")}</Label>
+          <Input id="r-pass" name="password" type="password" required={!editing} autoComplete="new-password" placeholder={editing ? t("tetap") : undefined} />
         </div>
       </div>
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
-          Batal
+          {t("Batal")}
         </Button>
         <Button type="submit" disabled={busy}>
-          {busy ? "Menghubungkan…" : "Simpan"}
+          {busy ? t("Menghubungkan…") : t("Simpan")}
         </Button>
       </DialogFooter>
     </form>

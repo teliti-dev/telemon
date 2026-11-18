@@ -32,10 +32,13 @@ import { useNow } from "@/hooks/use-now"
 import { formatDuration, formatNumber, formatRelative } from "@/lib/format"
 import { FilterSelect } from "@/components/filter-select"
 import { ImportDialog } from "@/components/import-dialog"
+import { LoadMore } from "@/components/skeletons"
 import { UserFormDialog } from "@/components/user-form-dialog"
 import { UsersSectionNav } from "@/components/users-section-nav"
+import { useInfiniteList } from "@/hooks/use-infinite-list"
 import { useUpdateGate } from "@/hooks/use-write-gate"
 import { useStore } from "@/lib/store-context"
+import { tk, useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import type { PppUser, UserStatus } from "@/lib/types"
 
@@ -62,16 +65,16 @@ function saveView(v: ViewMode) {
 }
 
 const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
-  { value: "all", label: "Semua" },
-  { value: "active", label: "Aktif" },
-  { value: "inactive", label: "Tidak aktif" },
-  { value: "disabled", label: "Dinonaktifkan" },
-  { value: "deleted", label: "Terhapus" },
+  { value: "all", label: tk("Semua") },
+  { value: "active", label: tk("Aktif") },
+  { value: "inactive", label: tk("Tidak aktif") },
+  { value: "disabled", label: tk("Dinonaktifkan") },
+  { value: "deleted", label: tk("Terhapus") },
 ]
 
 function uptimeOrSeen(u: PppUser, now: number) {
-  if (u.connectedAt) return { label: "Uptime", value: formatDuration(now - u.connectedAt) }
-  if (u.lastSeenAt) return { label: "Terlihat", value: formatRelative(u.lastSeenAt, now) }
+  if (u.connectedAt) return { label: tk("Uptime"), value: formatDuration(now - u.connectedAt) }
+  if (u.lastSeenAt) return { label: tk("Terlihat"), value: formatRelative(u.lastSeenAt, now) }
   return { label: "", value: "-" }
 }
 
@@ -82,6 +85,7 @@ export function UsersPage({
   params: URLSearchParams
   onOpenUser: (id: string) => void
 }) {
+  const t = useT()
   const { users, routers, routerById, metas } = useStore()
   const userReason = useUpdateGate("user")()
   const importReason = useUpdateGate("router")()
@@ -94,7 +98,6 @@ export function UsersPage({
   const [routerId, setRouterId] = React.useState(params.get("router") ?? "all")
   const [sort, setSort] = React.useState<SortKey>("recent")
   const [view, setView] = React.useState<ViewMode>(loadView)
-  const [limit, setLimit] = React.useState(PAGE_SIZE)
 
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -109,7 +112,7 @@ export function UsersPage({
           u.comment?.toLowerCase().includes(q) ||
           metas[u.id]?.customerName?.toLowerCase().includes(q) ||
           metas[u.id]?.phone?.includes(q) ||
-          metas[u.id]?.tags.some((t) => t.toLowerCase().includes(q)))
+          metas[u.id]?.tags.some((tag) => tag.toLowerCase().includes(q)))
     )
     const sorters: Record<SortKey, (a: PppUser, b: PppUser) => number> = {
       recent: (a, b) => (b.lastEventAt ?? 0) - (a.lastEventAt ?? 0),
@@ -120,25 +123,25 @@ export function UsersPage({
     return list.sort(sorters[sort])
   }, [users, metas, query, status, routerId, sort])
 
-  const shown = filtered.slice(0, limit)
+  const { count, hasMore, sentinelRef } = useInfiniteList(filtered.length, PAGE_SIZE, `${query}|${status}|${routerId}|${sort}|${view}`)
+  const shown = filtered.slice(0, count)
   const [adding, setAdding] = React.useState(false)
   const [importing, setImporting] = React.useState(false)
   const canWriteAny = !userReason && routers.some((r) => r.canWrite)
 
   const onStatus = (v: string) => {
     setStatus(v as StatusFilter)
-    setLimit(PAGE_SIZE)
   }
   const onRouter = (v: string) => {
     setRouterId(v)
-    setLimit(PAGE_SIZE)
   }
-  const statusOptions = STATUS_OPTIONS.map((o) => ({ value: o.value, label: o.value === "all" ? "Semua status" : o.label }))
-  const routerOptions = [{ value: "all", label: "Semua router" }, ...routers.map((r) => ({ value: r.id, label: r.name }))]
+  // i18n-ignore: label bertanda tk()
+  const statusOptions = STATUS_OPTIONS.map((o) => ({ value: o.value, label: o.value === "all" ? t("Semua status") : t(o.label) }))
+  const routerOptions = [{ value: "all", label: t("Semua router") }, ...routers.map((r) => ({ value: r.id, label: r.name }))]
   const sortOptions = [
-    { value: "recent", label: "Event terbaru", short: "Terbaru" },
-    { value: "username", label: "Username A-Z", short: "A-Z" },
-    { value: "uptime", label: "Uptime terlama", short: "Uptime" },
+    { value: "recent", label: t("Event terbaru"), short: t("Terbaru") },
+    { value: "username", label: t("Username A-Z"), short: t("A-Z") },
+    { value: "uptime", label: t("Uptime terlama"), short: t("Uptime") },
   ]
   const viewToggle = (
     <ToggleGroup
@@ -151,13 +154,13 @@ export function UsersPage({
           saveView(v as ViewMode)
         }
       }}
-      aria-label="Tampilan"
+      aria-label={t("Tampilan")}
       className="shrink-0"
     >
-      <ToggleGroupItem value="list" aria-label="Tampilan list" title="List">
+      <ToggleGroupItem value="list" aria-label={t("Tampilan list")} title={t("List")}>
         <ListIcon />
       </ToggleGroupItem>
-      <ToggleGroupItem value="grid" aria-label="Tampilan grid" title="Grid">
+      <ToggleGroupItem value="grid" aria-label={t("Tampilan grid")} title={t("Grid")}>
         <LayoutGridIcon />
       </ToggleGroupItem>
     </ToggleGroup>
@@ -170,17 +173,17 @@ export function UsersPage({
         <div className="ml-auto flex gap-2">
           <Button variant="outline" onClick={() => setImporting(true)} disabled={!!importReason} title={importReason ?? undefined}>
             <DownloadIcon />
-            <span className="hidden sm:inline">Import dari Mikrotik</span>
-            <span className="sm:hidden">Import</span>
+            <span className="hidden sm:inline">{t("Import dari Mikrotik")}</span>
+            <span className="sm:hidden">{t("Import")}</span>
           </Button>
           <Button
             onClick={() => setAdding(true)}
             disabled={!canWriteAny}
-            title={canWriteAny ? undefined : (userReason ?? "Tidak ada router dengan hak write")}
+            title={canWriteAny ? undefined : (userReason ?? t("Tidak ada router dengan hak write"))}
           >
             <PlusIcon />
-            <span className="hidden sm:inline">Tambah user</span>
-            <span className="sm:hidden">Tambah</span>
+            <span className="hidden sm:inline">{t("Tambah user")}</span>
+            <span className="sm:hidden">{t("Tambah")}</span>
           </Button>
         </div>
       </div>
@@ -195,10 +198,9 @@ export function UsersPage({
               value={query}
               onChange={(e) => {
                 setQuery(e.target.value)
-                setLimit(PAGE_SIZE)
               }}
-              placeholder="Cari username, IP, MAC…"
-              aria-label="Cari user"
+              placeholder={t("Cari username, IP, MAC…")}
+              aria-label={t("Cari user")}
               className="pl-8"
             />
           </div>
@@ -206,23 +208,24 @@ export function UsersPage({
         </div>
 
         <div className="flex gap-2 lg:hidden">
-          <FilterSelect label="Status" value={status} defaultValue="all" options={statusOptions} onChange={onStatus} className="flex-[1.3]" />
-          <FilterSelect label="Router" value={routerId} defaultValue="all" options={routerOptions} onChange={onRouter} />
-          <FilterSelect label="Urutkan" value={sort} defaultValue="recent" options={sortOptions} onChange={(v) => setSort(v as SortKey)} />
+          <FilterSelect label={t("Status")} value={status} defaultValue="all" options={statusOptions} onChange={onStatus} className="flex-[1.3]" />
+          <FilterSelect label={t("Router")} value={routerId} defaultValue="all" options={routerOptions} onChange={onRouter} />
+          <FilterSelect label={t("Urutkan")} value={sort} defaultValue="recent" options={sortOptions} onChange={(v) => setSort(v as SortKey)} />
         </div>
 
         <div className="-mx-1 hidden overflow-x-auto px-1 lg:block">
-          <ToggleGroup type="single" variant="outline" value={status} onValueChange={(v) => v && onStatus(v)} aria-label="Filter status">
+          <ToggleGroup type="single" variant="outline" value={status} onValueChange={(v) => v && onStatus(v)} aria-label={t("Filter status")}>
             {STATUS_OPTIONS.map((o) => (
               <ToggleGroupItem key={o.value} value={o.value} className="px-3">
-                {o.label}
+                {/* i18n-ignore: label bertanda tk() */}
+                {t(o.label)}
               </ToggleGroupItem>
             ))}
           </ToggleGroup>
         </div>
         <div className="hidden gap-2 lg:ml-auto lg:flex">
           <Select value={routerId} onValueChange={onRouter}>
-            <SelectTrigger className="w-44" aria-label="Router">
+            <SelectTrigger className="w-44" aria-label={t("Router")}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -234,7 +237,7 @@ export function UsersPage({
             </SelectContent>
           </Select>
           <Select value={sort} onValueChange={(v) => setSort(v as SortKey)}>
-            <SelectTrigger className="w-40" aria-label="Urutkan">
+            <SelectTrigger className="w-40" aria-label={t("Urutkan")}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -251,14 +254,15 @@ export function UsersPage({
 
       <div className="-mb-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
         <p aria-live="polite">
-          {formatNumber(filtered.length)} user
-          {filtered.length > shown.length && `, menampilkan ${formatNumber(shown.length)}`}
+          {t("{n} user", { n: formatNumber(filtered.length) })}
+          {filtered.length > shown.length && `, ${t("menampilkan {n}", { n: formatNumber(shown.length) })}`}
         </p>
-        <ul className="flex flex-wrap gap-x-3 gap-y-1 sm:ml-auto" aria-label="Keterangan warna">
-          {USER_TONES.filter((t) => t !== "deleted" || status === "deleted").map((t) => (
-            <li key={t} className="flex items-center gap-1.5">
-              <span className={cn("size-2 rounded-full", USER_TONE[t].dot)} />
-              {USER_TONE[t].label}
+        <ul className="flex flex-wrap gap-x-3 gap-y-1 sm:ml-auto" aria-label={t("Keterangan warna")}>
+          {USER_TONES.filter((tn) => tn !== "deleted" || status === "deleted").map((tn) => (
+            <li key={tn} className="flex items-center gap-1.5">
+              <span className={cn("size-2 rounded-full", USER_TONE[tn].dot)} />
+              {/* i18n-ignore: label bertanda tk() */}
+              {t(USER_TONE[tn].label)}
             </li>
           ))}
         </ul>
@@ -266,7 +270,7 @@ export function UsersPage({
 
       {filtered.length === 0 ? (
         <Card className="items-center py-12 text-sm text-muted-foreground">
-          Tidak ada user yang cocok dengan filter.
+          {t("Tidak ada user yang cocok dengan filter.")}
         </Card>
       ) : (
         <>
@@ -275,19 +279,19 @@ export function UsersPage({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="pl-3">Username</TableHead>
-                  <TableHead className="hidden lg:table-cell">Profil</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Router</TableHead>
+                  <TableHead className="pl-3">{t("Username")}</TableHead>
+                  <TableHead className="hidden lg:table-cell">{t("Profil")}</TableHead>
+                  <TableHead>{t("Status")}</TableHead>
+                  <TableHead>{t("Router")}</TableHead>
                   <TableHead>IP</TableHead>
                   <TableHead className="hidden xl:table-cell">MAC</TableHead>
-                  <TableHead>Uptime / terlihat</TableHead>
-                  <TableHead className="pr-3">Event terakhir</TableHead>
+                  <TableHead>{t("Uptime / terlihat")}</TableHead>
+                  <TableHead className="pr-3">{t("Event terakhir")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {shown.map((u) => {
-                  const t = uptimeOrSeen(u, now)
+                  const ut = uptimeOrSeen(u, now)
                   const tone = USER_TONE[userTone(u)]
                   const label = metas[u.id]?.customerName ?? u.comment
                   return (
@@ -314,13 +318,14 @@ export function UsersPage({
                         {u.callerId ?? "-"}
                       </TableCell>
                       <TableCell className={u.connectedAt ? "tabular-nums" : "text-muted-foreground tabular-nums"}>
-                        {t.value}
+                        {ut.value}
                       </TableCell>
                       <TableCell className="pr-3">
                         {u.lastEvent && u.lastEventAt ? (
                           <span className="flex items-center gap-2">
                             <EventIcon type={u.lastEvent} />
-                            <span>{EVENT_META[u.lastEvent].label}</span>
+                            {/* i18n-ignore: label bertanda tk() */}
+                            <span>{t(EVENT_META[u.lastEvent].label)}</span>
                             <span className="text-xs text-muted-foreground">
                               {formatRelative(u.lastEventAt, now)}
                             </span>
@@ -341,7 +346,7 @@ export function UsersPage({
             <Card className="gap-0 py-0 md:hidden">
               <ul className="divide-y">
                 {shown.map((u) => {
-                  const t = uptimeOrSeen(u, now)
+                  const ut = uptimeOrSeen(u, now)
                   const tone = USER_TONE[userTone(u)]
                   return (
                     <li key={u.id}>
@@ -350,7 +355,8 @@ export function UsersPage({
                         onClick={() => onOpenUser(u.id)}
                         className={cn("flex w-full items-center gap-2.5 px-3 py-2 text-left active:bg-muted/50", tone.row, tone.bar)}
                       >
-                        <span className={cn("size-2 shrink-0 rounded-full", tone.dot)} aria-label={tone.label} />
+                        {/* i18n-ignore: label bertanda tk() */}
+                        <span className={cn("size-2 shrink-0 rounded-full", tone.dot)} aria-label={t(tone.label)} />
                         <div className="min-w-0 flex-1">
                           <div className="truncate font-mono text-[13px]">{u.username}</div>
                           <div className="truncate text-xs text-muted-foreground">
@@ -359,11 +365,12 @@ export function UsersPage({
                           </div>
                         </div>
                         <div className="shrink-0 text-right text-xs">
-                          <div className={u.connectedAt ? "tabular-nums" : "text-muted-foreground tabular-nums"}>{t.value}</div>
+                          <div className={u.connectedAt ? "tabular-nums" : "text-muted-foreground tabular-nums"}>{ut.value}</div>
                           {u.lastEvent && (
                             <div className="flex items-center justify-end gap-1 text-muted-foreground">
                               <EventIcon type={u.lastEvent} className="size-3" />
-                              {EVENT_META[u.lastEvent].label}
+                              {/* i18n-ignore: label bertanda tk() */}
+                              {t(EVENT_META[u.lastEvent].label)}
                             </div>
                           )}
                         </div>
@@ -379,7 +386,7 @@ export function UsersPage({
           {view === "grid" && (
             <ul className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
               {shown.map((u) => {
-                const t = uptimeOrSeen(u, now)
+                const ut = uptimeOrSeen(u, now)
                 const tone = userTone(u)
                 const label = metas[u.id]?.customerName ?? u.comment
                 return (
@@ -408,21 +415,23 @@ export function UsersPage({
                           <dd className="truncate font-mono">{u.address ?? "-"}</dd>
                         </div>
                         <div className="min-w-0">
-                          <dt className="text-muted-foreground">{t.label || "Uptime"}</dt>
-                          <dd className="truncate tabular-nums">{t.value}</dd>
+                          {/* i18n-ignore: label bertanda tk() */}
+                          <dt className="text-muted-foreground">{t(ut.label || "Uptime")}</dt>
+                          <dd className="truncate tabular-nums">{ut.value}</dd>
                         </div>
                       </dl>
                       <div className="mt-auto flex items-center gap-1.5 border-t pt-1.5 text-xs">
                         {u.lastEvent && u.lastEventAt ? (
                           <>
                             <EventIcon type={u.lastEvent} className="size-3.5" />
-                            <span className="truncate">{EVENT_META[u.lastEvent].label}</span>
+                            {/* i18n-ignore: label bertanda tk() */}
+                            <span className="truncate">{t(EVENT_META[u.lastEvent].label)}</span>
                             <span className="ml-auto shrink-0 text-muted-foreground">
                               {formatRelative(u.lastEventAt, now)}
                             </span>
                           </>
                         ) : (
-                          <span className="text-muted-foreground">Belum ada event</span>
+                          <span className="text-muted-foreground">{t("Belum ada event")}</span>
                         )}
                       </div>
                     </button>
@@ -432,15 +441,7 @@ export function UsersPage({
             </ul>
           )}
 
-          {filtered.length > shown.length && (
-            <Button
-              variant="outline"
-              className="self-center"
-              onClick={() => setLimit((n) => n + PAGE_SIZE)}
-            >
-              Tampilkan {Math.min(PAGE_SIZE, filtered.length - shown.length)} lagi
-            </Button>
-          )}
+          {hasMore && <LoadMore sentinelRef={sentinelRef} variant={view === "grid" ? "cards" : "rows"} />}
         </>
       )}
 

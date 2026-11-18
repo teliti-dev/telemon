@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useApi } from "@/lib/api-context"
 import { DEFAULT_ROLES } from "@/lib/defaults"
+import { useT } from "@/lib/i18n"
 import { hasUpdate } from "@/lib/permissions"
 import type { Permissions, Role } from "@/lib/types"
 
@@ -39,10 +40,11 @@ export function RoleDialog({ open, onOpenChange, ...rest }: Props) {
 }
 
 function RoleForm({ role, onDone, onClose }: Omit<Props, "open" | "onOpenChange"> & { onClose: () => void }) {
+  const t = useT()
   const { api } = useApi()
   const def = role?.builtin ? DEFAULT_ROLES.find((d) => d.id === role.id) : undefined
   // Peran baru: tanpa akses sampai diberi centang.
-  const none: Permissions = { ringkasan: "none", user: "none", profile: "none", event: "none", router: "none", admin: "none", pengaturan: "none" }
+  const none: Permissions = { ringkasan: "none", user: "none", profile: "none", event: "none", router: "none", admin: "none", pengaturan: "none", ai: "none" }
   const [name, setName] = React.useState(role?.name ?? "")
   const [description, setDescription] = React.useState(role?.description ?? "")
   const [perms, setPerms] = React.useState<Permissions>(role?.permissions ?? none)
@@ -60,7 +62,7 @@ function RoleForm({ role, onDone, onClose }: Omit<Props, "open" | "onOpenChange"
       const input = { name, description, permissions: perms }
       if (role) await api.updateRole(role.id, input)
       else await api.createRole(input)
-      toast.success(role ? "Peran disimpan" : "Peran dibuat")
+      toast.success(role ? t("Peran disimpan") : t("Peran dibuat"))
       onDone()
       onClose()
     } catch (err) {
@@ -73,21 +75,20 @@ function RoleForm({ role, onDone, onClose }: Omit<Props, "open" | "onOpenChange"
   return (
     <form onSubmit={submit} className="grid gap-3">
       <DialogHeader>
-        <DialogTitle>{role ? `Edit peran ${role.name}` : "Tambah peran"}</DialogTitle>
+        <DialogTitle>{role ? t("Edit peran {name}", { name: role.name }) : t("Tambah peran")}</DialogTitle>
         <DialogDescription>
-          Bawaan tanpa akses: centang menu yang boleh dilihat atau diubah akun dengan peran ini. Menu Berbagi dan izin tulis lewat akses publik
-          hanya dari aplikasi desktop. Halaman Akun saya (profil sendiri, password, 2FA, sesi) tidak memerlukan izin.
+          {t("Bawaan tanpa akses: centang menu yang boleh dilihat atau diubah akun dengan peran ini. Menu Berbagi dan izin tulis lewat akses publik hanya dari aplikasi desktop. Halaman Akun saya (profil sendiri, password, 2FA, sesi) tidak memerlukan izin.")}
         </DialogDescription>
       </DialogHeader>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="grid gap-1.5">
-          <Label htmlFor="role-name">Nama</Label>
-          <Input id="role-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={30} placeholder="NOC Shift" autoFocus={!role} />
+          <Label htmlFor="role-name">{t("Nama")}</Label>
+          <Input id="role-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={30} placeholder={t("NOC Shift")} autoFocus={!role} />
         </div>
         <div className="grid gap-1.5">
-          <Label htmlFor="role-desc">Keterangan</Label>
-          <Input id="role-desc" value={description} onChange={(e) => setDescription(e.target.value)} maxLength={120} placeholder="opsional" />
+          <Label htmlFor="role-desc">{t("Keterangan")}</Label>
+          <Input id="role-desc" value={description} onChange={(e) => setDescription(e.target.value)} maxLength={120} placeholder={t("opsional")} />
         </div>
       </div>
 
@@ -97,9 +98,8 @@ function RoleForm({ role, onDone, onClose }: Omit<Props, "open" | "onOpenChange"
         <Alert>
           <ShieldAlertIcon />
           <AlertDescription>
-            Izin <b>Ubah</b> berarti akun bisa mengubah data lewat browser: Users, Profil PPP, dan Router menulis ke router
-            (tetap ada tinjauan sebelum menulis); Admin dan Pengaturan mengubah akun, peran, dan pengaturan. Akun dengan peran ini
-            wajib 2FA, dan tulis lewat akses publik mengikuti Pengaturan.
+            {t("Izin")} <b>{t("Ubah")}</b>{" "}
+            {t("berarti akun bisa mengubah data lewat browser: Users, Profil PPP, dan Router menulis ke router (tetap ada tinjauan sebelum menulis); Admin dan Pengaturan mengubah akun, peran, dan pengaturan. Akun dengan peran ini wajib 2FA, dan tulis lewat akses publik mengikuti Pengaturan.")}
           </AlertDescription>
         </Alert>
       )}
@@ -122,17 +122,17 @@ function RoleForm({ role, onDone, onClose }: Omit<Props, "open" | "onOpenChange"
               setPerms({ ...def.permissions })
             }}
           >
-            <RotateCcwIcon /> Kembalikan ke bawaan
+            <RotateCcwIcon /> {t("Kembalikan ke bawaan")}
           </Button>
         ) : (
           <span />
         )}
         <div className="flex gap-2">
           <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
-            Batal
+            {t("Batal")}
           </Button>
           <Button type="submit" disabled={busy || name.trim().length < 2}>
-            {busy ? "Menyimpan…" : "Simpan"}
+            {busy ? t("Menyimpan…") : t("Simpan")}
           </Button>
         </div>
       </DialogFooter>

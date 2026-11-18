@@ -22,6 +22,7 @@ import {
 import { useNow } from "@/hooks/use-now"
 import { useUpdateGate } from "@/hooks/use-write-gate"
 import { formatRelative } from "@/lib/format"
+import { tk, useT } from "@/lib/i18n"
 import { useStore } from "@/lib/store-context"
 import type { ImportCounts, ImportResult } from "@/lib/types"
 
@@ -32,15 +33,16 @@ interface RouterResult {
 }
 
 function Counts({ label, c }: { label: string; c: ImportCounts }) {
+  const t = useT()
   const parts = [
-    c.added > 0 && `${c.added} baru`,
-    c.updated > 0 && `${c.updated} diperbarui`,
-    c.deleted > 0 && `${c.deleted} hilang dari router (ditandai dihapus)`,
+    c.added > 0 && t("{n} baru", { n: c.added }),
+    c.updated > 0 && t("{n} diperbarui", { n: c.updated }),
+    c.deleted > 0 && t("{n} hilang dari router (ditandai dihapus)", { n: c.deleted }),
   ].filter(Boolean)
   return (
     <div className="flex justify-between gap-3">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="text-right">{parts.length ? parts.join(", ") : "tidak ada perubahan"}</span>
+      <span className="text-muted-foreground">{t(label) /* i18n-ignore: etiket sudah berupa kunci (tk) */}</span>
+      <span className="text-right">{parts.length ? parts.join(", ") : t("tidak ada perubahan")}</span>
     </div>
   )
 }
@@ -70,6 +72,7 @@ function ImportBody({
   defaultRouterId?: string
   onClose: () => void
 }) {
+  const t = useT()
   const { routers, routerById, api } = useStore()
   const importReason = useUpdateGate("router")()
   const now = useNow(30_000)
@@ -99,30 +102,29 @@ function ImportBody({
   return (
     <>
       <DialogHeader>
-        <DialogTitle>Import dari Mikrotik</DialogTitle>
+        <DialogTitle>{t("Import dari Mikrotik")}</DialogTitle>
         <DialogDescription>
-          Membaca <code>/ppp/secret</code> dan <code>/ppp/profile</code> dari router.
+          {t("Membaca")} <code>/ppp/secret</code> {t("dan")} <code>/ppp/profile</code> {t("dari router.")}
         </DialogDescription>
       </DialogHeader>
 
       <Alert>
         <InfoIcon />
         <AlertDescription>
-          <b>Router adalah source of truth.</b> Saat ada selisih, data di Telemon ditimpa
-          dengan data router. User atau profil PPP yang sudah tidak ada di router ditandai
-          dihapus (soft delete), bukan dibuang. Password tidak ikut diimpor.
+          <b>{t("Router adalah source of truth.")}</b>{" "}
+          {t("Saat ada selisih, data di Telemon ditimpa dengan data router. User atau profil PPP yang sudah tidak ada di router ditandai dihapus (soft delete), bukan dibuang. Password tidak ikut diimpor.")}
         </AlertDescription>
       </Alert>
 
       <div className="grid gap-1.5">
-        <Label htmlFor="imp-router">Router</Label>
+        <Label htmlFor="imp-router">{t("Router")}</Label>
         <Select value={target} onValueChange={setTarget} disabled={busy}>
           <SelectTrigger id="imp-router" className="w-full">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all" disabled={online.length === 0}>
-              Semua router online ({online.length})
+              {t("Semua router online ({n})", { n: online.length })}
             </SelectItem>
             {routers.map((r) => (
               <SelectItem key={r.id} value={r.id} disabled={r.status !== "online"}>
@@ -130,8 +132,8 @@ function ImportBody({
                 {r.status !== "online"
                   ? ` (${r.status})`
                   : r.lastImportAt
-                    ? ` · import ${formatRelative(r.lastImportAt, now)}`
-                    : " · belum pernah diimpor"}
+                    ? ` · ${t("import {when}", { when: formatRelative(r.lastImportAt, now) })}`
+                    : ` · ${t("belum pernah diimpor")}`}
               </SelectItem>
             ))}
           </SelectContent>
@@ -149,8 +151,8 @@ function ImportBody({
               {r.error && <p className="text-destructive">{r.error}</p>}
               {r.result && (
                 <>
-                  <Counts label="User" c={r.result.users} />
-                  <Counts label="Profil PPP" c={r.result.profiles} />
+                  <Counts label={tk("User")} c={r.result.users} />
+                  <Counts label={tk("Profil PPP")} c={r.result.profiles} />
                 </>
               )}
             </li>
@@ -160,10 +162,10 @@ function ImportBody({
 
       <DialogFooter>
         <Button variant="outline" onClick={onClose} disabled={busy}>
-          {results && !busy ? "Tutup" : "Batal"}
+          {results && !busy ? t("Tutup") : t("Batal")}
         </Button>
         <Button onClick={run} disabled={busy || online.length === 0 || !!importReason}>
-          {busy ? "Membaca router…" : results ? "Import lagi" : "Import"}
+          {busy ? t("Membaca router…") : results ? t("Import lagi") : t("Import")}
         </Button>
       </DialogFooter>
     </>

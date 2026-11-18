@@ -12,6 +12,7 @@ import { toast } from "sonner"
 
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { ImportDialog } from "@/components/import-dialog"
+import { LoadMore } from "@/components/skeletons"
 import { ONLY_ONE_LABEL, ProfileFormDialog } from "@/components/profile-form-dialog"
 import { UsersSectionNav } from "@/components/users-section-nav"
 import { Badge } from "@/components/ui/badge"
@@ -41,16 +42,19 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { useInfiniteList } from "@/hooks/use-infinite-list"
 import { useUpdateGate, useWriteGate } from "@/hooks/use-write-gate"
 import { formatNumber } from "@/lib/format"
 import { navigate } from "@/lib/route"
 import { useStore } from "@/lib/store-context"
+import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import type { PppProfile } from "@/lib/types"
 
 type View = "active" | "deleted"
 
 export function ProfilesPage({ params }: { params: URLSearchParams }) {
+  const t = useT()
   const { profiles, liveUsers, routers, routerById, api } = useStore()
   const gate = useWriteGate("profile")
   const profileReason = useUpdateGate("profile")()
@@ -90,13 +94,15 @@ export function ProfilesPage({ params }: { params: URLSearchParams }) {
       .sort((a, b) => a.name.localeCompare(b.name, "id", { numeric: true }) || a.routerId.localeCompare(b.routerId))
   }, [profiles, query, routerId, view])
 
+  const { count, hasMore, sentinelRef } = useInfiniteList(filtered.length, 30, `${query}|${routerId}|${view}`)
+  const shown = filtered.slice(0, count)
   const canWriteAny = !profileReason && routers.some((r) => r.canWrite)
   const deletedCount = profiles.filter((p) => !!p.deletedAt).length
 
   async function restore(p: PppProfile) {
     try {
       await api.restoreProfile(p.id)
-      toast.success(`Profil PPP ${p.name} dipulihkan`)
+      toast.success(t("Profil PPP {name} dipulihkan", { name: p.name }))
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
     }
@@ -108,23 +114,23 @@ export function ProfilesPage({ params }: { params: URLSearchParams }) {
     return (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon-sm" aria-label={`Aksi ${p.name}`} onClick={(e) => e.stopPropagation()}>
+          <Button variant="ghost" size="icon-sm" aria-label={t("Aksi {name}", { name: p.name })} onClick={(e) => e.stopPropagation()}>
             <MoreVerticalIcon />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
           {p.deletedAt ? (
             <DropdownMenuItem onSelect={() => restore(p)}>
-              <RotateCcwIcon /> Pulihkan
+              <RotateCcwIcon /> {t("Pulihkan")}
             </DropdownMenuItem>
           ) : (
             <>
               <DropdownMenuItem disabled={!!reason} onSelect={() => setForm({ mode: "edit", profile: p })}>
-                <PencilIcon /> Edit
+                <PencilIcon /> {t("Edit")}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem variant="destructive" disabled={used > 0} onSelect={() => setRemoving(p)}>
-                <Trash2Icon /> {used > 0 ? `Dipakai ${used} user` : "Hapus (soft)"}
+                <Trash2Icon /> {used > 0 ? t("Dipakai {n} user", { n: used }) : t("Hapus (soft)")}
               </DropdownMenuItem>
             </>
           )}
@@ -143,17 +149,17 @@ export function ProfilesPage({ params }: { params: URLSearchParams }) {
         <div className="ml-auto flex gap-2">
           <Button variant="outline" onClick={() => setImporting(true)} disabled={!!importReason} title={importReason ?? undefined}>
             <DownloadIcon />
-            <span className="hidden sm:inline">Import dari Mikrotik</span>
-            <span className="sm:hidden">Import</span>
+            <span className="hidden sm:inline">{t("Import dari Mikrotik")}</span>
+            <span className="sm:hidden">{t("Import")}</span>
           </Button>
           <Button
             onClick={() => setForm({ mode: "create" })}
             disabled={!canWriteAny}
-            title={canWriteAny ? undefined : (profileReason ?? "Tidak ada router dengan hak write")}
+            title={canWriteAny ? undefined : (profileReason ?? t("Tidak ada router dengan hak write"))}
           >
             <PlusIcon />
-            <span className="hidden sm:inline">Tambah profil PPP</span>
-            <span className="sm:hidden">Tambah</span>
+            <span className="hidden sm:inline">{t("Tambah profil PPP")}</span>
+            <span className="sm:hidden">{t("Tambah")}</span>
           </Button>
         </div>
       </div>
@@ -165,18 +171,18 @@ export function ProfilesPage({ params }: { params: URLSearchParams }) {
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Cari nama, rate limit…"
-            aria-label="Cari profil PPP"
+            placeholder={t("Cari nama, rate limit…")}
+            aria-label={t("Cari profil PPP")}
             className="pl-8"
           />
         </div>
         <div className="flex gap-2 sm:ml-auto">
           <Select value={routerId} onValueChange={setRouterId}>
-            <SelectTrigger className="min-w-0 flex-1 sm:w-44 sm:flex-none" aria-label="Router">
+            <SelectTrigger className="min-w-0 flex-1 sm:w-44 sm:flex-none" aria-label={t("Router")}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Semua router</SelectItem>
+              <SelectItem value="all">{t("Semua router")}</SelectItem>
               {routers.map((r) => (
                 <SelectItem key={r.id} value={r.id}>
                   {r.name}
@@ -189,14 +195,14 @@ export function ProfilesPage({ params }: { params: URLSearchParams }) {
             variant="outline"
             value={view}
             onValueChange={(v) => v && setView(v as View)}
-            aria-label="Tampilkan"
+            aria-label={t("Tampilkan")}
             className="shrink-0"
           >
             <ToggleGroupItem value="active" className="px-3">
-              Aktif
+              {t("Aktif")}
             </ToggleGroupItem>
             <ToggleGroupItem value="deleted" className="gap-1.5 px-3">
-              Terhapus
+              {t("Terhapus")}
               {deletedCount > 0 && <span className="text-xs text-muted-foreground tabular-nums">{deletedCount}</span>}
             </ToggleGroupItem>
           </ToggleGroup>
@@ -204,12 +210,12 @@ export function ProfilesPage({ params }: { params: URLSearchParams }) {
       </div>
 
       <p className="-mb-1 text-xs text-muted-foreground" aria-live="polite">
-        {formatNumber(filtered.length)} profil PPP
+        {t("{n} profil PPP", { n: formatNumber(filtered.length) })}
       </p>
 
       {filtered.length === 0 ? (
         <Card className="items-center py-12 text-sm text-muted-foreground">
-          {view === "deleted" ? "Tidak ada profil PPP terhapus." : "Tidak ada profil PPP yang cocok dengan filter."}
+          {view === "deleted" ? t("Tidak ada profil PPP terhapus.") : t("Tidak ada profil PPP yang cocok dengan filter.")}
         </Card>
       ) : (
         <>
@@ -218,18 +224,18 @@ export function ProfilesPage({ params }: { params: URLSearchParams }) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="pl-3">Nama</TableHead>
-                  <TableHead>Router</TableHead>
-                  <TableHead>Rate limit</TableHead>
-                  <TableHead className="hidden lg:table-cell">Local address</TableHead>
-                  <TableHead className="hidden lg:table-cell">Remote / pool</TableHead>
-                  <TableHead className="hidden xl:table-cell">Only one</TableHead>
-                  <TableHead>User</TableHead>
+                  <TableHead className="pl-3">{t("Nama")}</TableHead>
+                  <TableHead>{t("Router")}</TableHead>
+                  <TableHead>{t("Rate limit")}</TableHead>
+                  <TableHead className="hidden lg:table-cell">{t("Local address")}</TableHead>
+                  <TableHead className="hidden lg:table-cell">{t("Remote / pool")}</TableHead>
+                  <TableHead className="hidden xl:table-cell">{t("Only one")}</TableHead>
+                  <TableHead>{t("User")}</TableHead>
                   <TableHead className="w-10 pr-3" />
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((p) => {
+                {shown.map((p) => {
                   const u = usage.get(p.id)
                   return (
                     <TableRow key={p.id} className={cn(p.deletedAt && "opacity-60")}>
@@ -241,18 +247,19 @@ export function ProfilesPage({ params }: { params: URLSearchParams }) {
                       <TableCell className="font-mono text-[13px]">{p.rateLimit ?? "-"}</TableCell>
                       <TableCell className="hidden font-mono text-[13px] lg:table-cell">{p.localAddress ?? "-"}</TableCell>
                       <TableCell className="hidden font-mono text-[13px] lg:table-cell">{p.remoteAddress ?? "-"}</TableCell>
-                      <TableCell className="hidden text-muted-foreground xl:table-cell">{ONLY_ONE_LABEL[p.onlyOne].split(" (")[0]}</TableCell>
+                      {/* i18n-ignore: label bertanda tk() */}
+                      <TableCell className="hidden text-muted-foreground xl:table-cell">{t(ONLY_ONE_LABEL[p.onlyOne]).split(" (")[0]}</TableCell>
                       <TableCell className="tabular-nums">
                         <button
                           type="button"
                           className="hover:underline disabled:no-underline"
                           disabled={!u}
                           onClick={() => navigate("user", { router: p.routerId, q: p.name })}
-                          title="Lihat user dengan profil PPP ini"
+                          title={t("Lihat user dengan profil PPP ini")}
                         >
                           {u ? `${u.active}/${u.total}` : "0"}
                         </button>
-                        <span className="ml-1 text-xs text-muted-foreground">aktif</span>
+                        <span className="ml-1 text-xs text-muted-foreground">{t("aktif")}</span>
                       </TableCell>
                       <TableCell className="pr-3">
                         <RowActions p={p} />
@@ -266,7 +273,7 @@ export function ProfilesPage({ params }: { params: URLSearchParams }) {
 
           {/* HP: daftar kartu */}
           <ul className="flex flex-col gap-1.5 md:hidden">
-            {filtered.map((p) => {
+            {shown.map((p) => {
               const u = usage.get(p.id)
               return (
                 <li
@@ -286,9 +293,9 @@ export function ProfilesPage({ params }: { params: URLSearchParams }) {
                     <RowActions p={p} />
                   </div>
                   <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                    <Badge variant="outline" className="font-mono">{p.rateLimit ?? "tanpa batas"}</Badge>
+                    <Badge variant="outline" className="font-mono">{p.rateLimit ?? t("tanpa batas")}</Badge>
                     <span className="text-muted-foreground">
-                      {u ? `${u.active}/${u.total}` : "0"} user aktif
+                      {t("{n} user aktif", { n: u ? `${u.active}/${u.total}` : "0" })}
                     </span>
                     {p.remoteAddress && <span className="font-mono text-muted-foreground">{p.remoteAddress}</span>}
                   </div>
@@ -296,6 +303,8 @@ export function ProfilesPage({ params }: { params: URLSearchParams }) {
               )
             })}
           </ul>
+
+          {hasMore && <LoadMore sentinelRef={sentinelRef} />}
         </>
       )}
 
@@ -314,19 +323,19 @@ export function ProfilesPage({ params }: { params: URLSearchParams }) {
       <ConfirmDialog
         open={!!removing}
         onOpenChange={(o) => !o && setRemoving(null)}
-        title={`Hapus profil PPP ${removing?.name}?`}
+        title={t("Hapus profil PPP {name}?", { name: removing?.name ?? "" })}
         description={
           <p>
-            Soft delete: profil PPP disembunyikan dari pilihan di Telemon dan bisa dipulihkan.
-            Profil PPP di router <b>{routerById.get(removing?.routerId ?? "")?.name}</b> tidak dihapus.
+            {t("Soft delete: profil PPP disembunyikan dari pilihan di Telemon dan bisa dipulihkan.")}{" "}
+            {t("Profil PPP di router")} <b>{routerById.get(removing?.routerId ?? "")?.name}</b> {t("tidak dihapus.")}
           </p>
         }
-        confirmLabel="Hapus"
+        confirmLabel={t("Hapus")}
         destructive
         onConfirm={async () => {
           if (removing) {
             await api.softDeleteProfile(removing.id)
-            toast.success(`Profil PPP ${removing.name} dihapus (soft)`)
+            toast.success(t("Profil PPP {name} dihapus (soft)", { name: removing.name }))
           }
         }}
       />

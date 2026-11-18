@@ -3,6 +3,7 @@ import { Loader2Icon } from "lucide-react"
 
 import { useApi } from "@/lib/api-context"
 import { AuthContext } from "@/lib/auth-context"
+import { useT } from "@/lib/i18n"
 import type { SessionInfo } from "@/lib/types"
 import { LoginPage } from "@/pages/login"
 
@@ -16,6 +17,7 @@ type State =
  * Serve LAN atau Publik) wajib login, dengan 2FA bila diwajibkan.
  */
 export function AuthGate({ children }: { children: React.ReactNode }) {
+  const t = useT()
   const { api, access } = useApi()
   const [state, setState] = React.useState<State>(
     access === "desktop" ? { status: "authed", session: null } : { status: "loading" }
@@ -48,7 +50,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   if (state.status === "loading") {
     return (
       <div className="flex min-h-svh items-center justify-center text-sm text-muted-foreground">
-        <Loader2Icon className="mr-2 size-4 animate-spin" /> Memeriksa sesi…
+        <Loader2Icon className="mr-2 size-4 animate-spin" /> {t("Memeriksa sesi…")}
       </div>
     )
   }

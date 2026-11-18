@@ -2,13 +2,15 @@
  * Ukuran tampilan yang bisa dipilih pengguna. Menskalakan font root (16px = 100%),
  * jadi seluruh ukuran berbasis rem ikut berubah, bukan hanya teks.
  */
+import { tk } from "./i18n"
+
 const KEY = "telemon.ui.scale"
 
 export const SCALES = [
-  { value: "90", label: "Kecil" },
-  { value: "100", label: "Normal" },
-  { value: "112", label: "Besar" },
-  { value: "125", label: "Sangat besar" },
+  { value: "90", label: tk("Kecil") },
+  { value: "100", label: tk("Normal") },
+  { value: "112", label: tk("Besar") },
+  { value: "125", label: tk("Sangat besar") },
 ] as const
 
 export type Scale = (typeof SCALES)[number]["value"]

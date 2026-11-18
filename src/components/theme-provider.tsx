@@ -222,6 +222,7 @@ export const useTheme = () => {
   const context = React.useContext(ThemeProviderContext)
 
   if (context === undefined) {
+    // i18n-ignore: pesan untuk developer
     throw new Error("useTheme must be used within a ThemeProvider")
   }
 

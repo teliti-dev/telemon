@@ -2,6 +2,7 @@ import * as React from "react"
 import { PauseIcon, PlayIcon, SearchIcon } from "lucide-react"
 
 import { FilterMulti, FilterSelect } from "@/components/filter-select"
+import { LoadMore } from "@/components/skeletons"
 import { EVENT_META, EVENT_TYPES, EventIcon } from "@/components/status"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -14,7 +15,9 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { useInfiniteList } from "@/hooks/use-infinite-list"
 import { formatDateTime, formatNumber, formatTime } from "@/lib/format"
+import { useT } from "@/lib/i18n"
 import { useStore } from "@/lib/store-context"
 import type { PppEvent, PppEventType } from "@/lib/types"
 
@@ -27,6 +30,7 @@ export function EventsPage({
   params: URLSearchParams
   onOpenUser: (id: string) => void
 }) {
+  const t = useT()
   const { events, routers, routerById, users } = useStore()
   const initialTypes = params.get("type")?.split(",").filter(Boolean) as
     | PppEventType[]
@@ -35,7 +39,6 @@ export function EventsPage({
   const [routerId, setRouterId] = React.useState(params.get("router") ?? "all")
   const [query, setQuery] = React.useState("")
   const [paused, setPaused] = React.useState<PppEvent[] | null>(null)
-  const [limit, setLimit] = React.useState(PAGE_SIZE)
 
   const source = paused ?? events
   const newSincePause = paused ? events.length - paused.length : 0
@@ -58,9 +61,10 @@ export function EventsPage({
     )
   }, [source, types, routerId, query])
 
-  const shown = filtered.slice(0, limit)
+  const { count, hasMore, sentinelRef } = useInfiniteList(filtered.length, PAGE_SIZE, `${types.join(",")}|${routerId}|${query}|${paused ? "p" : ""}`)
+  const shown = filtered.slice(0, count)
 
-  const routerOptions = [{ value: "all", label: "Semua router" }, ...routers.map((r) => ({ value: r.id, label: r.name }))]
+  const routerOptions = [{ value: "all", label: t("Semua router") }, ...routers.map((r) => ({ value: r.id, label: r.name }))]
 
   return (
     <div className="flex flex-col gap-3">
@@ -73,13 +77,14 @@ export function EventsPage({
             spacing={1}
             value={types}
             onValueChange={(v) => setTypes(v as PppEventType[])}
-            aria-label="Jenis event"
+            aria-label={t("Jenis event")}
             className="flex-wrap justify-start"
           >
-            {EVENT_TYPES.map((t) => (
-              <ToggleGroupItem key={t} value={t} className="gap-1.5 px-2.5">
-                <EventIcon type={t} className="size-3.5" />
-                {EVENT_META[t].label}
+            {EVENT_TYPES.map((et) => (
+              <ToggleGroupItem key={et} value={et} className="gap-1.5 px-2.5">
+                <EventIcon type={et} className="size-3.5" />
+                {/* i18n-ignore: label bertanda tk() */}
+                {t(EVENT_META[et].label)}
               </ToggleGroupItem>
             ))}
           </ToggleGroup>
@@ -91,8 +96,8 @@ export function EventsPage({
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Cari username, pesan, MAC…"
-              aria-label="Cari event"
+              placeholder={t("Cari username, pesan, MAC…")}
+              aria-label={t("Cari event")}
               className="pl-8"
             />
           </div>
@@ -100,17 +105,18 @@ export function EventsPage({
           {/* HP: jenis, router, dan jeda dalam satu baris */}
           <div className="flex gap-2 md:hidden">
             <FilterMulti
-              label="Jenis"
+              label={t("Jenis")}
               values={types}
               onChange={setTypes}
-              options={EVENT_TYPES.map((t) => ({
-                value: t,
-                label: EVENT_META[t].label,
-                icon: <EventIcon type={t} className="size-3.5" />,
+              options={EVENT_TYPES.map((et) => ({
+                value: et,
+                // i18n-ignore: label bertanda tk()
+                label: t(EVENT_META[et].label),
+                icon: <EventIcon type={et} className="size-3.5" />,
               }))}
             />
             <FilterSelect
-              label="Router"
+              label={t("Router")}
               value={routerId}
               defaultValue="all"
               onChange={setRouterId}
@@ -119,8 +125,8 @@ export function EventsPage({
             <Button
               size="icon"
               variant={paused ? "default" : "outline"}
-              aria-label={paused ? "Lanjutkan" : "Jeda"}
-              title={paused ? "Lanjutkan" : "Jeda"}
+              aria-label={paused ? t("Lanjutkan") : t("Jeda")}
+              title={paused ? t("Lanjutkan") : t("Jeda")}
               onClick={() => setPaused(paused ? null : events)}
             >
               {paused ? <PlayIcon /> : <PauseIcon />}
@@ -129,7 +135,7 @@ export function EventsPage({
 
           <div className="hidden gap-2 md:ml-auto md:flex">
             <Select value={routerId} onValueChange={setRouterId}>
-              <SelectTrigger className="w-44" aria-label="Router">
+              <SelectTrigger className="w-44" aria-label={t("Router")}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -142,14 +148,14 @@ export function EventsPage({
             </Select>
             <Button variant={paused ? "default" : "outline"} onClick={() => setPaused(paused ? null : events)}>
               {paused ? <PlayIcon /> : <PauseIcon />}
-              {paused ? "Lanjutkan" : "Jeda"}
+              {paused ? t("Lanjutkan") : t("Jeda")}
             </Button>
           </div>
         </div>
       </div>
 
       <p className="-mb-1 text-xs text-muted-foreground" aria-live="polite">
-        {formatNumber(filtered.length)} event
+        {t("{n} event", { n: formatNumber(filtered.length) })}
         {paused && newSincePause > 0 && (
           <>
             {" · "}
@@ -158,7 +164,7 @@ export function EventsPage({
               className="font-medium text-foreground underline underline-offset-4"
               onClick={() => setPaused(null)}
             >
-              {formatNumber(newSincePause)} event baru
+              {t("{n} event baru", { n: formatNumber(newSincePause) })}
             </button>
           </>
         )}
@@ -166,7 +172,7 @@ export function EventsPage({
 
       {filtered.length === 0 ? (
         <Card className="items-center py-12 text-sm text-muted-foreground">
-          Tidak ada event yang cocok dengan filter.
+          {t("Tidak ada event yang cocok dengan filter.")}
         </Card>
       ) : (
         <Card className="gap-0 py-0">
@@ -189,7 +195,8 @@ export function EventsPage({
                   </time>
                   <span className="order-1 flex min-w-0 items-center gap-2 md:order-none">
                     <EventIcon type={e.type} />
-                    <span className="shrink-0">{EVENT_META[e.type].label}</span>
+                    {/* i18n-ignore: label bertanda tk() */}
+                    <span className="shrink-0">{t(EVENT_META[e.type].label)}</span>
                     {e.username && (
                       <button
                         type="button"
@@ -228,15 +235,7 @@ export function EventsPage({
         </Card>
       )}
 
-      {filtered.length > shown.length && (
-        <Button
-          variant="outline"
-          className="self-center"
-          onClick={() => setLimit((n) => n + PAGE_SIZE)}
-        >
-          Tampilkan {Math.min(PAGE_SIZE, filtered.length - shown.length)} lagi
-        </Button>
-      )}
+      {hasMore && <LoadMore sentinelRef={sentinelRef} />}
     </div>
   )
 }
