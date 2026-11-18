@@ -8,6 +8,7 @@ pub mod monitor;
 pub mod poller;
 pub mod router;
 pub mod store;
+pub mod write;
 
 pub use model::{PppActive, PppProfile, PppSecret};
 pub use router::{Error, MikrotikClient, Row, RouterApi, ppp_active, ppp_profiles, ppp_secrets};

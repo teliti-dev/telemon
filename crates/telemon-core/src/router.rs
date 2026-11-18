@@ -16,6 +16,8 @@ pub enum Error {
     Trap(String),
     /// Koneksi putus atau router mengirim `!fatal`.
     Fatal(String),
+    /// Ditolak oleh Telemon sebelum sampai ke router (validasi atau di luar daftar perintah yang diizinkan).
+    Rejected(String),
 }
 
 impl fmt::Display for Error {
@@ -24,16 +26,28 @@ impl fmt::Display for Error {
             Error::Connect(m) => write!(f, "gagal terhubung: {m}"),
             Error::Trap(m) => write!(f, "router menolak: {m}"),
             Error::Fatal(m) => write!(f, "koneksi terputus: {m}"),
+            Error::Rejected(m) => write!(f, "ditolak: {m}"),
         }
     }
 }
 
 impl std::error::Error for Error {}
 
-/// Baca-saja untuk saat ini. Penulisan (ADR 0004) menyusul dengan tinjauan perubahan.
+/// Akses RouterOS. Membaca lewat `print`/`find`; menulis lewat `run` yang hanya boleh dipanggil
+/// dari modul `write` (daftar perintah diizinkan, ADR 0004).
 pub trait RouterApi: Sync {
     /// Menjalankan `<path>/print` dan mengumpulkan semua baris.
     fn print(&self, path: &str) -> impl std::future::Future<Output = Result<Vec<Row>, Error>> + Send;
+
+    /// Baris dengan `key == value` (bawaan: baca semua lalu saring; klien nyata memakai query router).
+    fn find(&self, path: &str, key: &str, value: &str) -> impl std::future::Future<Output = Result<Vec<Row>, Error>> + Send {
+        async move { Ok(self.print(path).await?.into_iter().filter(|r| r.get(key).is_some_and(|v| v == value)).collect()) }
+    }
+
+    /// Menjalankan perintah apa adanya dengan atribut `=k=v`. Hanya untuk modul `write`.
+    fn run(&self, _cmd: &str, _attrs: &[(String, String)]) -> impl std::future::Future<Output = Result<Vec<Row>, Error>> + Send {
+        async { Err(Error::Rejected("klien ini tidak mendukung penulisan".into())) }
+    }
 }
 
 pub async fn ppp_active(api: &impl RouterApi) -> Result<Vec<PppActive>, Error> {
@@ -63,22 +77,36 @@ impl MikrotikClient {
     }
 }
 
+async fn collect(mut rx: tokio::sync::mpsc::UnboundedReceiver<Event>) -> Result<Vec<Row>, Error> {
+    let mut rows = Vec::new();
+    while let Some(ev) = rx.recv().await {
+        match ev {
+            Event::Reply { response, .. } => rows.push(response.attributes.into_iter().map(|(k, v)| (k, v.unwrap_or_default())).collect()),
+            Event::Done { .. } | Event::Empty { .. } => return Ok(rows),
+            Event::Trap { response, .. } => return Err(Error::Trap(response.message)),
+            Event::Fatal { reason } => return Err(Error::Fatal(reason)),
+        }
+    }
+    Err(Error::Fatal("koneksi ditutup sebelum perintah selesai".into()))
+}
+
 impl RouterApi for MikrotikClient {
     async fn print(&self, path: &str) -> Result<Vec<Row>, Error> {
         let cmd = CommandBuilder::new().command(&format!("{path}/print")).build();
-        let mut rx = self.device.send_command(cmd).await.map_err(|e| Error::Fatal(e.to_string()))?;
-        let mut rows = Vec::new();
-        while let Some(ev) = rx.recv().await {
-            match ev {
-                Event::Reply { response, .. } => rows.push(
-                    response.attributes.into_iter().map(|(k, v)| (k, v.unwrap_or_default())).collect(),
-                ),
-                Event::Done { .. } | Event::Empty { .. } => return Ok(rows),
-                Event::Trap { response, .. } => return Err(Error::Trap(response.message)),
-                Event::Fatal { reason } => return Err(Error::Fatal(reason)),
-            }
+        collect(self.device.send_command(cmd).await.map_err(|e| Error::Fatal(e.to_string()))?).await
+    }
+
+    async fn find(&self, path: &str, key: &str, value: &str) -> Result<Vec<Row>, Error> {
+        let cmd = CommandBuilder::new().command(&format!("{path}/print")).query_equal(key, value).build();
+        collect(self.device.send_command(cmd).await.map_err(|e| Error::Fatal(e.to_string()))?).await
+    }
+
+    async fn run(&self, cmd: &str, attrs: &[(String, String)]) -> Result<Vec<Row>, Error> {
+        let mut b = CommandBuilder::new().command(cmd);
+        for (k, v) in attrs {
+            b = b.attribute(k, Some(v));
         }
-        Err(Error::Fatal("koneksi ditutup sebelum perintah selesai".into()))
+        collect(self.device.send_command(b.build()).await.map_err(|e| Error::Fatal(e.to_string()))?).await
     }
 }
 
@@ -136,13 +164,22 @@ mod tests {
 
     /// Router tiruan: terima login apa saja, jawab print PPP dengan data tetap.
     async fn fake_router(secret_pw: &'static str) -> String {
+        fake_router_log(secret_pw, Default::default()).await
+    }
+
+    type WordLog = std::sync::Arc<std::sync::Mutex<Vec<Vec<String>>>>;
+
+    /// Seperti `fake_router`, dan mencatat setiap kalimat yang diterima.
+    async fn fake_router_log(secret_pw: &'static str, log: WordLog) -> String {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap().to_string();
         tokio::spawn(async move {
             loop {
                 let (mut s, _) = listener.accept().await.unwrap();
+                let log = log.clone();
                 tokio::spawn(async move {
                     while let Some(words) = read_sentence(&mut s).await {
+                        log.lock().unwrap().push(words.clone());
                         let tag = words.iter().find(|w| w.starts_with(".tag=")).cloned().unwrap_or_default();
                         let cmd = words.first().cloned().unwrap_or_default();
                         let mut out = Vec::new();
@@ -158,6 +195,7 @@ mod tests {
                                 out.extend(sentence(&["!re", "=.id=*3", "=name=sari", "=profile=20M", "=disabled=true", &tag]));
                                 out.extend(sentence(&["!done", &tag]));
                             }
+                            "/ppp/secret/set" => out.extend(sentence(&["!done", &tag])),
                             "/ppp/profile/print" => {
                                 out.extend(sentence(&["!re", "=.id=*4", "=name=10M", "=rate-limit=10M/10M", &tag]));
                                 out.extend(sentence(&["!done", &tag]));
@@ -192,6 +230,20 @@ mod tests {
 
         let profiles = ppp_profiles(&c).await.unwrap();
         assert_eq!(profiles[0].rate_limit.as_deref(), Some("10M/10M"));
+    }
+
+    #[tokio::test]
+    async fn run_dan_find_mengirim_atribut_dan_query() {
+        let log: WordLog = Default::default();
+        let addr = fake_router_log("x", log.clone()).await;
+        let c = MikrotikClient::connect(&addr, "api", "x").await.unwrap();
+        c.run("/ppp/secret/set", &[(".id".into(), "*1".into()), ("profile".into(), "20M".into())]).await.unwrap();
+        c.find("/ppp/secret", "name", "budi").await.unwrap();
+        let log = log.lock().unwrap();
+        let set = log.iter().find(|w| w[0] == "/ppp/secret/set").expect("set terkirim");
+        assert!(set.contains(&"=.id=*1".to_string()) && set.contains(&"=profile=20M".to_string()), "{set:?}");
+        let print = log.iter().find(|w| w[0] == "/ppp/secret/print" && w.iter().any(|x| x.starts_with('?'))).expect("print berquery");
+        assert!(print.contains(&"?name=budi".to_string()), "{print:?}");
     }
 
     #[tokio::test]
