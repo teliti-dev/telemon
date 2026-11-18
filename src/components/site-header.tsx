@@ -1,11 +1,10 @@
-import { GlobeIcon, MoonIcon, SunIcon, WifiIcon, ZapIcon } from "lucide-react"
+import { GlobeIcon, WifiIcon, ZapIcon } from "lucide-react"
 
 import { AccountMenu } from "@/components/account-menu"
 import { isNavActive, navFor } from "@/components/nav-items"
 import { PreviewSwitch } from "@/components/preview-switch"
-import { useTheme } from "@/components/theme-provider"
+import { ThemeToggle } from "@/components/theme-toggle"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { useNavBadges } from "@/hooks/use-nav-badges"
 import { href, useRoute } from "@/lib/route"
 import { useStore } from "@/lib/store-context"
@@ -14,12 +13,8 @@ import { cn } from "@/lib/utils"
 /** Header: logo, menu utama (desktop), judul halaman (HP), status, tema, dan akun. */
 export function SiteHeader({ title }: { title: string }) {
   const { share, status, access } = useStore()
-  const { theme, setTheme } = useTheme()
   const { page } = useRoute()
   const badges = useNavBadges()
-  const isDark =
-    theme === "dark" ||
-    (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches)
 
   return (
     <header className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
@@ -101,14 +96,7 @@ export function SiteHeader({ title }: { title: string }) {
             <span className="hidden sm:inline">Live</span>
           </span>
           <PreviewSwitch />
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={isDark ? "Mode terang" : "Mode gelap"}
-            onClick={() => setTheme(isDark ? "light" : "dark")}
-          >
-            {isDark ? <SunIcon /> : <MoonIcon />}
-          </Button>
+          <ThemeToggle />
           <AccountMenu />
         </div>
       </div>
