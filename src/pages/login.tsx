@@ -87,7 +87,7 @@ export function LoginPage({ onAuthed }: { onAuthed: (s: SessionInfo) => void }) 
   const t = TITLES[step.name]
 
   return (
-    <div className="relative flex min-h-svh flex-col items-center justify-start bg-muted/30 px-4 pt-10 pb-8 sm:justify-center sm:pt-8">
+    <div className="relative flex min-h-svh flex-col items-center justify-start bg-muted/30 px-5 pt-12 pb-8 sm:justify-center sm:pt-8">
       <div className="absolute top-3 right-3 flex items-center gap-1">
         <ScaleMenu />
         <ThemeToggle />
@@ -95,7 +95,7 @@ export function LoginPage({ onAuthed }: { onAuthed: (s: SessionInfo) => void }) 
 
       <div className="grid w-full max-w-sm gap-4">
         <div className="grid justify-items-center gap-2 text-center">
-          <div className="flex size-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+          <div className="flex size-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
             <ZapIcon className="size-5" />
           </div>
           <div>
@@ -104,7 +104,7 @@ export function LoginPage({ onAuthed }: { onAuthed: (s: SessionInfo) => void }) 
           </div>
         </div>
 
-        <Card>
+        <Card className="rounded-2xl shadow-sm [--card-spacing:--spacing(5)] sm:[--card-spacing:--spacing(6)]">
           <CardHeader>
             <CardTitle>{t.title}</CardTitle>
             <CardDescription>{t.desc}</CardDescription>
@@ -122,6 +122,7 @@ export function LoginPage({ onAuthed }: { onAuthed: (s: SessionInfo) => void }) 
                     autoCapitalize="off"
                     autoCorrect="off"
                     spellCheck={false}
+                    className="h-10 md:h-10"
                     autoFocus
                   />
                 </div>
@@ -134,7 +135,7 @@ export function LoginPage({ onAuthed }: { onAuthed: (s: SessionInfo) => void }) 
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       autoComplete="current-password"
-                      className="pr-10"
+                      className="h-10 pr-10 md:h-10"
                     />
                     <button
                       type="button"
@@ -152,7 +153,7 @@ export function LoginPage({ onAuthed }: { onAuthed: (s: SessionInfo) => void }) 
                     <AlertDescription>{error}</AlertDescription>
                   </Alert>
                 )}
-                <Button type="submit" disabled={busy || !username.trim() || !password}>
+                <Button type="submit" className="h-10 md:h-10" disabled={busy || !username.trim() || !password}>
                   {busy && <Loader2Icon className="animate-spin" />}
                   {busy ? "Memeriksa…" : "Masuk"}
                 </Button>
@@ -188,7 +189,7 @@ export function LoginPage({ onAuthed }: { onAuthed: (s: SessionInfo) => void }) 
                     autoCapitalize="off"
                     spellCheck={false}
                     placeholder={step.recovery ? "xxxxx-xxxxx" : "000000"}
-                    className={step.recovery ? "font-mono" : "text-center font-mono text-lg tracking-[0.4em]"}
+                    className={step.recovery ? "h-10 font-mono md:h-10" : "h-12 text-center font-mono text-lg tracking-[0.4em] md:h-12"}
                     disabled={busy}
                     autoFocus
                   />
@@ -199,7 +200,7 @@ export function LoginPage({ onAuthed }: { onAuthed: (s: SessionInfo) => void }) 
                   </Alert>
                 )}
                 {(step.recovery || busy) && (
-                  <Button type="submit" disabled={busy || code.length < 11}>
+                  <Button type="submit" className="h-10 md:h-10" disabled={busy || code.length < 11}>
                     {busy && <Loader2Icon className="animate-spin" />}
                     {busy ? "Memeriksa…" : "Verifikasi"}
                   </Button>
@@ -250,7 +251,7 @@ export function LoginPage({ onAuthed }: { onAuthed: (s: SessionInfo) => void }) 
                   <input type="checkbox" checked={saved} onChange={(e) => setSaved(e.target.checked)} className="size-4" />
                   Saya sudah menyimpan kode ini
                 </label>
-                <Button disabled={!saved} onClick={() => onAuthed(step.session)}>
+                <Button className="h-10 md:h-10" disabled={!saved} onClick={() => onAuthed(step.session)}>
                   Lanjut
                 </Button>
               </>
@@ -263,9 +264,9 @@ export function LoginPage({ onAuthed }: { onAuthed: (s: SessionInfo) => void }) 
         </p>
 
         {api.kind === "mock" && (
-          <details className="rounded-lg border bg-card text-xs">
-            <summary className="cursor-pointer px-3 py-2 font-medium select-none">Mode data contoh: akun untuk mencoba</summary>
-            <div className="grid gap-2 border-t px-3 py-2.5">
+          <details className="rounded-xl border bg-card text-xs">
+            <summary className="cursor-pointer px-4 py-2.5 font-medium select-none">Mode data contoh: akun untuk mencoba</summary>
+            <div className="grid gap-2 border-t px-4 py-3">
               <ul className="grid gap-1 text-muted-foreground">
                 <li>
                   <span className="font-mono text-foreground">admin</span> / <span className="font-mono text-foreground">demo-telemon</span>, kode 2FA{" "}
