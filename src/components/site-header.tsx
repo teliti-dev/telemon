@@ -92,6 +92,7 @@ export function SiteHeader({ title }: { title: string }) {
                     : "border-transparent text-muted-foreground hover:text-foreground"
                 )}
               >
+                <item.icon className="size-4" />
                 {item.label}
                 {n ? (
                   <span
