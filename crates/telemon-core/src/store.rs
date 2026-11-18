@@ -206,10 +206,26 @@ impl Store {
                 params![e.at_ms, router_id, e.kind.as_str(), e.username, e.address, e.caller_id, e.message],
             )?;
             if let Some(u) = &e.username {
-                tx.execute(
-                    "UPDATE users SET last_event = ?1, last_event_at = ?2 WHERE id = ?3 AND (last_event_at IS NULL OR last_event_at <= ?2)",
-                    params![e.kind.as_str(), e.at_ms, user_id(router_id, u)],
-                )?;
+                let id = user_id(router_id, u);
+                // Hanya event yang tidak lebih lama dari event terakhir user yang mengubah keadaannya.
+                let fresh = "(last_event_at IS NULL OR last_event_at <= ?2)";
+                tx.execute(&format!("UPDATE users SET last_event = ?1, last_event_at = ?2 WHERE id = ?3 AND {fresh}"), params![e.kind.as_str(), e.at_ms, id])?;
+                match e.kind {
+                    EventKind::Connected => {
+                        tx.execute(
+                            &format!("UPDATE users SET status = CASE WHEN status = 'disabled' THEN status ELSE 'active' END, connected_at = ?2, last_seen_at = ?2,
+                                address = COALESCE(?4, address), caller_id = COALESCE(?5, caller_id) WHERE id = ?3 AND {fresh} AND status != 'active'"),
+                            params![e.kind.as_str(), e.at_ms, id, e.address, e.caller_id],
+                        )?;
+                    }
+                    EventKind::Disconnected => {
+                        tx.execute(
+                            &format!("UPDATE users SET status = CASE WHEN status = 'disabled' THEN status ELSE 'inactive' END, connected_at = NULL, last_seen_at = ?2 WHERE id = ?3 AND {fresh}"),
+                            params![e.kind.as_str(), e.at_ms, id],
+                        )?;
+                    }
+                    _ => {}
+                }
             }
         }
         tx.commit()?;
@@ -641,6 +657,30 @@ mod tests {
         assert_eq!(s.sync_profiles("r1", 1, &[p("10M", "10M/10M"), p("20M", "20M/20M")]).unwrap().added, 2);
         let r = s.sync_profiles("r1", 2, &[p("10M", "12M/12M")]).unwrap();
         assert_eq!((r.updated, r.soft_deleted), (1, 1));
+    }
+
+    #[test]
+    fn event_mengubah_status_dengan_aturan() {
+        let mut s = Store::open_in_memory().unwrap();
+        s.sync_users("r1", 1, &[secret("budi", "10M", false), secret("mati", "10M", true)], &[]).unwrap();
+        let st = |s: &Store, n: &str| s.list_users(None, false).unwrap().into_iter().find(|u| u.username == n).unwrap();
+        let mut c = ev(100, EventKind::Connected, Some("budi"));
+        c.address = Some("100.64.0.7".into());
+        s.insert_events("r1", &[c]).unwrap();
+        let b = st(&s, "budi");
+        assert_eq!((b.status, b.connected_at, b.address.as_deref()), (UserStatus::Active, Some(100), Some("100.64.0.7")));
+        // Event lebih lama yang datang belakangan tidak membalikkan keadaan.
+        s.insert_events("r1", &[ev(50, EventKind::Disconnected, Some("budi"))]).unwrap();
+        assert_eq!(st(&s, "budi").status, UserStatus::Active);
+        s.insert_events("r1", &[ev(200, EventKind::Disconnected, Some("budi"))]).unwrap();
+        let b = st(&s, "budi");
+        assert_eq!((b.status, b.connected_at, b.last_seen_at), (UserStatus::Inactive, None, Some(200)));
+        // Secret dinonaktifkan tetap Disabled walau ada event sesi.
+        s.insert_events("r1", &[ev(300, EventKind::Connected, Some("mati"))]).unwrap();
+        assert_eq!(st(&s, "mati").status, UserStatus::Disabled);
+        // User yang belum dikenal tidak membuat baris baru.
+        s.insert_events("r1", &[ev(400, EventKind::Connected, Some("asing"))]).unwrap();
+        assert_eq!(s.list_users(None, true).unwrap().len(), 2);
     }
 
     #[test]
