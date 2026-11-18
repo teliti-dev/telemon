@@ -14,6 +14,7 @@ import { StoreProvider } from "@/lib/store"
 import { useStore } from "@/lib/store-context"
 import { EventsPage } from "@/pages/events"
 import { OverviewPage } from "@/pages/overview"
+import { ProfilesPage } from "@/pages/profiles"
 import { RoutersPage } from "@/pages/routers"
 import { SharePage } from "@/pages/share"
 import { UsersPage } from "@/pages/users"
@@ -21,6 +22,7 @@ import { UsersPage } from "@/pages/users"
 const TITLES: Record<Page, string> = {
   ringkasan: "Ringkasan",
   user: "Users",
+  profile: "Profile",
   event: "Event",
   router: "Router",
   berbagi: "Berbagi",
@@ -60,6 +62,7 @@ function Content() {
     body = {
       ringkasan: <OverviewPage onOpenUser={setOpenUser} />,
       user: <UsersPage key={hash} params={params} onOpenUser={setOpenUser} />,
+      profile: <ProfilesPage key={hash} params={params} />,
       event: <EventsPage key={hash} params={params} onOpenUser={setOpenUser} />,
       router: <RoutersPage />,
       berbagi: <SharePage />,

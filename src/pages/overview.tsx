@@ -35,7 +35,7 @@ function countByStatus(users: PppUser[]) {
 }
 
 export function OverviewPage({ onOpenUser }: { onOpenUser: (id: string) => void }) {
-  const { routers, users, events, routerById } = useStore()
+  const { routers, liveUsers: users, events, routerById } = useStore()
   const now = useNow(10_000)
 
   const total = countByStatus(users)

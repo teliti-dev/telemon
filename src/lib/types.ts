@@ -11,6 +11,10 @@ export interface RouterInfo {
   status: RouterStatus
   /** Waktu polling terakhir yang berhasil (epoch ms). */
   lastPollAt?: number
+  /** Akun API router punya hak write, jadi user/profile boleh diedit dari Telemon. */
+  canWrite: boolean
+  /** Import user/profile terakhir (epoch ms). */
+  lastImportAt?: number
   error?: string
 }
 
@@ -30,6 +34,69 @@ export interface PppUser {
   lastEvent?: PppEventType
   lastEventAt?: number
   comment?: string
+  /** Remote address statis di secret (opsional). */
+  staticAddress?: string
+  /** Soft delete: secret di router dinonaktifkan, data tetap ada di Telemon. */
+  deletedAt?: number
+  deletedReason?: DeletedReason
+}
+
+export type DeletedReason = "manual" | "router"
+
+export type OnlyOne = "default" | "yes" | "no"
+
+export interface PppProfile {
+  /** "routerId:name" */
+  id: string
+  routerId: string
+  name: string
+  /** Format RouterOS rx/tx, mis. "10M/10M". */
+  rateLimit?: string
+  localAddress?: string
+  /** Nama pool atau alamat. */
+  remoteAddress?: string
+  onlyOne: OnlyOne
+  comment?: string
+  deletedAt?: number
+  deletedReason?: DeletedReason
+}
+
+/** Input tulis ke router (/ppp/secret). Password tidak pernah dibaca balik dari router. */
+export interface UserInput {
+  routerId: string
+  username: string
+  password?: string
+  profile: string
+  staticAddress?: string
+  comment?: string
+  disabled: boolean
+}
+export type UserPatch = Partial<Omit<UserInput, "routerId" | "username">>
+
+/** Input tulis ke router (/ppp/profile). */
+export interface ProfileInput {
+  routerId: string
+  name: string
+  rateLimit?: string
+  localAddress?: string
+  remoteAddress?: string
+  onlyOne: OnlyOne
+  comment?: string
+}
+export type ProfilePatch = Partial<Omit<ProfileInput, "routerId" | "name">>
+
+export interface ImportCounts {
+  added: number
+  updated: number
+  /** Hilang dari router, ditandai soft delete di Telemon. */
+  deleted: number
+}
+
+export interface ImportResult {
+  routerId: string
+  at: number
+  users: ImportCounts
+  profiles: ImportCounts
 }
 
 /**
@@ -87,6 +154,8 @@ export interface ShareState {
 }
 
 export interface NewRouter {
+  /** Izinkan edit user/profile (akun API punya hak write). */
+  allowWrite: boolean
   name: string
   host: string
   port: number

@@ -1,6 +1,6 @@
 import * as React from "react"
 
-export const PAGES = ["ringkasan", "user", "event", "router", "berbagi"] as const
+export const PAGES = ["ringkasan", "user", "profile", "event", "router", "berbagi"] as const
 export type Page = (typeof PAGES)[number]
 
 function subscribe(cb: () => void) {

@@ -1,5 +1,5 @@
 import * as React from "react"
-import { LayoutGridIcon, ListIcon, SearchIcon } from "lucide-react"
+import { DownloadIcon, LayoutGridIcon, ListIcon, PlusIcon, SearchIcon } from "lucide-react"
 
 import {
   EVENT_META,
@@ -30,12 +30,15 @@ import {
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { useNow } from "@/hooks/use-now"
 import { formatDuration, formatNumber, formatRelative } from "@/lib/format"
+import { ImportDialog } from "@/components/import-dialog"
+import { UserFormDialog } from "@/components/user-form-dialog"
+import { UsersSectionNav } from "@/components/users-section-nav"
 import { useStore } from "@/lib/store-context"
 import { cn } from "@/lib/utils"
 import type { PppUser, UserStatus } from "@/lib/types"
 
 const PAGE_SIZE = 60
-type StatusFilter = UserStatus | "all"
+type StatusFilter = UserStatus | "all" | "deleted"
 type SortKey = "recent" | "username" | "uptime"
 type ViewMode = "list" | "grid"
 
@@ -61,6 +64,7 @@ const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
   { value: "active", label: "Aktif" },
   { value: "inactive", label: "Tidak aktif" },
   { value: "disabled", label: "Dinonaktifkan" },
+  { value: "deleted", label: "Terhapus" },
 ]
 
 function uptimeOrSeen(u: PppUser, now: number) {
@@ -76,7 +80,7 @@ export function UsersPage({
   params: URLSearchParams
   onOpenUser: (id: string) => void
 }) {
-  const { users, routers, routerById, metas } = useStore()
+  const { users, routers, routerById, metas, api } = useStore()
   const now = useNow(15_000)
 
   const [query, setQuery] = React.useState(params.get("q") ?? "")
@@ -92,7 +96,7 @@ export function UsersPage({
     const q = query.trim().toLowerCase()
     const list = users.filter(
       (u) =>
-        (status === "all" || u.status === status) &&
+        (status === "deleted" ? !!u.deletedAt : !u.deletedAt && (status === "all" || u.status === status)) &&
         (routerId === "all" || u.routerId === routerId) &&
         (!q ||
           u.username.toLowerCase().includes(q) ||
@@ -113,9 +117,32 @@ export function UsersPage({
   }, [users, metas, query, status, routerId, sort])
 
   const shown = filtered.slice(0, limit)
+  const [adding, setAdding] = React.useState(false)
+  const [importing, setImporting] = React.useState(false)
+  const canWriteAny = api.kind !== "http" && routers.some((r) => r.canWrite)
 
   return (
     <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <UsersSectionNav page="user" />
+        <div className="ml-auto flex gap-2">
+          <Button variant="outline" onClick={() => setImporting(true)} disabled={api.kind === "http"}>
+            <DownloadIcon />
+            <span className="hidden sm:inline">Import dari Mikrotik</span>
+            <span className="sm:hidden">Import</span>
+          </Button>
+          <Button
+            onClick={() => setAdding(true)}
+            disabled={!canWriteAny}
+            title={canWriteAny ? undefined : "Tidak ada router dengan hak write, atau mode hanya baca"}
+          >
+            <PlusIcon />
+            <span className="hidden sm:inline">Tambah user</span>
+            <span className="sm:hidden">Tambah</span>
+          </Button>
+        </div>
+      </div>
+
       <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
         <div className="relative lg:w-72">
           <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -210,7 +237,7 @@ export function UsersPage({
           {filtered.length > shown.length && `, menampilkan ${formatNumber(shown.length)}`}
         </p>
         <ul className="flex flex-wrap gap-x-3 gap-y-1 sm:ml-auto" aria-label="Keterangan warna">
-          {USER_TONES.map((t) => (
+          {USER_TONES.filter((t) => t !== "deleted" || status === "deleted").map((t) => (
             <li key={t} className="flex items-center gap-1.5">
               <span className={cn("size-2 rounded-full", USER_TONE[t].dot)} />
               {USER_TONE[t].label}
@@ -253,7 +280,7 @@ export function UsersPage({
                       onKeyDown={(e) => e.key === "Enter" && onOpenUser(u.id)}
                       className={cn("cursor-pointer", tone.row)}
                     >
-                      <TableCell className={cn("pl-3 font-mono text-[13px]", tone.bar)} title={label}>
+                      <TableCell className={cn("pl-3 font-mono text-[13px]", tone.bar, u.deletedAt && "line-through")} title={label}>
                         {u.username}
                         {label && (
                           <span className="ml-1.5 font-sans text-xs text-muted-foreground">· {label}</span>
@@ -348,7 +375,7 @@ export function UsersPage({
                       )}
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <span className="min-w-0 truncate font-mono text-[13px] font-medium" title={u.username}>
+                        <span className={cn("min-w-0 truncate font-mono text-[13px] font-medium", u.deletedAt && "line-through")} title={u.username}>
                           {u.username}
                         </span>
                         <UserToneBadge tone={tone} className="shrink-0" />
@@ -398,6 +425,18 @@ export function UsersPage({
           )}
         </>
       )}
+
+      <UserFormDialog
+        open={adding}
+        onOpenChange={setAdding}
+        mode="create"
+        defaultRouterId={routerId !== "all" ? routerId : undefined}
+      />
+      <ImportDialog
+        open={importing}
+        onOpenChange={setImporting}
+        defaultRouterId={routerId !== "all" ? routerId : undefined}
+      />
     </div>
   )
 }

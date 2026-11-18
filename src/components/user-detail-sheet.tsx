@@ -4,10 +4,15 @@ import {
   InfoIcon,
   PencilIcon,
   PhoneIcon,
+  RotateCcwIcon,
+  Trash2Icon,
   TriangleAlertIcon,
 } from "lucide-react"
 import { toast } from "sonner"
 
+import { ConfirmDialog } from "@/components/confirm-dialog"
+import { UserFormDialog } from "@/components/user-form-dialog"
+import { useWriteGate } from "@/hooks/use-write-gate"
 import {
   EVENT_META,
   EventIcon,
@@ -141,6 +146,18 @@ function InfoTab({
   const tone = userTone(user)
 
   const notices: React.ReactNode[] = []
+  if (user.deletedAt) {
+    notices.push(
+      <Alert key="deleted">
+        <InfoIcon />
+        <AlertDescription>
+          Dihapus (soft) {formatRelative(user.deletedAt, now)}
+          {user.deletedReason === "router" ? ", karena sudah tidak ada di router saat import" : ""}.
+          Secret dinonaktifkan di router dan bisa dipulihkan.
+        </AlertDescription>
+      </Alert>
+    )
+  }
   if (router && router.status !== "online") {
     notices.push(
       <Alert key="router">
@@ -174,7 +191,7 @@ function InfoTab({
       </Alert>
     )
   }
-  if (user.status === "disabled") {
+  if (user.status === "disabled" && !user.deletedAt) {
     notices.push(
       <Alert key="disabled">
         <InfoIcon />
@@ -209,6 +226,7 @@ function InfoTab({
           <Field label="IP" value={user.address} mono copy={user.address} />
           <Field label="MAC (Caller ID)" value={user.callerId} mono copy={user.callerId} />
           <Field label="Profil" value={user.profile} />
+          <Field label="IP statis" value={user.staticAddress} mono />
           <Field label="Router" value={router?.name} />
         </dl>
       </section>
@@ -410,6 +428,9 @@ export function UserDetailSheet({
 }) {
   const { users, events, routerById, metas, api } = useStore()
   const now = useNow(5_000)
+  const gate = useWriteGate()
+  const [editing, setEditing] = React.useState(false)
+  const [removing, setRemoving] = React.useState(false)
   const user = userId ? users.find((u) => u.id === userId) : undefined
   const router = user ? routerById.get(user.routerId) : undefined
   const meta = user ? metas[user.id] : undefined
@@ -423,7 +444,20 @@ export function UserDetailSheet({
     [events, user]
   )
 
+  const blocked = user ? gate(user.routerId) : null
+
+  async function restore() {
+    if (!user) return
+    try {
+      await api.restoreUser(user.id)
+      toast.success(`${user.username} dipulihkan`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e))
+    }
+  }
+
   return (
+    <>
     <Sheet open={!!user} onOpenChange={onOpenChange}>
       <SheetContent className="w-full gap-0 sm:max-w-md">
         {user && (
@@ -444,6 +478,23 @@ export function UserDetailSheet({
                   ))}
                 </div>
               </SheetDescription>
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                {user.deletedAt ? (
+                  <Button size="sm" variant="outline" disabled={!!blocked} onClick={restore}>
+                    <RotateCcwIcon /> Pulihkan
+                  </Button>
+                ) : (
+                  <>
+                    <Button size="sm" variant="outline" disabled={!!blocked} onClick={() => setEditing(true)}>
+                      <PencilIcon /> Edit
+                    </Button>
+                    <Button size="sm" variant="outline" disabled={!!blocked} onClick={() => setRemoving(true)}>
+                      <Trash2Icon /> Hapus
+                    </Button>
+                  </>
+                )}
+                {blocked && <span className="text-xs text-muted-foreground">{blocked}.</span>}
+              </div>
             </SheetHeader>
 
             <Tabs key={user.id} defaultValue="info" className="min-h-0 flex-1 gap-0">
@@ -473,5 +524,28 @@ export function UserDetailSheet({
         )}
       </SheetContent>
     </Sheet>
+    {user && (
+      <>
+        <UserFormDialog open={editing} onOpenChange={setEditing} mode="edit" user={user} />
+        <ConfirmDialog
+          open={removing}
+          onOpenChange={setRemoving}
+          title={`Hapus ${user.username}?`}
+          description={
+            <p>
+              Soft delete: secret di <b>{router?.name}</b> dinonaktifkan dan sesi yang sedang berjalan
+              diputus. Secret tidak dihapus dari router dan bisa dipulihkan dari Telemon.
+            </p>
+          }
+          confirmLabel="Hapus"
+          destructive
+          onConfirm={async () => {
+            await api.softDeleteUser(user.id)
+            toast.success(`${user.username} dihapus (soft)`)
+          }}
+        />
+      </>
+    )}
+    </>
   )
 }

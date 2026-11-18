@@ -4,14 +4,21 @@
  * event live acak setiap beberapa detik.
  */
 import type {
+  DeletedReason,
+  ImportResult,
   NewRouter,
   PppEvent,
   PppEventType,
+  PppProfile,
   PppUser,
+  ProfileInput,
+  ProfilePatch,
   RouterInfo,
   ShareState,
   UserMeta,
+  UserInput,
   UserMetaInput,
+  UserPatch,
   UserStatus,
 } from "../types"
 import type { LiveUpdate, Snapshot, TelemonApi } from "./api"
@@ -52,11 +59,29 @@ const DISCONNECT_REASONS = [
 
 function makeRouters(now: number): RouterInfo[] {
   return [
-    { id: "r1", name: "CCR-Pusat", host: "10.10.1.1", port: 8729, tls: true, model: "CCR2004-1G-12S+2XS", version: "7.16.2", status: "online", lastPollAt: now },
-    { id: "r2", name: "RB-Timur", host: "10.10.2.1", port: 8729, tls: true, model: "RB4011iGS+", version: "7.15.3", status: "online", lastPollAt: now },
-    { id: "r3", name: "hEX-Barat", host: "10.10.3.1", port: 8728, tls: false, model: "hEX S", version: "6.49.17", status: "online", lastPollAt: now },
-    { id: "r4", name: "RB-Selatan", host: "10.10.4.1", port: 8728, tls: false, model: "RB1100AHx4", version: "7.14.3", status: "offline", lastPollAt: now - 47 * 60_000, error: "Tidak bisa terhubung ke 10.10.4.1:8728 (timeout 10 dtk)" },
+    { id: "r1", canWrite: true, lastImportAt: now - 2 * 86400_000, name: "CCR-Pusat", host: "10.10.1.1", port: 8729, tls: true, model: "CCR2004-1G-12S+2XS", version: "7.16.2", status: "online", lastPollAt: now },
+    { id: "r2", canWrite: true, lastImportAt: now - 2 * 86400_000, name: "RB-Timur", host: "10.10.2.1", port: 8729, tls: true, model: "RB4011iGS+", version: "7.15.3", status: "online", lastPollAt: now },
+    { id: "r3", canWrite: false, lastImportAt: now - 5 * 86400_000, name: "hEX-Barat", host: "10.10.3.1", port: 8728, tls: false, model: "hEX S", version: "6.49.17", status: "online", lastPollAt: now },
+    { id: "r4", canWrite: true, lastImportAt: now - 3 * 86400_000, name: "RB-Selatan", host: "10.10.4.1", port: 8728, tls: false, model: "RB1100AHx4", version: "7.14.3", status: "offline", lastPollAt: now - 47 * 60_000, error: "Tidak bisa terhubung ke 10.10.4.1:8728 (timeout 10 dtk)" },
   ]
+}
+
+function makeProfiles(routers: RouterInfo[]): PppProfile[] {
+  return routers.flatMap((r) =>
+    PROFILES.map((name) => {
+      const mbps = parseInt(name, 10)
+      return {
+        id: `${r.id}:${name}`,
+        routerId: r.id,
+        name,
+        rateLimit: `${mbps}M/${mbps}M`,
+        localAddress: `100.64.${r.id.slice(1)}.1`,
+        remoteAddress: `pool-pppoe-${r.id.slice(1)}`,
+        onlyOne: "default" as const,
+        comment: mbps >= 100 ? "Paket bisnis" : undefined,
+      }
+    })
+  )
 }
 
 const USERS_PER_ROUTER: Record<string, number> = { r1: 64, r2: 46, r3: 27, r4: 21 }
@@ -190,6 +215,8 @@ export class MockApi implements TelemonApi {
   readonly kind = "mock" as const
   private routers: RouterInfo[]
   private users: PppUser[]
+  private profiles: PppProfile[]
+  private importedOnce = new Set<string>()
   private events: PppEvent[]
   private metas: Record<string, UserMeta>
   private share: ShareState = {
@@ -204,6 +231,7 @@ export class MockApi implements TelemonApi {
     const now = Date.now()
     this.routers = makeRouters(now)
     this.users = makeUsers(this.routers, now)
+    this.profiles = makeProfiles(this.routers)
     this.events = makeHistory(this.routers, this.users, now)
     this.metas = makeMetas(this.users, now)
   }
@@ -213,6 +241,7 @@ export class MockApi implements TelemonApi {
     return {
       routers: this.routers.map((r) => ({ ...r })),
       users: this.users.map((u) => ({ ...u })),
+      profiles: this.profiles.map((p) => ({ ...p })),
       events: [...this.events],
       metas: structuredClone(this.metas),
       share: structuredClone(this.share),
@@ -251,7 +280,7 @@ export class MockApi implements TelemonApi {
       if (r.status === "online") r.lastPollAt = now
     }
     const online = new Set(this.routers.filter((r) => r.status === "online").map((r) => r.id))
-    const candidates = this.users.filter((u) => online.has(u.routerId))
+    const candidates = this.users.filter((u) => online.has(u.routerId) && !u.deletedAt)
     if (candidates.length === 0) return
     const u = pick(candidates)
     const r = this.routers.find((x) => x.id === u.routerId)!
@@ -290,6 +319,7 @@ export class MockApi implements TelemonApi {
       model: "Belum diketahui",
       version: "-",
       status: "error",
+      canWrite: input.allowWrite,
       error: "Data contoh: router baru tidak benar-benar dihubungi",
     }
     this.routers.push(router)
@@ -297,10 +327,255 @@ export class MockApi implements TelemonApi {
     return router
   }
 
+  // ---- Tulis ke router (data contoh: router "menjawab" setelah jeda) ----
+
+  private writableRouter(routerId: string): RouterInfo {
+    const r = this.routers.find((x) => x.id === routerId)
+    if (!r) throw new Error("Router tidak ditemukan")
+    if (!r.canWrite) throw new Error(`Akun API ${r.name} tidak punya hak write`)
+    if (r.status !== "online") {
+      throw new Error(`Router ${r.name} sedang ${r.status === "offline" ? "offline" : "error"}; tidak bisa menulis`)
+    }
+    return r
+  }
+
+  private userOrThrow(id: string) {
+    const u = this.users.find((x) => x.id === id)
+    if (!u) throw new Error("User tidak ditemukan")
+    return u
+  }
+
+  private profileOrThrow(id: string) {
+    const p = this.profiles.find((x) => x.id === id)
+    if (!p) throw new Error("Profile tidak ditemukan")
+    return p
+  }
+
+  private checkProfileExists(routerId: string, name: string) {
+    const p = this.profiles.find((x) => x.routerId === routerId && x.name === name)
+    if (!p) throw new Error(`Profile "${name}" tidak ada di router`)
+    if (p.deletedAt) throw new Error(`Profile "${name}" sudah dihapus; pulihkan dulu`)
+  }
+
+  private emitUser(u: PppUser) {
+    this.emit({ kind: "user", user: { ...u } })
+    return { ...u }
+  }
+
+  private emitProfile(p: PppProfile) {
+    this.emit({ kind: "profile", profile: { ...p } })
+    return { ...p }
+  }
+
+  private kickIfActive(u: PppUser, r: RouterInfo, why: string) {
+    if (u.status !== "active") return
+    const now = Date.now()
+    u.connectedAt = undefined
+    u.address = undefined
+    u.lastSeenAt = now
+    this.push(makeEvent("disconnected", now, r, u, why), u)
+  }
+
+  private validateRate(v?: string) {
+    if (v && !/^\d+[kKmMgG]?(\/\d+[kKmMgG]?)?$/.test(v.trim())) {
+      throw new Error("Rate limit tidak valid. Contoh: 10M/10M atau 5M")
+    }
+  }
+
+  async createUser(input: UserInput): Promise<PppUser> {
+    await delay(800)
+    const r = this.writableRouter(input.routerId)
+    const username = input.username.trim()
+    if (!/^[\w.@-]{2,40}$/.test(username)) {
+      throw new Error("Username 2-40 karakter: huruf, angka, titik, garis bawah, strip, atau @")
+    }
+    if (this.users.some((u) => u.routerId === r.id && u.username === username)) {
+      throw new Error("Username sudah ada di router ini (cek juga yang sudah dihapus)")
+    }
+    if (!input.password || input.password.length < 6) throw new Error("Password minimal 6 karakter")
+    this.checkProfileExists(r.id, input.profile)
+    const u: PppUser = {
+      id: `${r.id}:${username}`,
+      routerId: r.id,
+      username,
+      profile: input.profile,
+      status: input.disabled ? "disabled" : "inactive",
+      staticAddress: input.staticAddress?.trim() || undefined,
+      comment: input.comment?.trim() || undefined,
+    }
+    this.users.push(u)
+    return this.emitUser(u)
+  }
+
+  async updateUser(id: string, patch: UserPatch): Promise<PppUser> {
+    await delay(800)
+    const u = this.userOrThrow(id)
+    if (u.deletedAt) throw new Error("User sudah dihapus; pulihkan dulu")
+    const r = this.writableRouter(u.routerId)
+    if (patch.password && patch.password.length < 6) throw new Error("Password minimal 6 karakter")
+    if (patch.profile !== undefined) {
+      this.checkProfileExists(r.id, patch.profile)
+      u.profile = patch.profile
+    }
+    if ("staticAddress" in patch) u.staticAddress = patch.staticAddress?.trim() || undefined
+    if ("comment" in patch) u.comment = patch.comment?.trim() || undefined
+    if (patch.disabled === true && u.status !== "disabled") {
+      this.kickIfActive(u, r, "secret dinonaktifkan")
+      u.status = "disabled"
+    } else if (patch.disabled === false && u.status === "disabled") {
+      u.status = "inactive"
+    }
+    return this.emitUser(u)
+  }
+
+  async softDeleteUser(id: string): Promise<PppUser> {
+    await delay(700)
+    const u = this.userOrThrow(id)
+    if (u.deletedAt) return { ...u }
+    const r = this.writableRouter(u.routerId)
+    this.kickIfActive(u, r, "secret dinonaktifkan")
+    u.status = "disabled"
+    u.deletedAt = Date.now()
+    u.deletedReason = "manual" satisfies DeletedReason
+    return this.emitUser(u)
+  }
+
+  async restoreUser(id: string): Promise<PppUser> {
+    await delay(700)
+    const u = this.userOrThrow(id)
+    this.writableRouter(u.routerId)
+    u.deletedAt = undefined
+    u.deletedReason = undefined
+    u.status = "inactive"
+    return this.emitUser(u)
+  }
+
+  async createProfile(input: ProfileInput): Promise<PppProfile> {
+    await delay(800)
+    const r = this.writableRouter(input.routerId)
+    const name = input.name.trim()
+    if (!/^[\w.-]{1,40}$/.test(name)) {
+      throw new Error("Nama profile 1-40 karakter: huruf, angka, titik, garis bawah, atau strip")
+    }
+    if (this.profiles.some((p) => p.routerId === r.id && p.name === name)) {
+      throw new Error("Nama profile sudah ada di router ini (cek juga yang sudah dihapus)")
+    }
+    this.validateRate(input.rateLimit)
+    const p: PppProfile = {
+      id: `${r.id}:${name}`,
+      routerId: r.id,
+      name,
+      rateLimit: input.rateLimit?.trim() || undefined,
+      localAddress: input.localAddress?.trim() || undefined,
+      remoteAddress: input.remoteAddress?.trim() || undefined,
+      onlyOne: input.onlyOne,
+      comment: input.comment?.trim() || undefined,
+    }
+    this.profiles.push(p)
+    return this.emitProfile(p)
+  }
+
+  async updateProfile(id: string, patch: ProfilePatch): Promise<PppProfile> {
+    await delay(800)
+    const p = this.profileOrThrow(id)
+    if (p.deletedAt) throw new Error("Profile sudah dihapus; pulihkan dulu")
+    this.writableRouter(p.routerId)
+    if ("rateLimit" in patch) {
+      this.validateRate(patch.rateLimit)
+      p.rateLimit = patch.rateLimit?.trim() || undefined
+    }
+    if ("localAddress" in patch) p.localAddress = patch.localAddress?.trim() || undefined
+    if ("remoteAddress" in patch) p.remoteAddress = patch.remoteAddress?.trim() || undefined
+    if (patch.onlyOne) p.onlyOne = patch.onlyOne
+    if ("comment" in patch) p.comment = patch.comment?.trim() || undefined
+    return this.emitProfile(p)
+  }
+
+  async softDeleteProfile(id: string): Promise<PppProfile> {
+    await delay(400)
+    const p = this.profileOrThrow(id)
+    const used = this.users.filter((u) => u.routerId === p.routerId && u.profile === p.name && !u.deletedAt).length
+    if (used > 0) throw new Error(`Profile masih dipakai ${used} user; pindahkan user-nya dulu`)
+    p.deletedAt = Date.now()
+    p.deletedReason = "manual"
+    return this.emitProfile(p)
+  }
+
+  async restoreProfile(id: string): Promise<PppProfile> {
+    await delay(400)
+    const p = this.profileOrThrow(id)
+    p.deletedAt = undefined
+    p.deletedReason = undefined
+    return this.emitProfile(p)
+  }
+
+  async importFromRouter(routerId: string): Promise<ImportResult> {
+    await delay(1400)
+    const r = this.routers.find((x) => x.id === routerId)
+    if (!r) throw new Error("Router tidak ditemukan")
+    if (r.status !== "online") {
+      throw new Error(`Router ${r.name} sedang ${r.status === "offline" ? "offline" : "error"}; tidak bisa import`)
+    }
+    const now = Date.now()
+    const result: ImportResult = {
+      routerId,
+      at: now,
+      users: { added: 0, updated: 0, deleted: 0 },
+      profiles: { added: 0, updated: 0, deleted: 0 },
+    }
+    // Simulasi: pada import pertama sesi ini router punya perubahan yang belum diketahui Telemon.
+    // Router source of truth: selisih selalu dimenangkan router.
+    if (!this.importedOnce.has(routerId)) {
+      this.importedOnce.add(routerId)
+      const subnet = routerId.slice(1)
+      if (!this.profiles.some((p) => p.routerId === routerId && p.name === "5Mbps")) {
+        this.profiles.push({
+          id: `${routerId}:5Mbps`, routerId, name: "5Mbps", rateLimit: "5M/5M",
+          localAddress: `100.64.${subnet}.1`, remoteAddress: `pool-pppoe-${subnet}`, onlyOne: "default",
+        })
+        result.profiles.added++
+      }
+      const cached = this.profiles.find((p) => p.routerId === routerId && p.name === "20Mbps")
+      if (cached) {
+        cached.rateLimit = "20M/20M"
+        cached.comment = "Disesuaikan di router"
+        result.profiles.updated++
+      }
+      for (const name of ["pelanggan.baru1", "pelanggan.baru2"]) {
+        if (this.users.some((u) => u.routerId === routerId && u.username === name)) continue
+        this.users.push({
+          id: `${routerId}:${name}`, routerId, username: name, profile: "10Mbps", status: "inactive",
+          callerId: mac(), lastSeenAt: now - 86400_000, comment: "Dibuat langsung di router",
+        })
+        result.users.added++
+      }
+      const gone = this.users.find(
+        (u) => u.routerId === routerId && u.status === "inactive" && !u.deletedAt && !u.username.startsWith("pelanggan.baru")
+      )
+      if (gone) {
+        gone.deletedAt = now
+        gone.deletedReason = "router"
+        gone.status = "disabled"
+        result.users.deleted++
+      }
+      result.users.updated += 3
+    }
+    r.lastImportAt = now
+    this.emit({ kind: "router", router: { ...r } })
+    this.emit({
+      kind: "inventory",
+      routerId,
+      users: this.users.filter((u) => u.routerId === routerId).map((u) => ({ ...u })),
+      profiles: this.profiles.filter((p) => p.routerId === routerId).map((p) => ({ ...p })),
+    })
+    return result
+  }
+
   async removeRouter(id: string) {
     await delay(300)
     this.routers = this.routers.filter((r) => r.id !== id)
     this.users = this.users.filter((u) => u.routerId !== id)
+    this.profiles = this.profiles.filter((p) => p.routerId !== id)
     this.emit({ kind: "router-removed", routerId: id })
   }
 

@@ -7,9 +7,11 @@ import {
   TriangleAlertIcon,
   UsersIcon,
   Trash2Icon,
+  DownloadIcon,
 } from "lucide-react"
 import { toast } from "sonner"
 
+import { ImportDialog } from "@/components/import-dialog"
 import { RouterStatusBadge, UserMixBar } from "@/components/status"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -47,16 +49,17 @@ import { useStore } from "@/lib/store-context"
 import type { RouterInfo } from "@/lib/types"
 
 export function RoutersPage() {
-  const { routers, users, api } = useStore()
+  const { routers, liveUsers: users, api } = useStore()
   const now = useNow(10_000)
   const [adding, setAdding] = React.useState(false)
   const [removing, setRemoving] = React.useState<RouterInfo | null>(null)
+  const [importFor, setImportFor] = React.useState<RouterInfo | null>(null)
 
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
-          Telemon hanya membaca router lewat RouterOS API.
+          Mikrotik adalah source of truth; Telemon membaca dan (bila diizinkan) menulis lewat RouterOS API.
         </p>
         <Button onClick={() => setAdding(true)}>
           <PlusIcon />
@@ -81,6 +84,8 @@ export function RoutersPage() {
               </span>,
             ],
             ["Polling", r.lastPollAt ? formatRelative(r.lastPollAt, now) : "Belum pernah"],
+            ["Izin API", r.canWrite ? "Baca & tulis" : "Hanya baca"],
+            ["Import terakhir", r.lastImportAt ? formatRelative(r.lastImportAt, now) : "Belum pernah"],
           ]
           return (
             <Card key={r.id} className="gap-2.5">
@@ -103,6 +108,12 @@ export function RoutersPage() {
                       <DropdownMenuItem onSelect={() => navigate("user", { router: r.id })}>
                         <UsersIcon /> Lihat user
                       </DropdownMenuItem>
+                      <DropdownMenuItem
+                        disabled={r.status !== "online" || api.kind === "http"}
+                        onSelect={() => setImportFor(r)}
+                      >
+                        <DownloadIcon /> Import dari Mikrotik
+                      </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem variant="destructive" onSelect={() => setRemoving(r)}>
                         <Trash2Icon /> Hapus dari Telemon
@@ -118,7 +129,7 @@ export function RoutersPage() {
                     <AlertDescription>{r.error}</AlertDescription>
                   </Alert>
                 )}
-                <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[13px] sm:grid-cols-4">
+                <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[13px] sm:grid-cols-3">
                   {facts.map(([k, v]) => (
                     <div key={k} className="min-w-0">
                       <dt className="text-xs text-muted-foreground">{k}</dt>
@@ -141,6 +152,11 @@ export function RoutersPage() {
       </div>
 
       <AddRouterDialog open={adding} onOpenChange={setAdding} />
+      <ImportDialog
+        open={!!importFor}
+        onOpenChange={(o) => !o && setImportFor(null)}
+        defaultRouterId={importFor?.id}
+      />
 
       <Dialog open={!!removing} onOpenChange={(o) => !o && setRemoving(null)}>
         <DialogContent className="sm:max-w-md">
@@ -185,6 +201,7 @@ function AddRouterDialog({
 }) {
   const { api } = useStore()
   const [tls, setTls] = React.useState(true)
+  const [allowWrite, setAllowWrite] = React.useState(false)
   const [port, setPort] = React.useState("8729")
   const [busy, setBusy] = React.useState(false)
 
@@ -198,6 +215,7 @@ function AddRouterDialog({
         host: String(f.get("host")).trim(),
         port: Number(port),
         tls,
+        allowWrite,
         username: String(f.get("username")).trim(),
         password: String(f.get("password")),
       })
@@ -217,7 +235,8 @@ function AddRouterDialog({
           <DialogHeader>
             <DialogTitle>Tambah router</DialogTitle>
             <DialogDescription>
-              Pakai akun API khusus dengan grup <code>read</code> di router.
+              Pakai akun API khusus. Grup <code>read</code> cukup untuk memantau; tambah
+              hak <code>write</code> bila user dan profile ingin diedit dari Telemon.
               Password disimpan di keyring sistem operasi.
             </DialogDescription>
           </DialogHeader>
@@ -257,6 +276,16 @@ function AddRouterDialog({
                 setPort((p) => (p === "8729" || p === "8728" ? (v ? "8729" : "8728") : p))
               }}
             />
+          </div>
+          <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
+            <div className="grid gap-0.5">
+              <Label htmlFor="r-write">Izinkan edit user dan profile</Label>
+              <p className="text-xs text-muted-foreground">
+                Nyalakan hanya bila akun API di atas punya hak write. Setiap tulis ke router
+                tetap meminta konfirmasi.
+              </p>
+            </div>
+            <Switch id="r-write" checked={allowWrite} onCheckedChange={setAllowWrite} />
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="grid gap-2">

@@ -81,7 +81,7 @@ export function AppSidebar() {
                 <SidebarMenuItem key={item.page}>
                   <SidebarMenuButton
                     asChild
-                    isActive={page === item.page}
+                    isActive={page === item.page || (item.page === "user" && page === "profile")}
                     tooltip={item.label}
                   >
                     <a href={href(item.page)} onClick={close}>

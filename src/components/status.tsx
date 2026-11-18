@@ -44,9 +44,10 @@ export function UserStatusBadge({
  * Kondisi tampilan user: status dari router + gagal auth terakhir.
  * Warna untuk border/latar/titik; label selalu ikut ditampilkan.
  */
-export type UserTone = "active" | "inactive" | "auth_failed" | "disabled"
+export type UserTone = "active" | "inactive" | "auth_failed" | "disabled" | "deleted"
 
-export function userTone(u: Pick<PppUser, "status" | "lastEvent">): UserTone {
+export function userTone(u: Pick<PppUser, "status" | "lastEvent" | "deletedAt">): UserTone {
+  if (u.deletedAt) return "deleted"
   if (u.status === "active") return "active"
   if (u.status === "disabled") return "disabled"
   return u.lastEvent === "auth_failed" ? "auth_failed" : "inactive"
@@ -82,6 +83,13 @@ export const USER_TONE: Record<
     dot: "border-[1.5px] border-muted-foreground bg-transparent",
     card: "border-dashed border-muted-foreground/45 border-l-muted-foreground/70",
     row: "bg-muted/60",
+    bar: "shadow-[inset_3px_0_0_var(--color-muted-foreground)]",
+  },
+  deleted: {
+    label: "Dihapus",
+    dot: "bg-muted-foreground/30",
+    card: "border-dashed border-muted-foreground/30 border-l-muted-foreground/40 opacity-60",
+    row: "opacity-60",
     bar: "shadow-[inset_3px_0_0_var(--color-muted-foreground)]",
   },
 }
