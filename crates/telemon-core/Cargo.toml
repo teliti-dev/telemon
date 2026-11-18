@@ -7,6 +7,7 @@ description = "Inti Telemon: klien dan model RouterOS (tanpa penyimpanan)"
 
 [dependencies]
 mikrotik-rs = "0.10.0"
+rusqlite = { version = "0.43.0", features = ["bundled"] }
 tokio = { version = "1.54.1", features = ["rt", "macros", "time", "sync", "net"] }
 
 [dev-dependencies]

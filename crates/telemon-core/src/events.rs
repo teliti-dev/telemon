@@ -15,6 +15,32 @@ pub enum EventKind {
     RouterUp,
 }
 
+impl EventKind {
+    /// Nama stabil untuk penyimpanan dan UI (`auth_failed`, dst).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            EventKind::AuthFailed => "auth_failed",
+            EventKind::Authenticated => "authenticated",
+            EventKind::Connected => "connected",
+            EventKind::Disconnected => "disconnected",
+            EventKind::RouterDown => "router_down",
+            EventKind::RouterUp => "router_up",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s {
+            "auth_failed" => EventKind::AuthFailed,
+            "authenticated" => EventKind::Authenticated,
+            "connected" => EventKind::Connected,
+            "disconnected" => EventKind::Disconnected,
+            "router_down" => EventKind::RouterDown,
+            "router_up" => EventKind::RouterUp,
+            _ => return None,
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Event {
     /// Waktu polling yang mendeteksi (epoch ms). Jam log router tidak dipakai karena formatnya
