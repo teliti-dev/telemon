@@ -7,7 +7,6 @@ import {
   ZapIcon,
 } from "lucide-react"
 
-import { StatusDot } from "@/components/status"
 import { Badge } from "@/components/ui/badge"
 import {
   Sidebar,
@@ -15,7 +14,6 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuBadge,
@@ -37,8 +35,8 @@ const NAV: { page: Page; label: string; icon: typeof GaugeIcon }[] = [
 ]
 
 export function AppSidebar() {
-  const { page, params } = useRoute()
-  const { routers, users, events, api } = useStore()
+  const { page } = useRoute()
+  const { routers, events, api } = useStore()
   const { setOpenMobile } = useSidebar()
   const now = useNow(30_000)
 
@@ -108,33 +106,6 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-          <SidebarGroupLabel>Router</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {routers.map((r) => {
-                const n = users.filter(
-                  (u) => u.routerId === r.id && u.status === "active"
-                ).length
-                return (
-                  <SidebarMenuItem key={r.id}>
-                    <SidebarMenuButton
-                      asChild
-                      size="sm"
-                      isActive={page === "user" && params.get("router") === r.id}
-                    >
-                      <a href={href("user", { router: r.id })} onClick={close}>
-                        <StatusDot status={r.status} />
-                        <span>{r.name}</span>
-                      </a>
-                    </SidebarMenuButton>
-                    <SidebarMenuBadge title="User aktif">{n}</SidebarMenuBadge>
-                  </SidebarMenuItem>
-                )
-              })}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
       </SidebarContent>
 
       <SidebarFooter className="group-data-[collapsible=icon]:hidden">
