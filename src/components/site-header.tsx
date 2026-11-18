@@ -93,7 +93,7 @@ export function SiteHeader({ title }: { title: string }) {
                   "inline-flex h-9 items-center gap-1.5 border-b-2 px-2 text-sm font-medium transition-colors outline-none focus-visible:bg-muted",
                   item.end && "ml-auto",
                   active
-                    ? "border-primary text-foreground"
+                    ? "border-brand text-brand"
                     : "border-transparent text-muted-foreground hover:text-foreground"
                 )}
               >

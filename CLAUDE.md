@@ -26,6 +26,8 @@ Aplikasi desktop **Tauri v2** (Windows dan Linux, tanpa deploy). Lihat ADR 0001-
 - `lib/store.tsx` + `lib/store-context.ts`: state global (router, user, event, share) dari adapter.
 - `lib/route.ts`: routing hash (`#/user?status=active`), sama di Tauri dan mode serve.
 - `pages/`: ringkasan, user, profile, event, router, berbagi. Users dan Profile satu menu sidebar (segmen di atas halaman); sidebar tetap 5 menu. `components/status.tsx`: label/ikon status dan event.
+- Penanda **terpilih** (menu aktif atas/bawah, toggle, tab, pilihan di drawer) hanya mengubah warna ikon dan teks ke `text-brand` (biru, token `--brand`, kontras 6,8:1 terang dan 7,2:1 gelap), **tanpa mengubah latar**. Jangan memakai warna status untuk pilihan.
+- Filter di HP dipadatkan jadi dropdown dalam satu baris (`components/filter-select.tsx`: `FilterSelect`, `FilterMulti`); chip hanya di desktop. Tombol dropdown menampilkan nama filter (redup) saat bawaan dan nilainya (brand) saat aktif.
 - Warna status (`--status-good|warning|serious|critical` di `index.css`) hanya untuk titik/ikon, selalu dengan label; teks memakai token teks.
 - Header dua baris (`components/site-header.tsx`): logo + Live + Appearance + Profile, lalu menu utama di bawahnya (garis bawah pada menu aktif). Lebar dan jarak kiri-kanan konten satu sumber di `lib/layout.ts` (`PAGE_CONTAINER`, maks 7xl); pakai itu untuk elemen halaman baru.
 - Navigasi: **menu atas** di desktop dan **menu bawah** di HP (< 768px, `components/bottom-nav.tsx`); tidak ada sidebar. Daftar menu dan angka lencana satu sumber (`components/nav-items.ts`, `hooks/use-nav-badges.ts`); Berbagi hanya tampil di desktop. Halaman memberi ruang bawah untuk menu itu (`pb-[calc(4.5rem+env(safe-area-inset-bottom))]`).

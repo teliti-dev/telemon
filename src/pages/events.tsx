@@ -1,6 +1,7 @@
 import * as React from "react"
 import { PauseIcon, PlayIcon, SearchIcon } from "lucide-react"
 
+import { FilterMulti, FilterSelect } from "@/components/filter-select"
 import { EVENT_META, EVENT_TYPES, EventIcon } from "@/components/status"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -59,10 +60,13 @@ export function EventsPage({
 
   const shown = filtered.slice(0, limit)
 
+  const routerOptions = [{ value: "all", label: "Semua router" }, ...routers.map((r) => ({ value: r.id, label: r.name }))]
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-2">
-        <div className="-mx-1 overflow-x-auto px-1">
+        {/* Desktop: chip jenis event */}
+        <div className="-mx-1 hidden overflow-x-auto px-1 md:block">
           <ToggleGroup
             type="multiple"
             variant="outline"
@@ -80,8 +84,8 @@ export function EventsPage({
             ))}
           </ToggleGroup>
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <div className="relative sm:w-72">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center">
+          <div className="relative md:w-72">
             <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               type="search"
@@ -92,24 +96,51 @@ export function EventsPage({
               className="pl-8"
             />
           </div>
-          <div className="grid grid-cols-2 gap-2 sm:ml-auto sm:flex">
+
+          {/* HP: jenis, router, dan jeda dalam satu baris */}
+          <div className="flex gap-2 md:hidden">
+            <FilterMulti
+              label="Jenis"
+              values={types}
+              onChange={setTypes}
+              options={EVENT_TYPES.map((t) => ({
+                value: t,
+                label: EVENT_META[t].label,
+                icon: <EventIcon type={t} className="size-3.5" />,
+              }))}
+            />
+            <FilterSelect
+              label="Router"
+              value={routerId}
+              defaultValue="all"
+              onChange={setRouterId}
+              options={routerOptions}
+            />
+            <Button
+              size="icon"
+              variant={paused ? "default" : "outline"}
+              aria-label={paused ? "Lanjutkan" : "Jeda"}
+              title={paused ? "Lanjutkan" : "Jeda"}
+              onClick={() => setPaused(paused ? null : events)}
+            >
+              {paused ? <PlayIcon /> : <PauseIcon />}
+            </Button>
+          </div>
+
+          <div className="hidden gap-2 md:ml-auto md:flex">
             <Select value={routerId} onValueChange={setRouterId}>
-              <SelectTrigger className="w-full sm:w-44" aria-label="Router">
+              <SelectTrigger className="w-44" aria-label="Router">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Semua router</SelectItem>
-                {routers.map((r) => (
-                  <SelectItem key={r.id} value={r.id}>
-                    {r.name}
+                {routerOptions.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            <Button
-              variant={paused ? "default" : "outline"}
-              onClick={() => setPaused(paused ? null : events)}
-            >
+            <Button variant={paused ? "default" : "outline"} onClick={() => setPaused(paused ? null : events)}>
               {paused ? <PlayIcon /> : <PauseIcon />}
               {paused ? "Lanjutkan" : "Jeda"}
             </Button>

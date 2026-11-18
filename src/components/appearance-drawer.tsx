@@ -51,7 +51,7 @@ function ChoiceGroup<T extends string>({
             onClick={() => onChange(o.value)}
             className={cn(
               "flex flex-col items-center gap-1 rounded-xl border px-2 py-3 text-center text-sm outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50",
-              on ? "border-primary bg-primary/5 font-medium" : "hover:bg-muted/60"
+              on ? "font-medium text-brand" : "hover:bg-muted/60"
             )}
           >
             {o.icon && <o.icon className="mb-0.5 size-5" />}

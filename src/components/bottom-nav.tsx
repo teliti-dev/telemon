@@ -26,20 +26,15 @@ export function BottomNav() {
                 href={href(item.page)}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex h-14 flex-col items-center justify-center gap-0.5 text-[11px] font-medium outline-none focus-visible:bg-muted",
-                  active ? "text-foreground" : "text-muted-foreground"
+                  "flex h-14 flex-col items-center justify-center gap-1 text-[11px] font-medium outline-none focus-visible:bg-muted",
+                  active ? "text-brand" : "text-muted-foreground"
                 )}
               >
-                <span
-                  className={cn(
-                    "relative flex h-6 w-12 items-center justify-center rounded-full transition-colors",
-                    active && "bg-muted"
-                  )}
-                >
-                  <item.icon className="size-[18px]" />
+                <span className="relative flex h-6 items-center justify-center">
+                  <item.icon className="size-5" strokeWidth={active ? 2.4 : 2} />
                   {n ? (
                     <span
-                      className="absolute -top-1 right-1.5 min-w-4 rounded-full bg-critical px-1 text-center text-[10px] leading-4 font-semibold text-white tabular-nums"
+                      className="absolute -top-1 -right-2.5 min-w-4 rounded-full bg-critical px-1 text-center text-[10px] leading-4 font-semibold text-white tabular-nums"
                       aria-label={`${n} perlu perhatian`}
                     >
                       {n > 99 ? "99+" : n}

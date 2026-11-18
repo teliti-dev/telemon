@@ -30,6 +30,7 @@ import {
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { useNow } from "@/hooks/use-now"
 import { formatDuration, formatNumber, formatRelative } from "@/lib/format"
+import { FilterSelect } from "@/components/filter-select"
 import { ImportDialog } from "@/components/import-dialog"
 import { UserFormDialog } from "@/components/user-form-dialog"
 import { UsersSectionNav } from "@/components/users-section-nav"
@@ -121,6 +122,44 @@ export function UsersPage({
   const [importing, setImporting] = React.useState(false)
   const canWriteAny = access === "desktop" && routers.some((r) => r.canWrite)
 
+  const onStatus = (v: string) => {
+    setStatus(v as StatusFilter)
+    setLimit(PAGE_SIZE)
+  }
+  const onRouter = (v: string) => {
+    setRouterId(v)
+    setLimit(PAGE_SIZE)
+  }
+  const statusOptions = STATUS_OPTIONS.map((o) => ({ value: o.value, label: o.value === "all" ? "Semua status" : o.label }))
+  const routerOptions = [{ value: "all", label: "Semua router" }, ...routers.map((r) => ({ value: r.id, label: r.name }))]
+  const sortOptions = [
+    { value: "recent", label: "Event terbaru", short: "Terbaru" },
+    { value: "username", label: "Username A-Z", short: "A-Z" },
+    { value: "uptime", label: "Uptime terlama", short: "Uptime" },
+  ]
+  const viewToggle = (
+    <ToggleGroup
+      type="single"
+      variant="outline"
+      value={view}
+      onValueChange={(v) => {
+        if (v) {
+          setView(v as ViewMode)
+          saveView(v as ViewMode)
+        }
+      }}
+      aria-label="Tampilan"
+      className="shrink-0"
+    >
+      <ToggleGroupItem value="list" aria-label="Tampilan list" title="List">
+        <ListIcon />
+      </ToggleGroupItem>
+      <ToggleGroupItem value="grid" aria-label="Tampilan grid" title="Grid">
+        <LayoutGridIcon />
+      </ToggleGroupItem>
+    </ToggleGroup>
+  )
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -144,33 +183,33 @@ export function UsersPage({
       </div>
 
       <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
-        <div className="relative lg:w-72">
-          <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            type="search"
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value)
-              setLimit(PAGE_SIZE)
-            }}
-            placeholder="Cari username, IP, MAC…"
-            aria-label="Cari user"
-            className="pl-8"
-          />
-        </div>
-        <div className="-mx-1 overflow-x-auto px-1">
-          <ToggleGroup
-            type="single"
-            variant="outline"
-            value={status}
-            onValueChange={(v) => {
-              if (v) {
-                setStatus(v as StatusFilter)
+        {/* HP: baris 1 = cari + tampilan; baris 2 = tiga dropdown. Desktop: satu baris. */}
+        <div className="flex gap-2 lg:contents">
+          <div className="relative min-w-0 flex-1 lg:w-72 lg:flex-none">
+            <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="search"
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value)
                 setLimit(PAGE_SIZE)
-              }
-            }}
-            aria-label="Filter status"
-          >
+              }}
+              placeholder="Cari username, IP, MAC…"
+              aria-label="Cari user"
+              className="pl-8"
+            />
+          </div>
+          <div className="lg:hidden">{viewToggle}</div>
+        </div>
+
+        <div className="flex gap-2 lg:hidden">
+          <FilterSelect label="Status" value={status} defaultValue="all" options={statusOptions} onChange={onStatus} className="flex-[1.3]" />
+          <FilterSelect label="Router" value={routerId} defaultValue="all" options={routerOptions} onChange={onRouter} />
+          <FilterSelect label="Urutkan" value={sort} defaultValue="recent" options={sortOptions} onChange={(v) => setSort(v as SortKey)} />
+        </div>
+
+        <div className="-mx-1 hidden overflow-x-auto px-1 lg:block">
+          <ToggleGroup type="single" variant="outline" value={status} onValueChange={(v) => v && onStatus(v)} aria-label="Filter status">
             {STATUS_OPTIONS.map((o) => (
               <ToggleGroupItem key={o.value} value={o.value} className="px-3">
                 {o.label}
@@ -178,56 +217,32 @@ export function UsersPage({
             ))}
           </ToggleGroup>
         </div>
-        <div className="flex gap-2 lg:ml-auto">
-          <Select
-            value={routerId}
-            onValueChange={(v) => {
-              setRouterId(v)
-              setLimit(PAGE_SIZE)
-            }}
-          >
-            <SelectTrigger className="min-w-0 flex-1 lg:w-44 lg:flex-none" aria-label="Router">
+        <div className="hidden gap-2 lg:ml-auto lg:flex">
+          <Select value={routerId} onValueChange={onRouter}>
+            <SelectTrigger className="w-44" aria-label="Router">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Semua router</SelectItem>
-              {routers.map((r) => (
-                <SelectItem key={r.id} value={r.id}>
-                  {r.name}
+              {routerOptions.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
           <Select value={sort} onValueChange={(v) => setSort(v as SortKey)}>
-            <SelectTrigger className="min-w-0 flex-1 lg:w-40 lg:flex-none" aria-label="Urutkan">
+            <SelectTrigger className="w-40" aria-label="Urutkan">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="recent">Event terbaru</SelectItem>
-              <SelectItem value="username">Username A-Z</SelectItem>
-              <SelectItem value="uptime">Uptime terlama</SelectItem>
+              {sortOptions.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
-          <ToggleGroup
-            type="single"
-            variant="outline"
-            value={view}
-            onValueChange={(v) => {
-              if (v) {
-                setView(v as ViewMode)
-                saveView(v as ViewMode)
-              }
-            }}
-            aria-label="Tampilan"
-            className="shrink-0"
-          >
-            <ToggleGroupItem value="list" aria-label="Tampilan list" title="List">
-              <ListIcon />
-            </ToggleGroupItem>
-            <ToggleGroupItem value="grid" aria-label="Tampilan grid" title="Grid">
-              <LayoutGridIcon />
-            </ToggleGroupItem>
-          </ToggleGroup>
+          {viewToggle}
         </div>
       </div>
 

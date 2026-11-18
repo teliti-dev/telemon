@@ -8,6 +8,7 @@
 @theme inline {
     --font-heading: var(--font-sans);
     --font-sans: 'Geist Variable', sans-serif;
+    --color-brand: var(--brand);
     --color-good: var(--status-good);
     --color-warning: var(--status-warning);
     --color-serious: var(--status-serious);
@@ -77,6 +78,8 @@
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
     --radius: 0.625rem;
+    /* Warna pilihan (menu aktif, toggle, tab): biru; beda dari warna status. Kontras 6,8:1 di terang. */
+    --brand: oklch(0.488 0.243 264.376);
     /* Status tetap di light dan dark; selalu dipasangkan dengan ikon + label. */
     --status-good: #0ca30c;
     --status-warning: #fab219;
@@ -93,6 +96,8 @@
 }
 
 .dark {
+    /* Kontras 7,2:1 di kartu gelap. */
+    --brand: oklch(0.72 0.15 255);
     --background: oklch(0.145 0 0);
     --foreground: oklch(0.985 0 0);
     --card: oklch(0.205 0 0);
