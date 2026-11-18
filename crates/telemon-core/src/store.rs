@@ -324,6 +324,11 @@ impl RouterRecord {
             None => crate::router::TlsMode::Plain,
         }
     }
+
+    #[cfg(not(feature = "tls"))]
+    pub fn tls_mode(&self) -> crate::router::TlsMode {
+        crate::router::TlsMode::Plain
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
