@@ -62,7 +62,7 @@ export function UserDetailSheet({
               </SheetDescription>
             </SheetHeader>
             <ScrollArea className="min-h-0 flex-1">
-              <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 p-4 text-sm">
+              <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 p-3 text-[13px]">
                 {fields.map(([k, v]) => (
                   <div key={k} className="contents">
                     <dt className="text-muted-foreground">{k}</dt>
@@ -70,7 +70,7 @@ export function UserDetailSheet({
                   </div>
                 ))}
               </dl>
-              <div className="border-t p-4">
+              <div className="border-t p-3">
                 <h3 className="mb-3 text-sm font-medium">
                   Riwayat event{" "}
                   <span className="font-normal text-muted-foreground">
@@ -82,9 +82,9 @@ export function UserDetailSheet({
                     Belum ada event untuk user ini.
                   </p>
                 ) : (
-                  <ol className="space-y-3">
+                  <ol className="space-y-2">
                     {history.map((e) => (
-                      <li key={e.id} className="flex gap-3 text-sm">
+                      <li key={e.id} className="flex gap-2.5 text-[13px]">
                         <EventIcon type={e.type} className="mt-0.5" />
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-baseline justify-between gap-x-2">

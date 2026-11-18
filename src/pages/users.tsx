@@ -85,8 +85,8 @@ export function UsersPage({
   const shown = filtered.slice(0, limit)
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
         <div className="relative lg:w-72">
           <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -121,7 +121,7 @@ export function UsersPage({
             ))}
           </ToggleGroup>
         </div>
-        <div className="grid grid-cols-2 gap-3 lg:ml-auto lg:flex">
+        <div className="grid grid-cols-2 gap-2 lg:ml-auto lg:flex">
           <Select
             value={routerId}
             onValueChange={(v) => {
@@ -154,7 +154,7 @@ export function UsersPage({
         </div>
       </div>
 
-      <p className="text-sm text-muted-foreground" aria-live="polite">
+      <p className="-mb-1 text-xs text-muted-foreground" aria-live="polite">
         {formatNumber(filtered.length)} user
         {filtered.length > shown.length && `, menampilkan ${formatNumber(shown.length)}`}
       </p>
@@ -170,13 +170,14 @@ export function UsersPage({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="pl-4">Username</TableHead>
+                  <TableHead className="pl-3">Username</TableHead>
+                  <TableHead className="hidden lg:table-cell">Profil</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Router</TableHead>
                   <TableHead>IP</TableHead>
                   <TableHead className="hidden xl:table-cell">MAC</TableHead>
                   <TableHead>Uptime / terlihat</TableHead>
-                  <TableHead className="pr-4">Event terakhir</TableHead>
+                  <TableHead className="pr-3">Event terakhir</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -190,13 +191,13 @@ export function UsersPage({
                       onKeyDown={(e) => e.key === "Enter" && onOpenUser(u.id)}
                       className="cursor-pointer"
                     >
-                      <TableCell className="pl-4">
-                        <div className="font-mono text-[13px]">{u.username}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {u.profile}
-                          {u.comment && ` · ${u.comment}`}
-                        </div>
+                      <TableCell className="pl-3 font-mono text-[13px]" title={u.comment}>
+                        {u.username}
+                        {u.comment && (
+                          <span className="ml-1.5 font-sans text-xs text-muted-foreground">· {u.comment}</span>
+                        )}
                       </TableCell>
+                      <TableCell className="hidden text-muted-foreground lg:table-cell">{u.profile}</TableCell>
                       <TableCell>
                         <UserStatusBadge status={u.status} />
                       </TableCell>
@@ -205,15 +206,10 @@ export function UsersPage({
                       <TableCell className="hidden font-mono text-[13px] xl:table-cell">
                         {u.callerId ?? "-"}
                       </TableCell>
-                      <TableCell className="tabular-nums">
+                      <TableCell className={u.connectedAt ? "tabular-nums" : "text-muted-foreground tabular-nums"}>
                         {t.value}
-                        {t.label && (
-                          <span className="ml-1 text-xs text-muted-foreground">
-                            {t.label === "Uptime" ? "" : "(terlihat)"}
-                          </span>
-                        )}
                       </TableCell>
-                      <TableCell className="pr-4">
+                      <TableCell className="pr-3">
                         {u.lastEvent && u.lastEventAt ? (
                           <span className="flex items-center gap-2">
                             <EventIcon type={u.lastEvent} />
@@ -234,7 +230,7 @@ export function UsersPage({
           </Card>
 
           {/* Mobile: kartu */}
-          <ul className="flex flex-col gap-2 md:hidden">
+          <ul className="flex flex-col gap-1.5 md:hidden">
             {shown.map((u) => {
               const t = uptimeOrSeen(u, now)
               return (
@@ -242,17 +238,17 @@ export function UsersPage({
                   <button
                     type="button"
                     onClick={() => onOpenUser(u.id)}
-                    className="w-full rounded-xl border bg-card p-3 text-left text-sm active:bg-muted/50"
+                    className="w-full rounded-lg border bg-card px-2.5 py-2 text-left text-sm active:bg-muted/50"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <span className="min-w-0 font-mono text-[13px] break-all">{u.username}</span>
                       <UserStatusBadge status={u.status} className="shrink-0" />
                     </div>
-                    <div className="mt-1 text-xs text-muted-foreground">
+                    <div className="mt-0.5 truncate text-xs text-muted-foreground">
                       {routerById.get(u.routerId)?.name} · {u.profile}
                       {u.address && ` · ${u.address}`}
                     </div>
-                    <div className="mt-2 flex items-center justify-between gap-2 text-xs">
+                    <div className="mt-1 flex items-center justify-between gap-2 text-xs">
                       <span className="text-muted-foreground">
                         {t.label} <span className="text-foreground tabular-nums">{t.value}</span>
                       </span>

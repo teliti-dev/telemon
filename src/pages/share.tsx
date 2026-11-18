@@ -43,9 +43,9 @@ const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 function UrlBlock({ url, label }: { url: string; label: string }) {
   return (
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
       <div className="w-fit shrink-0 rounded-lg border bg-white p-2">
-        <QRCodeSVG value={url} size={136} marginSize={0} aria-label={`QR ${label}`} />
+        <QRCodeSVG value={url} size={112} marginSize={0} aria-label={`QR ${label}`} />
       </div>
       <div className="grid min-w-0 flex-1 gap-2">
         <Label className="text-xs text-muted-foreground">{label}</Label>
@@ -108,7 +108,7 @@ export function SharePage() {
   }
 
   return (
-    <div className="grid gap-4 md:gap-6 xl:grid-cols-2">
+    <div className="grid gap-3 xl:grid-cols-2">
       {/* Serve ke browser (LAN) */}
       <Card>
         <CardHeader>
@@ -129,7 +129,7 @@ export function SharePage() {
             />
           </CardAction>
         </CardHeader>
-        <CardContent className="grid gap-5">
+        <CardContent className="grid gap-3.5">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_8rem]">
             <div className="grid gap-2">
               <Label htmlFor="bind">Bisa dibuka dari</Label>
@@ -210,7 +210,7 @@ export function SharePage() {
             />
           </CardAction>
         </CardHeader>
-        <CardContent className="grid gap-5">
+        <CardContent className="grid gap-3.5">
           <Alert>
             <ShieldAlertIcon />
             <AlertTitle>Data pelanggan bisa diakses dari internet</AlertTitle>

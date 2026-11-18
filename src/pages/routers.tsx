@@ -53,7 +53,7 @@ export function RoutersPage() {
   const [removing, setRemoving] = React.useState<RouterInfo | null>(null)
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
           Telemon hanya membaca router lewat RouterOS API.
@@ -65,7 +65,7 @@ export function RoutersPage() {
         </Button>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2 md:gap-4 2xl:grid-cols-3">
+      <div className="grid gap-2 md:grid-cols-2 md:gap-3 xl:grid-cols-3">
         {routers.map((r) => {
           const mine = users.filter((u) => u.routerId === r.id)
           const c = { active: 0, inactive: 0, disabled: 0 }
@@ -83,7 +83,7 @@ export function RoutersPage() {
             ["Polling", r.lastPollAt ? formatRelative(r.lastPollAt, now) : "Belum pernah"],
           ]
           return (
-            <Card key={r.id} className="gap-4">
+            <Card key={r.id} className="gap-2.5">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <span className="truncate">{r.name}</span>
@@ -111,14 +111,14 @@ export function RoutersPage() {
                   </DropdownMenu>
                 </CardAction>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-2.5">
                 {r.error && (
                   <Alert variant="destructive">
                     <TriangleAlertIcon />
                     <AlertDescription>{r.error}</AlertDescription>
                   </Alert>
                 )}
-                <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[13px] sm:grid-cols-4">
                   {facts.map(([k, v]) => (
                     <div key={k} className="min-w-0">
                       <dt className="text-xs text-muted-foreground">{k}</dt>
@@ -126,7 +126,7 @@ export function RoutersPage() {
                     </div>
                   ))}
                 </dl>
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                   <UserMixBar active={c.active} inactive={c.inactive} disabled={c.disabled} />
                   <p className="text-xs text-muted-foreground">
                     <span className="font-medium text-foreground tabular-nums">{c.active}</span> aktif ·{" "}

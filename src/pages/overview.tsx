@@ -95,13 +95,13 @@ export function OverviewPage({ onOpenUser }: { onOpenUser: (id: string) => void 
     .sort((a, b) => b[1].n - a[1].n || b[1].last - a[1].last)
     .slice(0, 6)
 
-  const recent = events.slice(0, 8)
+  const recent = events.slice(0, 10)
 
   return (
-    <div className="flex flex-col gap-4 md:gap-6">
+    <div className="flex flex-col gap-3">
       <section
         aria-label="Ringkasan angka"
-        className="grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-5"
+        className="grid grid-cols-2 gap-2 md:gap-3 lg:grid-cols-5"
       >
         {tiles.map((t, i) => (
           <a
@@ -112,30 +112,28 @@ export function OverviewPage({ onOpenUser }: { onOpenUser: (id: string) => void 
               (i === 0 ? " col-span-2 lg:col-span-1" : "")
             }
           >
-            <Card className="h-full gap-2 py-4 transition-colors group-hover:bg-muted/40">
-              <CardHeader className="px-4">
-                <CardDescription className="flex items-center gap-2">
-                  <t.icon className="size-4" />
+            <Card className="h-full gap-1 py-2.5 transition-colors group-hover:bg-muted/40">
+              <CardHeader className="px-3">
+                <CardDescription className="flex items-center gap-1.5 text-xs">
+                  <t.icon className="size-3.5" />
                   {t.label}
                 </CardDescription>
               </CardHeader>
-              <CardContent className="px-4">
-                <div className="text-2xl font-semibold tabular-nums md:text-3xl">
-                  {t.value}
-                </div>
-                <p className="mt-1 truncate text-xs text-muted-foreground">{t.note}</p>
+              <CardContent className="flex items-baseline gap-2 px-3">
+                <div className="text-xl font-semibold tabular-nums">{t.value}</div>
+                <p className="min-w-0 truncate text-xs text-muted-foreground">{t.note}</p>
               </CardContent>
             </Card>
           </a>
         ))}
       </section>
 
-      <section aria-label="Router" className="grid gap-3 sm:grid-cols-2 md:gap-4 xl:grid-cols-4">
+      <section aria-label="Router" className="grid gap-2 sm:grid-cols-2 md:gap-3 xl:grid-cols-4">
         {routers.map((r) => {
           const c = countByStatus(users.filter((u) => u.routerId === r.id))
           return (
-            <Card key={r.id} className="gap-3 py-4">
-              <CardHeader className="px-4">
+            <Card key={r.id} className="gap-2 py-2.5">
+              <CardHeader className="px-3">
                 <CardTitle className="truncate">
                   <a href={href("user", { router: r.id })} className="hover:underline">
                     {r.name}
@@ -148,7 +146,7 @@ export function OverviewPage({ onOpenUser }: { onOpenUser: (id: string) => void 
                   <RouterStatusBadge status={r.status} />
                 </CardAction>
               </CardHeader>
-              <CardContent className="space-y-2 px-4">
+              <CardContent className="space-y-1.5 px-3">
                 <UserMixBar active={c.active} inactive={c.inactive} disabled={c.disabled} />
                 <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
                   <span>
@@ -172,9 +170,9 @@ export function OverviewPage({ onOpenUser }: { onOpenUser: (id: string) => void 
         })}
       </section>
 
-      <div className="grid gap-4 md:gap-6 lg:grid-cols-3">
+      <div className="grid gap-3 lg:grid-cols-3">
         <Card className="gap-0 py-0 lg:col-span-2">
-          <CardHeader className="border-b px-4 py-3 [.border-b]:pb-3">
+          <CardHeader className="border-b px-3 py-2 [.border-b]:pb-2">
             <CardTitle>Event terbaru</CardTitle>
             <CardAction>
               <Button variant="ghost" size="sm" asChild>
@@ -196,20 +194,18 @@ export function OverviewPage({ onOpenUser }: { onOpenUser: (id: string) => void 
                       type="button"
                       disabled={!user}
                       onClick={() => user && onOpenUser(user.id)}
-                      className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm hover:bg-muted/50 disabled:hover:bg-transparent"
+                      className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-sm hover:bg-muted/50 disabled:hover:bg-transparent"
                     >
                       <EventIcon type={e.type} />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate">
-                          <span className="font-medium">{e.username ?? routerById.get(e.routerId)?.name}</span>{" "}
-                          <span className="text-muted-foreground">
-                            {EVENT_META[e.type].label.toLowerCase()}
-                          </span>
-                        </div>
-                        <div className="truncate text-xs text-muted-foreground">
-                          {routerById.get(e.routerId)?.name}
-                        </div>
+                      <div className="min-w-0 flex-1 truncate">
+                        <span className="font-medium">{e.username ?? routerById.get(e.routerId)?.name}</span>{" "}
+                        <span className="text-muted-foreground">
+                          {EVENT_META[e.type].label.toLowerCase()}
+                        </span>
                       </div>
+                      <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">
+                        {routerById.get(e.routerId)?.name}
+                      </span>
                       <time className="shrink-0 text-xs text-muted-foreground tabular-nums">
                         {formatRelative(e.at, now)}
                       </time>
@@ -222,13 +218,13 @@ export function OverviewPage({ onOpenUser }: { onOpenUser: (id: string) => void 
         </Card>
 
         <Card className="gap-0 py-0">
-          <CardHeader className="border-b px-4 py-3 [.border-b]:pb-3">
+          <CardHeader className="border-b px-3 py-2 [.border-b]:pb-2">
             <CardTitle>Sering gagal auth</CardTitle>
             <CardDescription>24 jam terakhir</CardDescription>
           </CardHeader>
           <CardContent className="px-0">
             {topFails.length === 0 ? (
-              <p className="px-4 py-6 text-sm text-muted-foreground">
+              <p className="px-3 py-4 text-sm text-muted-foreground">
                 Tidak ada gagal auth.
               </p>
             ) : (
@@ -238,7 +234,7 @@ export function OverviewPage({ onOpenUser }: { onOpenUser: (id: string) => void 
                     <button
                       type="button"
                       onClick={() => onOpenUser(k)}
-                      className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm hover:bg-muted/50"
+                      className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-sm hover:bg-muted/50"
                     >
                       <div className="min-w-0 flex-1">
                         <div className="truncate font-mono text-[13px]">{f.username}</div>

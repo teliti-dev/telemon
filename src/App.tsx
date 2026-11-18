@@ -69,7 +69,7 @@ function Content() {
   return (
     <>
       <SiteHeader title={TITLES[page]} />
-      <main className="flex-1 p-4 md:p-6">{body}</main>
+      <main className="flex-1 p-3 md:p-4">{body}</main>
       <UserDetailSheet userId={openUser} onOpenChange={(o) => !o && setOpenUser(null)} />
     </>
   )

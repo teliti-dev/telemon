@@ -60,8 +60,8 @@ export function EventsPage({
   const shown = filtered.slice(0, limit)
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-2">
         <div className="-mx-1 overflow-x-auto px-1">
           <ToggleGroup
             type="multiple"
@@ -80,7 +80,7 @@ export function EventsPage({
             ))}
           </ToggleGroup>
         </div>
-        <div className="flex flex-col gap-3 sm:flex-row">
+        <div className="flex flex-col gap-2 sm:flex-row">
           <div className="relative sm:w-72">
             <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -92,7 +92,7 @@ export function EventsPage({
               className="pl-8"
             />
           </div>
-          <div className="grid grid-cols-2 gap-3 sm:ml-auto sm:flex">
+          <div className="grid grid-cols-2 gap-2 sm:ml-auto sm:flex">
             <Select value={routerId} onValueChange={setRouterId}>
               <SelectTrigger className="w-full sm:w-44" aria-label="Router">
                 <SelectValue />
@@ -117,7 +117,7 @@ export function EventsPage({
         </div>
       </div>
 
-      <p className="text-sm text-muted-foreground" aria-live="polite">
+      <p className="-mb-1 text-xs text-muted-foreground" aria-live="polite">
         {formatNumber(filtered.length)} event
         {paused && newSincePause > 0 && (
           <>
@@ -146,10 +146,10 @@ export function EventsPage({
               return (
                 <li
                   key={e.id}
-                  className="grid grid-cols-1 gap-x-3 gap-y-0.5 px-4 py-2.5 text-sm md:grid-cols-[5.5rem_9.5rem_minmax(10rem,14rem)_8rem_1fr] md:items-center"
+                  className="grid grid-cols-1 gap-x-3 gap-y-0.5 px-3 py-1.5 text-[13px] md:grid-cols-[4.5rem_8.5rem_minmax(9rem,13rem)_7rem_1fr] md:items-center"
                 >
                   <time
-                    className="order-2 pl-6 text-xs text-muted-foreground tabular-nums md:order-none md:pl-0 md:text-sm"
+                    className="order-2 pl-6 text-xs text-muted-foreground tabular-nums md:order-none md:pl-0 md:text-[13px]"
                     dateTime={new Date(e.at).toISOString()}
                     title={formatDateTime(e.at)}
                   >
