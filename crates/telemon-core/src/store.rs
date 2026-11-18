@@ -213,6 +213,20 @@ pub struct UserRow {
     pub deleted_reason: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProfileRow {
+    pub id: String,
+    pub router_id: String,
+    pub name: String,
+    pub rate_limit: Option<String>,
+    pub local_address: Option<String>,
+    pub remote_address: Option<String>,
+    pub only_one: Option<String>,
+    pub comment: Option<String>,
+    pub deleted_at: Option<i64>,
+    pub deleted_reason: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct SyncReport {
     pub added: u32,
@@ -1003,6 +1017,30 @@ impl Store {
                 id: r.get(0)?,
                 entry: AuditEntry { at_ms: r.get(1)?, actor: r.get(2)?, router_id: r.get(3)?, action: r.get(4)?, target: r.get(5)?, title: r.get(6)?, changes: decode_changes(&changes), outcome },
             })
+        })?;
+        rows.collect()
+    }
+
+    pub fn list_profiles(&self, router_id: Option<&str>, include_deleted: bool) -> Result<Vec<ProfileRow>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, router_id, name, rate_limit, local_address, remote_address, only_one, comment, deleted_at, deleted_reason
+             FROM profiles WHERE (?1 IS NULL OR router_id = ?1) AND (?2 OR deleted_at IS NULL) ORDER BY name COLLATE NOCASE",
+        )?;
+        let rows = stmt.query_map(params![router_id, include_deleted], |r| {
+            Ok(ProfileRow { id: r.get(0)?, router_id: r.get(1)?, name: r.get(2)?, rate_limit: r.get(3)?, local_address: r.get(4)?, remote_address: r.get(5)?, only_one: r.get(6)?, comment: r.get(7)?, deleted_at: r.get(8)?, deleted_reason: r.get(9)? })
+        })?;
+        rows.collect()
+    }
+
+    /// Semua catatan lokal user: (id user, catatan).
+    pub fn list_user_metas(&self) -> Result<Vec<(String, UserMeta)>> {
+        let mut stmt = self.conn.prepare("SELECT user_id, customer_name, phone, note, tags, updated_at FROM user_meta")?;
+        let rows = stmt.query_map([], |r| {
+            let tags: String = r.get(4)?;
+            Ok((
+                r.get::<_, String>(0)?,
+                UserMeta { customer_name: r.get(1)?, phone: r.get(2)?, note: r.get(3)?, tags: tags.split('\u{1f}').filter(|t| !t.is_empty()).map(String::from).collect(), updated_at: r.get(5)? },
+            ))
         })?;
         rows.collect()
     }

@@ -1,0 +1,20 @@
+[package]
+name = "telemon-http"
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-only"
+description = "Server HTTP Telemon: API JSON, login, WebSocket (mode Serve/Publik)"
+
+[dependencies]
+axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio", "ws", "query", "matched-path"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+telemon-core = { version = "0.1.0", path = "../telemon-core" }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "net", "time", "sync"] }
+tower-http = { version = "0.7.1", default-features = false, features = ["fs"] }
+
+[dev-dependencies]
+futures-util = "0.3.34"
+http-body-util = "0.1.5"
+tokio-tungstenite = "0.30.0"
+tower = { version = "0.5.3", features = ["util"] }

@@ -19,7 +19,7 @@ pub use model::{PppActive, PppProfile, PppSecret};
 pub use router::{TlsMode, Error, MikrotikClient, Row, RouterApi, ppp_active, ppp_profiles, ppp_secrets};
 pub use events::{Detector, Event, EventKind, LogLine};
 pub use poller::{poll_once, poll_once_status, run_poller, user_status, UserStatus};
-pub use store::{NewRouter, RouterError, RouterPatch, RouterRecord, RouterRemoved, RouterStatus, normalize_fingerprint, PasswordError, AuditEntry, AuditOutcome, AuditQuery, StoredAudit, EventQuery, PurgeCounts, RetentionPolicy, Store, StoredEvent, SyncReport, UserMeta, UserRow};
+pub use store::{ProfileRow, NewRouter, RouterError, RouterPatch, RouterRecord, RouterRemoved, RouterStatus, normalize_fingerprint, PasswordError, AuditEntry, AuditOutcome, AuditQuery, StoredAudit, EventQuery, PurgeCounts, RetentionPolicy, Store, StoredEvent, SyncReport, UserMeta, UserRow};
 pub use monitor::{MonitorConfig, SharedStore, run_purge, run_router, sync_router};
 pub use write::{Change, Plan, apply, apply_audited};
 pub use vault::{VaultError, generate_key};
