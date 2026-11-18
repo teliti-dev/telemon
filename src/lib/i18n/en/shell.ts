@@ -30,4 +30,7 @@ export default {
   "Buka {label}": "Open {label}",
   "Gagal memuat data": "Failed to load data",
   "Lainnya": "More",
+  "Ubah peran {user}": "Change role of {user}",
+  "Reset password {user}": "Reset password of {user}",
+  "User ini tidak ada lagi atau Anda tidak boleh melihatnya.": "This user no longer exists or you are not allowed to view it.",
 } satisfies Record<string, string>

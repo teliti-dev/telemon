@@ -2,14 +2,11 @@ import * as React from "react"
 import { CheckCircle2Icon, InfoIcon } from "lucide-react"
 
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { FormFooter, FormHeader } from "@/components/form-layout"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import {
@@ -65,7 +62,7 @@ export function ImportDialog({
   )
 }
 
-function ImportBody({
+export function ImportBody({
   defaultRouterId,
   onClose,
 }: {
@@ -101,12 +98,7 @@ function ImportBody({
 
   return (
     <>
-      <DialogHeader>
-        <DialogTitle>{t("Import dari Mikrotik")}</DialogTitle>
-        <DialogDescription>
-          {t("Membaca")} <code>/ppp/secret</code> {t("dan")} <code>/ppp/profile</code> {t("dari router.")}
-        </DialogDescription>
-      </DialogHeader>
+      <FormHeader title={t("Import dari Mikrotik")} description={<>{t("Membaca")} <code>/ppp/secret</code> {t("dan")} <code>/ppp/profile</code> {t("dari router.")}</>} />
 
       <Alert>
         <InfoIcon />
@@ -160,14 +152,14 @@ function ImportBody({
         </ul>
       )}
 
-      <DialogFooter>
+      <FormFooter>
         <Button variant="outline" onClick={onClose} disabled={busy}>
           {results && !busy ? t("Tutup") : t("Batal")}
         </Button>
         <Button onClick={run} disabled={busy || online.length === 0 || !!importReason}>
           {busy ? t("Membaca router…") : results ? t("Import lagi") : t("Import")}
         </Button>
-      </DialogFooter>
+      </FormFooter>
     </>
   )
 }

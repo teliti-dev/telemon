@@ -19,10 +19,12 @@ import { useNavItems } from "@/hooks/use-nav-items"
 import { tk, useLang, useT } from "@/lib/i18n"
 import { useAuth } from "@/lib/auth-context"
 import { pageDenied } from "@/lib/permissions"
-import { navigate, useRoute, type Page } from "@/lib/route"
+import { useIsDesktop } from "@/hooks/use-media-query"
+import { navigate, navigatePath, useRoute, type Page } from "@/lib/route"
 import { StoreProvider } from "@/lib/store"
 import { useStore } from "@/lib/store-context"
 import { AccountPage } from "@/pages/account"
+import { AppearancePage } from "@/pages/appearance"
 import { AdminPage } from "@/pages/admin"
 import { EventsPage } from "@/pages/events"
 import { OverviewPage } from "@/pages/overview"
@@ -30,7 +32,9 @@ import { ProfilesPage } from "@/pages/profiles"
 import { RoutersPage } from "@/pages/routers"
 import { SettingsPage } from "@/pages/settings"
 import { SharePage } from "@/pages/share"
+import { AccountFormPage, ImportPage, ProfileFormPage, RoleFormPage, RouterFormPage, UserFormPage } from "@/pages/subpages"
 import { UsersPage } from "@/pages/users"
+import { UserDetailPage } from "@/components/user-detail-sheet"
 
 const TITLES: Record<Page, string> = {
   ringkasan: tk("Ringkasan"),
@@ -42,6 +46,8 @@ const TITLES: Record<Page, string> = {
   admin: tk("Admin"),
   pengaturan: tk("Pengaturan"),
   akun: tk("Akun saya"),
+  import: tk("Import dari Mikrotik"),
+  appearance: tk("Appearance"),
 }
 
 function NoAccess({ reason }: { reason: string }) {
@@ -66,7 +72,8 @@ function NoAccess({ reason }: { reason: string }) {
 function Content() {
   const t = useT()
   const lang = useLang()
-  const { page, params, hash } = useRoute()
+  const { page, segments, params, hash } = useRoute()
+  const isDesktop = useIsDesktop()
   const { status, error, reload, access } = useStore()
   const { session } = useAuth()
   const ai = useAiChat()
@@ -76,6 +83,46 @@ function Content() {
   React.useEffect(() => {
     document.title = `${t(TITLES[page]) /* i18n-ignore: kunci tk */} · Telemon`
   }, [page, lang, t])
+
+  const openUserFn = (id: string) => (isDesktop ? setOpenUser(id) : navigatePath("user", [id]))
+
+  // Di HP, formulir dan detail yang di desktop berupa dialog/drawer menjadi halaman bertingkat.
+  function renderPage(): React.ReactNode {
+    const [s0, s1, s2] = segments
+    if (page === "appearance") return <AppearancePage />
+    if (page === "import") return <ImportPage router={params.get("router") ?? undefined} />
+    if (page === "user") {
+      if (s0 === "new") return <UserFormPage mode="create" router={params.get("router") ?? undefined} />
+      if (s0 && s1 === "edit") return <UserFormPage mode="edit" userId={s0} />
+      if (s0) return <UserDetailPage userId={s0} onBack={() => navigate("user")} />
+      return <UsersPage key={hash} params={params} onOpenUser={openUserFn} />
+    }
+    if (page === "profile") {
+      if (s0 === "new") return <ProfileFormPage mode="create" router={params.get("router") ?? undefined} />
+      if (s0 && s1 === "edit") return <ProfileFormPage mode="edit" profileId={s0} />
+      return <ProfilesPage key={hash} params={params} />
+    }
+    if (page === "router") {
+      if (s0 === "new") return <RouterFormPage />
+      if (s0 && s1 === "edit") return <RouterFormPage routerId={s0} />
+      return <RoutersPage />
+    }
+    if (page === "admin") {
+      if (s0 === "account" && s1 === "new") return <AccountFormPage kind="new" />
+      if (s0 === "account" && s1 && s2 === "role") return <AccountFormPage kind="role" accountId={s1} />
+      if (s0 === "account" && s1 && s2 === "password") return <AccountFormPage kind="password" accountId={s1} />
+      if (s0 === "role" && s1 === "new") return <RoleFormPage />
+      if (s0 === "role" && s1 && s2 === "edit") return <RoleFormPage roleId={s1} />
+      return <AdminPage />
+    }
+    switch (page) {
+      case "ringkasan": return <OverviewPage onOpenUser={openUserFn} />
+      case "event": return <EventsPage key={hash} params={params} onOpenUser={openUserFn} />
+      case "berbagi": return <SharePage />
+      case "pengaturan": return <SettingsPage />
+      default: return <AccountPage />
+    }
+  }
 
   let body: React.ReactNode
   if (denied) {
@@ -97,17 +144,7 @@ function Content() {
     )
   } else {
     // key = hash: tautan dengan filter baru (mis. dari Ringkasan) mereset state halaman.
-    body = {
-      ringkasan: <OverviewPage onOpenUser={setOpenUser} />,
-      user: <UsersPage key={hash} params={params} onOpenUser={setOpenUser} />,
-      profile: <ProfilesPage key={hash} params={params} />,
-      event: <EventsPage key={hash} params={params} onOpenUser={setOpenUser} />,
-      router: <RoutersPage />,
-      berbagi: <SharePage />,
-      admin: <AdminPage />,
-      pengaturan: <SettingsPage />,
-      akun: <AccountPage />,
-    }[page]
+    body = renderPage()
   }
 
   return (
@@ -121,7 +158,7 @@ function Content() {
       </main>
       <BottomNav />
       <AiChatDock />
-      <UserDetailSheet userId={openUser} onOpenChange={(o) => !o && setOpenUser(null)} />
+      {isDesktop && <UserDetailSheet userId={openUser} onOpenChange={(o) => !o && setOpenUser(null)} />}
     </div>
   )
 }

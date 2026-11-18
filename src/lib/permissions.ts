@@ -41,6 +41,7 @@ const PAGE_RESOURCE: Partial<Record<Page, Resource>> = {
   router: "router",
   admin: "admin",
   pengaturan: "pengaturan",
+  import: "router",
 }
 
 /** Alasan halaman tidak boleh dibuka; null bila boleh. */

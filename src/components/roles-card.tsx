@@ -15,9 +15,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { useIsDesktop } from "@/hooks/use-media-query"
 import { useApi } from "@/lib/api-context"
 import { useT } from "@/lib/i18n"
 import { LEVEL_SHORT, RESOURCES } from "@/lib/permissions"
+import { navigatePath } from "@/lib/route"
 import type { Level, Role } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -42,6 +44,7 @@ function LevelCell({ level }: { level: Level }) {
 export function RolesCard({ readOnly }: { readOnly?: boolean }) {
   const t = useT()
   const { api } = useApi()
+  const isDesktop = useIsDesktop()
   const [roles, setRoles] = React.useState<Role[] | null>(null)
   const [dialog, setDialog] = React.useState<{ role?: Role } | null>(null)
   const [removing, setRemoving] = React.useState<Role | null>(null)
@@ -65,7 +68,7 @@ export function RolesCard({ readOnly }: { readOnly?: boolean }) {
           {t("Izin per menu untuk akun yang masuk lewat browser. Bawaan tanpa akses; centang Lihat atau Ubah per menu. Aplikasi desktop tidak dibatasi peran. Pengelola peran tidak bisa memberi izin melebihi miliknya atau mengubah perannya sendiri.")}
         </CardDescription>
         <CardAction>
-          <Button onClick={() => setDialog({})} disabled={readOnly}>
+          <Button onClick={() => (isDesktop ? setDialog({}) : navigatePath("admin", ["role", "new"]))} disabled={readOnly}>
             <PlusIcon /> <span className="hidden sm:inline">{t("Tambah peran")}</span>
             <span className="sm:hidden">{t("Tambah")}</span>
           </Button>
@@ -111,7 +114,7 @@ export function RolesCard({ readOnly }: { readOnly?: boolean }) {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem onSelect={() => setDialog({ role })}>
+                          <DropdownMenuItem onSelect={() => (isDesktop ? setDialog({ role }) : navigatePath("admin", ["role", role.id, "edit"]))}>
                             <PencilIcon /> {t("Edit")}
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />

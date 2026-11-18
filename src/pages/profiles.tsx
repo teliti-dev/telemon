@@ -45,7 +45,8 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { useInfiniteList } from "@/hooks/use-infinite-list"
 import { useUpdateGate, useWriteGate } from "@/hooks/use-write-gate"
 import { formatNumber } from "@/lib/format"
-import { navigate } from "@/lib/route"
+import { useIsDesktop } from "@/hooks/use-media-query"
+import { navigate, navigatePath } from "@/lib/route"
 import { useStore } from "@/lib/store-context"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -65,6 +66,8 @@ export function ProfilesPage({ params }: { params: URLSearchParams }) {
   const [view, setView] = React.useState<View>("active")
   const [form, setForm] = React.useState<{ mode: "create" | "edit"; profile?: PppProfile } | null>(null)
   const [importing, setImporting] = React.useState(false)
+  const isDesktop = useIsDesktop()
+  const routerParams = routerId !== "all" ? { router: routerId } : undefined
   const [removing, setRemoving] = React.useState<PppProfile | null>(null)
 
   const usage = React.useMemo(() => {
@@ -125,7 +128,7 @@ export function ProfilesPage({ params }: { params: URLSearchParams }) {
             </DropdownMenuItem>
           ) : (
             <>
-              <DropdownMenuItem disabled={!!reason} onSelect={() => setForm({ mode: "edit", profile: p })}>
+              <DropdownMenuItem disabled={!!reason} onSelect={() => (isDesktop ? setForm({ mode: "edit", profile: p }) : navigatePath("profile", [p.id, "edit"]))}>
                 <PencilIcon /> {t("Edit")}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
@@ -147,13 +150,13 @@ export function ProfilesPage({ params }: { params: URLSearchParams }) {
       <div className="flex flex-wrap items-center gap-2">
         <UsersSectionNav page="profile" />
         <div className="ml-auto flex gap-2">
-          <Button variant="outline" onClick={() => setImporting(true)} disabled={!!importReason} title={importReason ?? undefined}>
+          <Button variant="outline" onClick={() => (isDesktop ? setImporting(true) : navigatePath("import", [], routerParams))} disabled={!!importReason} title={importReason ?? undefined}>
             <DownloadIcon />
             <span className="hidden sm:inline">{t("Import dari Mikrotik")}</span>
             <span className="sm:hidden">{t("Import")}</span>
           </Button>
           <Button
-            onClick={() => setForm({ mode: "create" })}
+            onClick={() => (isDesktop ? setForm({ mode: "create" }) : navigatePath("profile", ["new"], routerParams))}
             disabled={!canWriteAny}
             title={canWriteAny ? undefined : (profileReason ?? t("Tidak ada router dengan hak write"))}
           >

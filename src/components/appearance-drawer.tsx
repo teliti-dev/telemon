@@ -11,9 +11,11 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet"
 import { setPreviewAccess, type Access } from "@/lib/access"
+import { useIsDesktop } from "@/hooks/use-media-query"
 import { useApi } from "@/lib/api-context"
 import { setLang, tk, useLang, useT, type Lang } from "@/lib/i18n"
 import { getScale, SCALES, setScale, type Scale } from "@/lib/ui-scale"
+import { navigate } from "@/lib/route"
 import { cn } from "@/lib/utils"
 import * as React from "react"
 
@@ -77,8 +79,8 @@ const LANGS: Option<Lang>[] = [
   { value: "en", label: "English" }, // i18n-ignore: nama bahasa
 ]
 
-/** Drawer di kanan: tema (terang, gelap, ikuti sistem) dan ukuran tampilan. */
-export function AppearanceDrawer({ iconOnly }: { iconOnly?: boolean }) {
+/** Isi pengaturan tampilan: tema, bahasa, ukuran, dan (mode contoh) pratinjau akses. Dipakai drawer dan halaman. */
+export function AppearanceBody() {
   const t = useT()
   const lang = useLang()
   const { theme, setTheme } = useTheme()
@@ -86,69 +88,93 @@ export function AppearanceDrawer({ iconOnly }: { iconOnly?: boolean }) {
   const [scale, setScaleState] = React.useState<Scale>(getScale)
 
   return (
+    <div className="grid gap-6">
+      <section>
+        <h3 className="mb-2 text-sm font-medium">{t("Tema")}</h3>
+        <ChoiceGroup
+          label={t("Tema")}
+          value={theme as Theme}
+          options={THEMES.map((o) => ({ ...o, label: t(o.label) /* i18n-ignore: kunci tk */ }))}
+          onChange={setTheme}
+          columns={3}
+        />
+      </section>
+
+      <section>
+        <h3 className="mb-2 text-sm font-medium">{t("Bahasa")}</h3>
+        <ChoiceGroup label={t("Bahasa")} value={lang} options={LANGS} onChange={setLang} columns={2} />
+      </section>
+
+      <section>
+        <h3 className="mb-2 text-sm font-medium">{t("Ukuran tampilan")}</h3>
+        <ChoiceGroup
+          label={t("Ukuran tampilan")}
+          value={scale}
+          options={SCALES.map((s) => ({ value: s.value, label: t(s.label) /* i18n-ignore: kunci tk */, hint: `${s.value}%` }))}
+          onChange={(v) => {
+            setScaleState(v)
+            setScale(v)
+          }}
+          columns={2}
+        />
+        <p className="mt-2 text-xs text-muted-foreground">{t("Menskalakan seluruh tampilan, bukan hanya teks.")}</p>
+      </section>
+
+      {api.kind === "mock" && (
+        <section className="rounded-xl border border-dashed p-3">
+          <h3 className="mb-1 text-sm font-medium">{t("Pratinjau data contoh")}</h3>
+          <p className="mb-2 text-xs text-muted-foreground">
+            {t("Hanya ada di mode data contoh. Meniru aplikasi desktop (tanpa login) atau akses lewat browser (login, izin mengikuti peran).")}
+          </p>
+          <ChoiceGroup<Access>
+            label={t("Pratinjau akses")}
+            value={access}
+            options={[
+              { value: "desktop", label: t("Aplikasi desktop"), hint: t("tanpa login") },
+              { value: "remote", label: t("Jarak jauh"), hint: t("login, sesuai peran") },
+            ]}
+            onChange={(v) => v !== access && setPreviewAccess(v)}
+            columns={2}
+          />
+        </section>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Desktop/tablet: drawer di kanan. HP: tombolnya membuka halaman Appearance (bukan drawer).
+ * `iconOnly` (halaman login) selalu memakai drawer.
+ */
+export function AppearanceDrawer({ iconOnly }: { iconOnly?: boolean }) {
+  const t = useT()
+  const isDesktop = useIsDesktop()
+
+  const trigger = (onClick?: () => void) => (
+    <Button
+      variant="ghost"
+      size={iconOnly ? "icon" : "sm"}
+      className={iconOnly ? undefined : "gap-1.5 px-2"}
+      aria-label={t("Appearance")}
+      onClick={onClick}
+    >
+      <PaletteIcon />
+      {!iconOnly && <span className="hidden sm:inline">{t("Appearance")}</span>}
+    </Button>
+  )
+
+  if (!isDesktop && !iconOnly) return trigger(() => navigate("appearance"))
+
+  return (
     <Sheet>
-      <SheetTrigger asChild>
-        <Button variant="ghost" size={iconOnly ? "icon" : "sm"} className={iconOnly ? undefined : "gap-1.5 px-2"} aria-label={t("Appearance")}>
-          <PaletteIcon />
-          {!iconOnly && <span className="hidden sm:inline">{t("Appearance")}</span>}
-        </Button>
-      </SheetTrigger>
+      <SheetTrigger asChild>{trigger()}</SheetTrigger>
       <SheetContent className="gap-0 data-[side=right]:w-full pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
         <SheetHeader className="border-b px-4 py-3 pr-12">
           <SheetTitle>{t("Appearance")}</SheetTitle>
           <SheetDescription>{t("Tema, bahasa, dan ukuran tampilan. Pilihan disimpan di browser ini.")}</SheetDescription>
         </SheetHeader>
-
-        <div className="grid gap-6 overflow-y-auto p-4">
-          <section>
-            <h3 className="mb-2 text-sm font-medium">{t("Tema")}</h3>
-            <ChoiceGroup
-              label={t("Tema")}
-              value={theme as Theme}
-              options={THEMES.map((o) => ({ ...o, label: t(o.label) /* i18n-ignore: kunci tk */ }))}
-              onChange={setTheme}
-              columns={3}
-            />
-          </section>
-
-          <section>
-            <h3 className="mb-2 text-sm font-medium">{t("Bahasa")}</h3>
-            <ChoiceGroup label={t("Bahasa")} value={lang} options={LANGS} onChange={setLang} columns={2} />
-          </section>
-
-          <section>
-            <h3 className="mb-2 text-sm font-medium">{t("Ukuran tampilan")}</h3>
-            <ChoiceGroup
-              label={t("Ukuran tampilan")}
-              value={scale}
-              options={SCALES.map((s) => ({ value: s.value, label: t(s.label) /* i18n-ignore: kunci tk */, hint: `${s.value}%` }))}
-              onChange={(v) => {
-                setScaleState(v)
-                setScale(v)
-              }}
-              columns={2}
-            />
-            <p className="mt-2 text-xs text-muted-foreground">{t("Menskalakan seluruh tampilan, bukan hanya teks.")}</p>
-          </section>
-
-          {api.kind === "mock" && (
-            <section className="rounded-xl border border-dashed p-3">
-              <h3 className="mb-1 text-sm font-medium">{t("Pratinjau data contoh")}</h3>
-              <p className="mb-2 text-xs text-muted-foreground">
-                {t("Hanya ada di mode data contoh. Meniru aplikasi desktop (tanpa login) atau akses lewat browser (login, izin mengikuti peran).")}
-              </p>
-              <ChoiceGroup<Access>
-                label={t("Pratinjau akses")}
-                value={access}
-                options={[
-                  { value: "desktop", label: t("Aplikasi desktop"), hint: t("tanpa login") },
-                  { value: "remote", label: t("Jarak jauh"), hint: t("login, sesuai peran") },
-                ]}
-                onChange={(v) => v !== access && setPreviewAccess(v)}
-                columns={2}
-              />
-            </section>
-          )}
+        <div className="overflow-y-auto p-4">
+          <AppearanceBody />
         </div>
       </SheetContent>
     </Sheet>

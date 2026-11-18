@@ -2,17 +2,11 @@ import * as React from "react"
 import { RotateCcwIcon, ShieldAlertIcon } from "lucide-react"
 import { toast } from "sonner"
 
+import { FormFooter, FormHeader } from "@/components/form-layout"
 import { PermissionMatrix } from "@/components/permission-matrix"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useApi } from "@/lib/api-context"
@@ -39,7 +33,7 @@ export function RoleDialog({ open, onOpenChange, ...rest }: Props) {
   )
 }
 
-function RoleForm({ role, onDone, onClose }: Omit<Props, "open" | "onOpenChange"> & { onClose: () => void }) {
+export function RoleForm({ role, onDone, onClose }: { role?: Role; onDone: () => void; onClose: () => void }) {
   const t = useT()
   const { api } = useApi()
   const def = role?.builtin ? DEFAULT_ROLES.find((d) => d.id === role.id) : undefined
@@ -74,12 +68,10 @@ function RoleForm({ role, onDone, onClose }: Omit<Props, "open" | "onOpenChange"
 
   return (
     <form onSubmit={submit} className="grid gap-3">
-      <DialogHeader>
-        <DialogTitle>{role ? t("Edit peran {name}", { name: role.name }) : t("Tambah peran")}</DialogTitle>
-        <DialogDescription>
-          {t("Bawaan tanpa akses: centang menu yang boleh dilihat atau diubah akun dengan peran ini. Menu Berbagi dan izin tulis lewat akses publik hanya dari aplikasi desktop. Halaman Akun saya (profil sendiri, password, 2FA, sesi) tidak memerlukan izin.")}
-        </DialogDescription>
-      </DialogHeader>
+      <FormHeader
+        title={role ? t("Edit peran {name}", { name: role.name }) : t("Tambah peran")}
+        description={t("Bawaan tanpa akses: centang menu yang boleh dilihat atau diubah akun dengan peran ini. Menu Berbagi dan izin tulis lewat akses publik hanya dari aplikasi desktop. Halaman Akun saya (profil sendiri, password, 2FA, sesi) tidak memerlukan izin.")}
+      />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="grid gap-1.5">
@@ -110,7 +102,7 @@ function RoleForm({ role, onDone, onClose }: Omit<Props, "open" | "onOpenChange"
         </Alert>
       )}
 
-      <DialogFooter className="sm:justify-between">
+      <FormFooter className="sm:justify-between">
         {def ? (
           <Button
             type="button"
@@ -135,7 +127,7 @@ function RoleForm({ role, onDone, onClose }: Omit<Props, "open" | "onOpenChange"
             {busy ? t("Menyimpan…") : t("Simpan")}
           </Button>
         </div>
-      </DialogFooter>
+      </FormFooter>
     </form>
   )
 }

@@ -14,6 +14,8 @@ import { toast } from "sonner"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { UserFormDialog } from "@/components/user-form-dialog"
 import { useUpdateGate, useWriteGate } from "@/hooks/use-write-gate"
+import { PageHeader } from "@/components/page-header"
+import { navigatePath } from "@/lib/route"
 import { useAiChat } from "@/lib/ai-context"
 import {
   EVENT_META,
@@ -574,5 +576,129 @@ export function UserDetailSheet({
       </>
     )}
     </>
+  )
+}
+
+
+/**
+ * Detail user sebagai halaman penuh (HP): isi sama dengan sheet di desktop, tetapi bisa dibuka
+ * lewat alamat sendiri (#/user/<id>) dan tombol kembali bawaan browser berfungsi.
+ */
+export function UserDetailPage({ userId, onBack }: { userId: string; onBack: () => void }) {
+  const t = useT()
+  const { users, events, routerById, metas, api } = useStore()
+  const now = useNow(5_000)
+  const gate = useWriteGate("user")
+  const noteGate = useUpdateGate("user")
+  const ai = useAiChat()
+  const [removing, setRemoving] = React.useState(false)
+  const user = users.find((u) => u.id === userId)
+  const router = user ? routerById.get(user.routerId) : undefined
+  const meta = user ? metas[user.id] : undefined
+  const history = React.useMemo(
+    () => (user ? events.filter((e) => e.routerId === user.routerId && e.username === user.username).slice(0, 150) : []),
+    [events, user]
+  )
+
+  if (!user) {
+    return (
+      <div className="mx-auto max-w-xl">
+        <PageHeader title={t("User tidak ditemukan")} onBack={onBack} />
+        <p className="text-sm text-muted-foreground">{t("User ini tidak ada lagi atau Anda tidak boleh melihatnya.")}</p>
+      </div>
+    )
+  }
+
+  const blocked = gate(user.routerId)
+
+  return (
+    <div className="mx-auto max-w-xl">
+      <PageHeader title={<span className="font-mono">{user.username}</span>} subtitle={router?.name} onBack={onBack} />
+
+      <div className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1">
+        <UserToneBadge tone={userTone(user)} />
+        {meta?.customerName && <span className="text-sm">{meta.customerName}</span>}
+        {meta?.tags.map((tag) => (
+          <Badge key={tag} variant="secondary">
+            {tag}
+          </Badge>
+        ))}
+      </div>
+
+      <div className="mb-3 flex flex-wrap items-center gap-1.5">
+        {user.deletedAt ? (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!!blocked}
+            onClick={async () => {
+              try {
+                await api.restoreUser(user.id)
+                toast.success(t("{user} dipulihkan", { user: user.username }))
+              } catch (e) {
+                toast.error(e instanceof Error ? e.message : String(e))
+              }
+            }}
+          >
+            <RotateCcwIcon /> {t("Pulihkan")}
+          </Button>
+        ) : (
+          <>
+            <Button size="sm" variant="outline" disabled={!!blocked} onClick={() => navigatePath("user", [user.id, "edit"])}>
+              <PencilIcon /> {t("Edit")}
+            </Button>
+            <Button size="sm" variant="outline" disabled={!!blocked} onClick={() => setRemoving(true)}>
+              <Trash2Icon /> {t("Hapus")}
+            </Button>
+          </>
+        )}
+        {ai.available && (
+          <Button size="sm" variant="outline" onClick={() => ai.ask(`${t("cek")} ${user.username}`)}>
+            <SparklesIcon /> {t("Tanya AI")}
+          </Button>
+        )}
+        {blocked && <span className="text-xs text-muted-foreground">{blocked}.</span>}
+      </div>
+
+      <Tabs key={user.id} defaultValue="info" className="gap-3">
+        <TabsList className="w-full">
+          <TabsTrigger value="info">{t("Info")}</TabsTrigger>
+          <TabsTrigger value="riwayat">
+            {t("Riwayat")}
+            <span className="text-xs text-muted-foreground tabular-nums">{history.length}</span>
+          </TabsTrigger>
+          <TabsTrigger value="catatan">{t("Catatan")}</TabsTrigger>
+        </TabsList>
+        <div className="rounded-xl border">
+          <TabsContent value="info">
+            <InfoTab user={user} router={router} history={history} now={now} />
+          </TabsContent>
+          <TabsContent value="riwayat">
+            <HistoryTab history={history} now={now} />
+          </TabsContent>
+          <TabsContent value="catatan">
+            <NotesTab userId={user.id} meta={meta} canEdit={!noteGate()} />
+          </TabsContent>
+        </div>
+      </Tabs>
+
+      <ConfirmDialog
+        open={removing}
+        onOpenChange={setRemoving}
+        title={t("Hapus {user}?", { user: user.username })}
+        description={
+          <p>
+            {t("Soft delete: secret di")} <b>{router?.name}</b>{" "}
+            {t("dinonaktifkan dan sesi yang sedang berjalan diputus. Secret tidak dihapus dari router dan bisa dipulihkan dari Telemon.")}
+          </p>
+        }
+        confirmLabel={t("Hapus")}
+        destructive
+        onConfirm={async () => {
+          await api.softDeleteUser(user.id)
+          toast.success(t("{user} dihapus (soft)", { user: user.username }))
+        }}
+      />
+    </div>
   )
 }

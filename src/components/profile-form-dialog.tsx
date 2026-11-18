@@ -4,14 +4,11 @@ import { toast } from "sonner"
 
 import { ReviewChanges, type Change } from "@/components/review-changes"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { FormFooter, FormHeader } from "@/components/form-layout"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -54,7 +51,7 @@ export function ProfileFormDialog({ open, onOpenChange, ...rest }: Props) {
   )
 }
 
-function ProfileForm({
+export function ProfileForm({
   mode,
   profile,
   defaultRouterId,
@@ -155,12 +152,7 @@ function ProfileForm({
   if (step === "review") {
     return (
       <>
-        <DialogHeader>
-          <DialogTitle>{t("Tulis ke {router}?", { router: router?.name ?? "" })}</DialogTitle>
-          <DialogDescription>
-            {t("Perubahan profil PPP langsung dikirim ke router. Sesi yang sedang berjalan bisa terpengaruh, misalnya saat rate limit diubah.")}
-          </DialogDescription>
-        </DialogHeader>
+        <FormHeader title={t("Tulis ke {router}?", { router: router?.name ?? "" })} description={t("Perubahan profil PPP langsung dikirim ke router. Sesi yang sedang berjalan bisa terpengaruh, misalnya saat rate limit diubah.")} />
         <ReviewChanges changes={changes} />
         {error && (
           <Alert variant="destructive">
@@ -168,14 +160,14 @@ function ProfileForm({
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
-        <DialogFooter>
+        <FormFooter>
           <Button variant="outline" onClick={() => setStep("form")} disabled={busy}>
             {t("Kembali")}
           </Button>
           <Button onClick={submit} disabled={busy}>
             {busy ? t("Menulis ke router…") : t("Tulis ke router")}
           </Button>
-        </DialogFooter>
+        </FormFooter>
       </>
     )
   }
@@ -188,12 +180,7 @@ function ProfileForm({
         if (valid && !blocked) setStep("review")
       }}
     >
-      <DialogHeader>
-        <DialogTitle>{editing ? t("Edit profil PPP {name}", { name: profile?.name ?? "" }) : t("Tambah profil PPP")}</DialogTitle>
-        <DialogDescription>
-          {editing ? t("Mengubah /ppp/profile di router.") : t("Membuat /ppp/profile baru di router.")}
-        </DialogDescription>
-      </DialogHeader>
+      <FormHeader title={editing ? t("Edit profil PPP {name}", { name: profile?.name ?? "" }) : t("Tambah profil PPP")} description={editing ? t("Mengubah /ppp/profile di router.") : t("Membuat /ppp/profile baru di router.")} />
 
       {blocked && (
         <Alert variant="destructive">
@@ -305,14 +292,14 @@ function ProfileForm({
         </div>
       </div>
 
-      <DialogFooter>
+      <FormFooter>
         <Button type="button" variant="outline" onClick={onClose}>
           {t("Batal")}
         </Button>
         <Button type="submit" disabled={!valid || !!blocked}>
           {t("Tinjau")}
         </Button>
-      </DialogFooter>
+      </FormFooter>
       {!valid && editing && changes.length === 0 && (
         <p className="-mt-1 text-right text-xs text-muted-foreground">{t("Belum ada perubahan.")}</p>
       )}

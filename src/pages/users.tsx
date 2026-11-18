@@ -37,6 +37,8 @@ import { UserFormDialog } from "@/components/user-form-dialog"
 import { UsersSectionNav } from "@/components/users-section-nav"
 import { useInfiniteList } from "@/hooks/use-infinite-list"
 import { useUpdateGate } from "@/hooks/use-write-gate"
+import { useIsDesktop } from "@/hooks/use-media-query"
+import { navigatePath } from "@/lib/route"
 import { useStore } from "@/lib/store-context"
 import { tk, useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -125,6 +127,8 @@ export function UsersPage({
 
   const { count, hasMore, sentinelRef } = useInfiniteList(filtered.length, PAGE_SIZE, `${query}|${status}|${routerId}|${sort}|${view}`)
   const shown = filtered.slice(0, count)
+  const isDesktop = useIsDesktop()
+  const routerParams = routerId !== "all" ? { router: routerId } : undefined
   const [adding, setAdding] = React.useState(false)
   const [importing, setImporting] = React.useState(false)
   const canWriteAny = !userReason && routers.some((r) => r.canWrite)
@@ -171,13 +175,13 @@ export function UsersPage({
       <div className="flex flex-wrap items-center gap-2">
         <UsersSectionNav page="user" />
         <div className="ml-auto flex gap-2">
-          <Button variant="outline" onClick={() => setImporting(true)} disabled={!!importReason} title={importReason ?? undefined}>
+          <Button variant="outline" onClick={() => (isDesktop ? setImporting(true) : navigatePath("import", [], routerParams))} disabled={!!importReason} title={importReason ?? undefined}>
             <DownloadIcon />
             <span className="hidden sm:inline">{t("Import dari Mikrotik")}</span>
             <span className="sm:hidden">{t("Import")}</span>
           </Button>
           <Button
-            onClick={() => setAdding(true)}
+            onClick={() => (isDesktop ? setAdding(true) : navigatePath("user", ["new"], routerParams))}
             disabled={!canWriteAny}
             title={canWriteAny ? undefined : (userReason ?? t("Tidak ada router dengan hak write"))}
           >

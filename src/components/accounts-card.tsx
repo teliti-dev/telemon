@@ -14,18 +14,12 @@ import {
 import { toast } from "sonner"
 
 import { ConfirmDialog } from "@/components/confirm-dialog"
+import { FormFooter, FormHeader } from "@/components/form-layout"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { Dialog, DialogContent } from "@/components/ui/dialog"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -43,11 +37,13 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
+import { useIsDesktop } from "@/hooks/use-media-query"
 import { useNow } from "@/hooks/use-now"
 import { useApi } from "@/lib/api-context"
 import { formatRelative } from "@/lib/format"
 import { useT } from "@/lib/i18n"
 import { randomPassword } from "@/lib/random"
+import { navigatePath } from "@/lib/route"
 import { useStore } from "@/lib/store-context"
 import type { AccountSummary, Role } from "@/lib/types"
 
@@ -66,6 +62,7 @@ export function AccountsCard({ readOnly }: { readOnly?: boolean }) {
   const { api } = useApi()
   const { share } = useStore()
   const now = useNow(60_000)
+  const isDesktop = useIsDesktop()
   const [accounts, setAccounts] = React.useState<AccountSummary[] | null>(null)
   const [roles, setRoles] = React.useState<Role[]>([])
   const [dialog, setDialog] = React.useState<Dialog_>(null)
@@ -106,7 +103,7 @@ export function AccountsCard({ readOnly }: { readOnly?: boolean }) {
           {t("Untuk masuk lewat browser (LAN dan publik). Apa yang boleh dilakukan akun mengikuti perannya. Aplikasi desktop tidak memakai login. Anda tidak bisa mengelola akun Anda sendiri atau akun berizin lebih tinggi dari sini.")}
         </CardDescription>
         <CardAction>
-          <Button onClick={() => setDialog({ kind: "add" })} disabled={readOnly}>
+          <Button onClick={() => (isDesktop ? setDialog({ kind: "add" }) : navigatePath("admin", ["account", "new"]))} disabled={readOnly}>
             <PlusIcon /> <span className="hidden sm:inline">{t("Tambah akun")}</span>
             <span className="sm:hidden">{t("Tambah")}</span>
           </Button>
@@ -173,10 +170,10 @@ export function AccountsCard({ readOnly }: { readOnly?: boolean }) {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem onSelect={() => setDialog({ kind: "role", account: a })}>
+                    <DropdownMenuItem onSelect={() => (isDesktop ? setDialog({ kind: "role", account: a }) : navigatePath("admin", ["account", a.id, "role"]))}>
                       <UserCogIcon /> {t("Ubah peran")}
                     </DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => setDialog({ kind: "reset-password", account: a })}>
+                    <DropdownMenuItem onSelect={() => (isDesktop ? setDialog({ kind: "reset-password", account: a }) : navigatePath("admin", ["account", a.id, "password"]))}>
                       <KeyRoundIcon /> {t("Reset password")}
                     </DropdownMenuItem>
                     <DropdownMenuItem disabled={!a.twoFactor} onSelect={() => setDialog({ kind: "reset-2fa", account: a })}>
@@ -299,6 +296,16 @@ function AddAccountDialog({
   onDone: () => void
   roles: Role[]
 }) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        {open && <AddAccountForm roles={roles} onDone={onDone} onClose={() => onOpenChange(false)} />}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+export function AddAccountForm({ roles, onDone, onClose }: { roles: Role[]; onDone: () => void; onClose: () => void }) {
   const t = useT()
   const { api } = useApi()
   const [roleId, setRoleId] = React.useState("")
@@ -309,80 +316,59 @@ function AddAccountDialog({
   const [error, setError] = React.useState<string | null>(null)
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(o) => {
-        if (!o) {
-          setUsername("")
-          setDisplayName("")
-          setPassword("")
-          setRoleId("")
-          setError(null)
+    <form
+      className="grid gap-3"
+      onSubmit={async (e) => {
+        e.preventDefault()
+        setBusy(true)
+        setError(null)
+        try {
+          const a = await api.createAccount({ username, displayName, password, roleId })
+          toast.success(t("Akun {name} dibuat", { name: a.username }))
+          onDone()
+          onClose()
+        } catch (err) {
+          setError(errMsg(err))
+        } finally {
+          setBusy(false)
         }
-        onOpenChange(o)
       }}
     >
-      <DialogContent className="sm:max-w-md">
-        <form
-          className="grid gap-3"
-          onSubmit={async (e) => {
-            e.preventDefault()
-            setBusy(true)
-            setError(null)
-            try {
-              const a = await api.createAccount({ username, displayName, password, roleId })
-              toast.success(t("Akun {name} dibuat", { name: a.username }))
-              onDone()
-              onOpenChange(false)
-            } catch (err) {
-              setError(errMsg(err))
-            } finally {
-              setBusy(false)
-            }
-          }}
-        >
-          <DialogHeader>
-            <DialogTitle>{t("Tambah akun")}</DialogTitle>
-            <DialogDescription>
-              {t("Berikan username dan password ini ke orangnya lewat jalur aman.")}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="grid gap-1.5">
-              <Label htmlFor="ac-user">{t("Username")}</Label>
-              <Input id="ac-user" value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} autoComplete="off" spellCheck={false} className="font-mono" placeholder="noc.budi" autoFocus />
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="ac-name">{t("Nama")}</Label>
-              <Input id="ac-name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={60} placeholder={t("Budi (NOC)")} />
-            </div>
-          </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="ac-role">{t("Peran")}</Label>
-            <RoleSelect id="ac-role" roles={roles} value={roleId} onChange={setRoleId} />
-            <p className="text-xs text-muted-foreground">{t("Wajib dipilih; tanpa peran akun tidak punya akses. Atur izin peran di tab Peran.")}</p>
-          </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="ac-pass">{t("Password awal")}</Label>
-            <PasswordField id="ac-pass" value={password} onChange={setPassword} />
-            <p className="text-xs text-muted-foreground">{t("Minimal 8 karakter. Orangnya bisa menggantinya sendiri setelah masuk.")}</p>
-          </div>
-          {error && (
-            <Alert variant="destructive">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
-              {t("Batal")}
-            </Button>
-            <Button type="submit" disabled={busy || !username.trim() || !displayName.trim() || password.length < 8 || !roleId}>
-              {busy ? t("Membuat…") : t("Buat akun")}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+      <FormHeader title={t("Tambah akun")} description={t("Berikan username dan password ini ke orangnya lewat jalur aman.")} />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="grid gap-1.5">
+          <Label htmlFor="ac-user">{t("Username")}</Label>
+          <Input id="ac-user" value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} autoComplete="off" spellCheck={false} className="font-mono" placeholder="noc.budi" autoFocus />
+        </div>
+        <div className="grid gap-1.5">
+          <Label htmlFor="ac-name">{t("Nama")}</Label>
+          <Input id="ac-name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={60} placeholder={t("Budi (NOC)")} />
+        </div>
+      </div>
+      <div className="grid gap-1.5">
+        <Label htmlFor="ac-role">{t("Peran")}</Label>
+        <RoleSelect id="ac-role" roles={roles} value={roleId} onChange={setRoleId} />
+        <p className="text-xs text-muted-foreground">{t("Wajib dipilih; tanpa peran akun tidak punya akses. Atur izin peran di tab Peran.")}</p>
+      </div>
+      <div className="grid gap-1.5">
+        <Label htmlFor="ac-pass">{t("Password awal")}</Label>
+        <PasswordField id="ac-pass" value={password} onChange={setPassword} />
+        <p className="text-xs text-muted-foreground">{t("Minimal 8 karakter. Orangnya bisa menggantinya sendiri setelah masuk.")}</p>
+      </div>
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+      <FormFooter>
+        <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
+          {t("Batal")}
+        </Button>
+        <Button type="submit" disabled={busy || !username.trim() || !displayName.trim() || password.length < 8 || !roleId}>
+          {busy ? t("Membuat…") : t("Buat akun")}
+        </Button>
+      </FormFooter>
+    </form>
   )
 }
 
@@ -393,6 +379,16 @@ function ResetPasswordDialog({
   account: AccountSummary | null
   onOpenChange: (o: boolean) => void
 }) {
+  return (
+    <Dialog open={!!account} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        {account && <ResetPasswordForm key={account.id} account={account} onClose={() => onOpenChange(false)} />}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+export function ResetPasswordForm({ account, onDone, onClose }: { account: AccountSummary; onDone?: () => void; onClose: () => void }) {
   const t = useT()
   const { api } = useApi()
   const [password, setPassword] = React.useState("")
@@ -400,59 +396,43 @@ function ResetPasswordDialog({
   const [error, setError] = React.useState<string | null>(null)
 
   return (
-    <Dialog
-      open={!!account}
-      onOpenChange={(o) => {
-        if (!o) {
-          setPassword("")
-          setError(null)
+    <form
+      className="grid gap-3"
+      onSubmit={async (e) => {
+        e.preventDefault()
+        setBusy(true)
+        setError(null)
+        try {
+          await api.resetAccountPassword(account.id, password)
+          toast.success(t("Password direset; sesi akun dikeluarkan"))
+          onDone?.()
+          onClose()
+        } catch (err) {
+          setError(errMsg(err))
+        } finally {
+          setBusy(false)
         }
-        onOpenChange(o)
       }}
     >
-      <DialogContent className="sm:max-w-md">
-        <form
-          className="grid gap-3"
-          onSubmit={async (e) => {
-            e.preventDefault()
-            if (!account) return
-            setBusy(true)
-            setError(null)
-            try {
-              await api.resetAccountPassword(account.id, password)
-              toast.success(t("Password direset; sesi akun dikeluarkan"))
-              onOpenChange(false)
-            } catch (err) {
-              setError(errMsg(err))
-            } finally {
-              setBusy(false)
-            }
-          }}
-        >
-          <DialogHeader>
-            <DialogTitle>{t("Reset password {name}", { name: account?.username ?? "" })}</DialogTitle>
-            <DialogDescription>{t("Semua sesi akun ini dikeluarkan.")}</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-1.5">
-            <Label htmlFor="rp-pass">{t("Password baru")}</Label>
-            <PasswordField id="rp-pass" value={password} onChange={setPassword} />
-          </div>
-          {error && (
-            <Alert variant="destructive">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
-              {t("Batal")}
-            </Button>
-            <Button type="submit" disabled={busy || password.length < 8}>
-              {busy ? t("Menyimpan…") : t("Reset")}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+      <FormHeader title={t("Reset password {name}", { name: account.username })} description={t("Semua sesi akun ini dikeluarkan.")} />
+      <div className="grid gap-1.5">
+        <Label htmlFor="rp-pass">{t("Password baru")}</Label>
+        <PasswordField id="rp-pass" value={password} onChange={setPassword} />
+      </div>
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+      <FormFooter>
+        <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
+          {t("Batal")}
+        </Button>
+        <Button type="submit" disabled={busy || password.length < 8}>
+          {busy ? t("Menyimpan…") : t("Reset")}
+        </Button>
+      </FormFooter>
+    </form>
   )
 }
 
@@ -467,30 +447,28 @@ function ChangeRoleDialog({
   onOpenChange: (o: boolean) => void
   onDone: () => void
 }) {
-  const { api } = useApi()
   return (
     <Dialog open={!!account} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
-        {account && <ChangeRoleForm key={account.id} account={account} roles={roles} onClose={() => onOpenChange(false)} onDone={onDone} api={api} />}
+        {account && <ChangeRoleForm key={account.id} account={account} roles={roles} onClose={() => onOpenChange(false)} onDone={onDone} />}
       </DialogContent>
     </Dialog>
   )
 }
 
-function ChangeRoleForm({
+export function ChangeRoleForm({
   account,
   roles,
   onClose,
   onDone,
-  api,
 }: {
   account: AccountSummary
   roles: Role[]
-  onClose: () => void
   onDone: () => void
-  api: ReturnType<typeof useApi>["api"]
+  onClose: () => void
 }) {
   const t = useT()
+  const { api } = useApi()
   const [roleId, setRoleId] = React.useState(account.roleId)
   const [busy, setBusy] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
@@ -515,10 +493,7 @@ function ChangeRoleForm({
         }
       }}
     >
-      <DialogHeader>
-        <DialogTitle>{t("Ubah peran {name}", { name: account.username })}</DialogTitle>
-        <DialogDescription>{t("Berlaku pada sesi berikutnya; sesi yang sedang berjalan mengikuti peran saat masuk.")}</DialogDescription>
-      </DialogHeader>
+      <FormHeader title={t("Ubah peran {name}", { name: account.username })} description={t("Berlaku pada sesi berikutnya; sesi yang sedang berjalan mengikuti peran saat masuk.")} />
       <div className="grid gap-1.5">
         <Label htmlFor="cr-role">{t("Peran")}</Label>
         <RoleSelect id="cr-role" roles={roles} value={roleId} onChange={setRoleId} />
@@ -529,14 +504,14 @@ function ChangeRoleForm({
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
-      <DialogFooter>
+      <FormFooter>
         <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
           {t("Batal")}
         </Button>
         <Button type="submit" disabled={busy || roleId === account.roleId}>
           {busy ? "Menyimpan…" : "Simpan"}
         </Button>
-      </DialogFooter>
+      </FormFooter>
     </form>
   )
 }
