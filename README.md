@@ -10,7 +10,7 @@ Telemon reads each router over the RouterOS API and shows who is connected, who 
 
 ## Status
 
-Pre-release (`v0.1.0-rc.x`). The core, server and UI are tested against a simulated RouterOS. **It has not been run against a real MikroTik router yet**, and the desktop app has had limited testing on real desktops. Treat it as a release candidate and keep write access off until you have tried it on a lab router.
+Pre-release (`v0.1.0-rc.x`). The core, server and UI are tested against a simulated RouterOS. **It has not been run against a real MikroTik router yet.** The Linux `.deb` has been smoke-tested in a clean Ubuntu 24.04 container (installs, starts, serves the UI in the real webview); Windows and a real desktop keyring have not been tried. Treat it as a release candidate and keep write access off until you have tried it on a lab router.
 
 ## Features
 
