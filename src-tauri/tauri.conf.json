@@ -31,7 +31,11 @@
     "resources": {
       "../dist": "ui"
     },
-    "createUpdaterArtifacts": true
+    "createUpdaterArtifacts": true,
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "signingIdentity": "-"
+    }
   },
   "plugins": {
     "updater": {
