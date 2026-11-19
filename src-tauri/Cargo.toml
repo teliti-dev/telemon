@@ -25,6 +25,8 @@ tauri = { version = "2.12.6" }
 tauri-plugin-log = "2"
 telemon-core = { path = "../crates/telemon-core" }
 telemon-desktop = { path = "../crates/telemon-desktop" }
+telemon-http = { path = "../crates/telemon-http" }
+tokio = { version = "1", features = ["sync"] }
 # Keyring OS: Credential Manager (Windows), Secret Service lewat zbus murni Rust (Linux, tanpa libdbus), Keychain (macOS).
 keyring = "4"
 tauri-plugin-updater = "2"

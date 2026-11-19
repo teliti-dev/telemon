@@ -98,7 +98,10 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/apt-archives
-          key: apt-linux-${{ hashFiles('.github/workflows/release.yml') }}
+          # Kunci tetap (tidak bergantung isi workflow): hanya berubah bila daftar paket berubah. Awalan dipakai
+          # sebagai cadangan agar cache lama tetap berguna.
+          key: apt-linux-ubuntu2404-webkit41-v1
+          restore-keys: apt-linux-
 
       - name: Paket sistem (Tauri di Linux)
         timeout-minutes: 15
@@ -119,7 +122,7 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/apt-archives
-          key: apt-linux-${{ hashFiles('.github/workflows/release.yml') }}
+          key: apt-linux-ubuntu2404-webkit41-v1
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:

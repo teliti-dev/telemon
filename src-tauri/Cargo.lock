@@ -4788,6 +4788,8 @@ dependencies = [
  "tauri-plugin-updater",
  "telemon-core",
  "telemon-desktop",
+ "telemon-http",
+ "tokio",
  "url",
 ]
 
