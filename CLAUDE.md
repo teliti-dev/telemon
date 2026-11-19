@@ -1,22 +1,20 @@
 # Aturan repo
 
-Dokumentasi repo ini ada di repo `enginering-docs`, folder `telemon/docs/` (scope `teliti/telemon`). Di workspace: `../docs/`.
+Repo publik (AGPL-3.0), satu branch: `master`. Jangan menulis detail infrastruktur pribadi, alamat internal, atau rahasia di kode, komentar, commit, maupun dokumen.
 
-1. Pekerjaan belum selesai sebelum dokumennya diperbarui: ubah/buat dokumen, naikkan `updated`, catat di `worklog/`, buat ADR untuk keputusan baru.
-2. Jalankan `python3 ../../tools/docs-kit/docs.py index --docs telemon/docs` lalu `check --all` (0 error) sebelum commit docs.
-3. Jangan mencampur scope: dokumen proyek ini hanya di `telemon/docs`.
-4. Rahasia tidak ditulis di kode, commit, maupun dokumen; hanya lokasinya (Vaultwarden).
-5. Pesan commit dan PR tanpa atribusi Claude.
+1. Perubahan perilaku harus disertai tes dan pembaruan README atau komentar yang terdampak.
+2. Pesan commit dan PR tanpa atribusi Claude.
+3. Teks tampilan dua bahasa (id/en): jalankan `bun run i18n:check`.
 
 ## Struktur dan perintah
-Aplikasi desktop **Tauri v2** (Windows dan Linux, tanpa deploy). Lihat ADR 0001-0003 di `telemon/docs/decisions`.
+Aplikasi desktop **Tauri v2** (Windows dan Linux, tanpa deploy).
 - Akar repo: UI React (Vite + TypeScript + shadcn/ui), dikelola dengan **bun**. Fokus tahap awal: UI dengan data contoh, poller menyusul. **Wajib responsif mobile** karena bisa dibuka dari HP lewat mode serve (tabel jadi kartu di lebar kecil, sidebar jadi sheet).
   - `bun install`, `bun run dev` (UI saja di browser), `bun run build`, `bun run lint`, `bun run typecheck` (`tsc -b`).
   - Komponen shadcn: `bunx --bun shadcn@latest add <komponen>`.
 - `src-tauri/`: core Rust (poller RouterOS, SQLite, command/event Tauri). `bun run tauri dev`, `bun run tauri build`.
 - Mode **"Serve ke browser"**: tombol di UI menyalakan server Axum di proses yang sama (bawaan mati; LAN port 7878; login akun wajib; hanya baca) yang menyajikan UI yang sama + API JSON dan WebSocket. UI memakai satu lapisan data dengan adapter Tauri dan HTTP; setiap fitur data harus tersedia di keduanya.
 - Mode **"Publik"**: Cloudflare Quick Tunnel lewat sidecar `cloudflared` (versi dikunci + checksum) ke server mode serve. Wajib login akun + 2FA, hanya baca, rate limit login, mati otomatis (bawaan 8 jam). Event live via **WebSocket + cadangan polling, jangan SSE** (Quick Tunnel tidak mendukung SSE). Lihat ADR 0003.
-- Olympus punya gcc dan rustup (stable): crate Rust biasa dibangun dan diuji di sini (`cd crates/telemon-core && cargo test`); build Tauri tetap di mesin lain atau CI (tanpa webkit2gtk).
+- Crate Rust biasa dibangun dan diuji tanpa dependensi sistem Tauri (`cd crates/telemon-core && cargo test`); build `src-tauri` butuh WebKitGTK dan dibangun oleh CI rilis.
 - **Edit user = catatan lokal** (`UserMeta`: nama pelanggan, telepon, label, catatan; disimpan di SQLite Telemon, kunci `routerId:username`). Tidak menulis ke router. Di mode serve/publik (adapter HTTP) catatan hanya bisa dibaca.
 - **Mikrotik source of truth** (ADR 0004). Import (`importFromRouter`) menimpa salinan Telemon dengan data router; yang hilang di router ditandai soft delete. Tulis ke router hanya `/ppp/secret` dan `/ppp/profile`: langsung saat simpan setelah dialog tinjau, hanya untuk router `canWrite` yang online, dan hanya dari aplikasi desktop (adapter HTTP/serve/publik menolak semua tulis dan import). Jangan pernah memanggil `remove` pada secret/profile router: hapus = soft delete (secret di-disable, sesi diputus; profile hanya ditandai di Telemon dan ditolak bila masih dipakai). Password PPPoE tampil di detail user hanya untuk izin Ubah (tersembunyi bawaan, ADR 0009; menggantikan "write-only" ADR 0004); jangan dicatat di log. Fitur tulis lain butuh ADR baru.
 - Kredensial router di keyring OS, bukan di SQLite atau berkas.

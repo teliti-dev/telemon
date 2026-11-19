@@ -1,13 +1,10 @@
-## Ringkasan
-<!-- Apa yang berubah dan kenapa. -->
+## Summary
+<!-- What changed and why. -->
 
-## Dokumen
-<!-- Pekerjaan belum selesai sebelum dokumennya diperbarui. -->
-- [ ] Dokumen terdampak sudah diperbarui (`updated` dinaikkan)
-- [ ] Catatan kerja (`worklog/`) ditambah; keputusan baru dibuat ADR
-- [ ] `docs.py check --all` lolos (0 error)
-- [ ] Tautan PR docs (repo enginering-docs), bila dokumennya di repo lain:
-- [ ] Tidak ada rahasia di kode maupun dokumen
+## Checklist
+- [ ] Tests added or updated, and they pass (`cargo test` in the touched crates; `bun run typecheck && bun run lint && bun run i18n:check` for UI changes)
+- [ ] README or comments updated where behaviour changed
+- [ ] No secrets or personal infrastructure details in code, comments or docs
 
-## Verifikasi
-<!-- Tes yang dijalankan dan hasilnya. -->
+## Verification
+<!-- Tests run and their results. -->

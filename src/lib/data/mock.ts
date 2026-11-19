@@ -283,7 +283,7 @@ const newRecoveryCodes = () => Array.from({ length: 8 }, () => `${codePart()}-${
 
 function makeAccounts(now: number): MockAccount[] {
   return [
-    { id: "a1", username: "admin", displayName: "Gilang", roleId: "role-admin", password: DEMO_PASSWORD, totp: true, recovery: newRecoveryCodes(), disabled: false, createdAt: now - 30 * 86400_000, lastLoginAt: now - 3 * 3600_000 },
+    { id: "a1", username: "admin", displayName: "Admin Demo", roleId: "role-admin", password: DEMO_PASSWORD, totp: true, recovery: newRecoveryCodes(), disabled: false, createdAt: now - 30 * 86400_000, lastLoginAt: now - 3 * 3600_000 },
     { id: "a2", username: "operator", displayName: "Operator NOC", roleId: "role-operator", password: DEMO_PASSWORD, totp: false, recovery: [], disabled: false, createdAt: now - 12 * 86400_000, lastLoginAt: now - 2 * 86400_000 },
     { id: "a4", username: "pantau", displayName: "Layar Pantau", roleId: "role-monitor", password: DEMO_PASSWORD, totp: false, recovery: [], disabled: false, createdAt: now - 3 * 86400_000, lastLoginAt: now - 86400_000 },
     { id: "a3", username: "tamu", displayName: "Tamu (nonaktif)", roleId: "role-viewer", password: DEMO_PASSWORD, totp: false, recovery: [], disabled: true, createdAt: now - 5 * 86400_000 },

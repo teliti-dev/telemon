@@ -99,9 +99,9 @@ Layout: `src/` React UI (Vite, TypeScript, shadcn/ui), `crates/telemon-core` Rou
 
 Create a GitHub Release with a tag `vX.Y.Z`. `.github/workflows/release.yml` builds Linux (`.deb`, `.AppImage`) and Windows (NSIS `.exe`) on Linux runners, signs the updater artifacts, and uploads them with `SHA256SUMS.txt` and `latest.json`. Prereleases are published to the `channel-rc` test channel.
 
-## Documentation
+## Design notes
 
-Design decisions (ADRs) and the work log live in the `enginering-docs` repository under `telemon/docs/`. Most of them are currently in Indonesian; new documents are written in English.
+Code comments refer to architecture decisions by number (for example "ADR 0021"). Those decision records are maintained separately by the maintainers and are not part of this repository.
 
 ## License
 
