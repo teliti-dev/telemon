@@ -1,0 +1,266 @@
+# Rilis aplikasi desktop Telemon (Windows dan Linux). Semua job berjalan di runner LINUX:
+# Windows dibangun lewat cross-compile (cargo-xwin + NSIS), jadi menit Actions dihitung 1x, bukan 2x.
+#
+# Pemicu:
+#  - release: published  -> build Linux + Windows lalu unggah ke rilis itu (versi diambil dari tag).
+#  - workflow_dispatch   -> manual. Tanpa `tag`: hanya build dan menghangatkan cache (jalankan dari branch
+#                           utama setelah bun.lock/Cargo.lock berubah). Dengan `tag`: build ulang dan unggah
+#                           (--clobber) ke rilis yang sudah ada, mis. saat build sebelumnya gagal.
+#
+# Cache: cache dari run yang dipicu tag TIDAK bisa dipakai tag berikutnya (hanya cache branch utama yang
+# terlihat). Karena itu cache hanya DISIMPAN pada run branch (dispatch tanpa tag) dan DIPULIHKAN di semua run.
+name: Rilis desktop
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag rilis tujuan unggah. Kosong = hanya build dan hangatkan cache."
+        required: false
+        default: ""
+
+concurrency:
+  group: rilis-${{ github.event.release.tag_name || inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  RUST_TOOLCHAIN: "1.100.0"
+  BUN_VERSION: "1.4.4"
+  CARGO_XWIN_VERSION: "0.23.1"
+  # Simpan cache hanya dari run branch (lihat catatan di atas).
+  SAVE_CACHE: ${{ github.ref_type == 'branch' }}
+
+jobs:
+  prepare:
+    name: Siapkan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+      upload: ${{ steps.meta.outputs.upload }}
+    steps:
+      - id: meta
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          tag="${RELEASE_TAG:-$INPUT_TAG}"
+          if [ -z "$tag" ]; then
+            echo "tag=" >> "$GITHUB_OUTPUT"
+            echo "version=0.0.0-ci" >> "$GITHUB_OUTPUT"
+            echo "upload=false" >> "$GITHUB_OUTPUT"
+            echo "Tanpa tag: hanya build dan hangatkan cache."
+            exit 0
+          fi
+          # Tag datang dari luar: validasi ketat sebelum dipakai di mana pun.
+          if ! printf '%s' "$tag" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
+            echo "::error::Tag '$tag' bukan versi semver (contoh: v0.1.0 atau v0.1.0-rc.1)"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          echo "upload=true" >> "$GITHUB_OUTPUT"
+
+  linux:
+    name: Linux (deb, AppImage)
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.tag && format('refs/tags/{0}', needs.prepare.outputs.tag) || '' }}
+          persist-credentials: false
+
+      - name: Paket sistem (Tauri di Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config patchelf file \
+            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev libxdo-dev
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Cache bun
+        id: bun-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+
+      - run: bun install --frozen-lockfile
+
+      - name: Simpan cache bun
+        if: env.SAVE_CACHE == 'true' && steps.bun-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+
+      - name: Rust ${{ env.RUST_TOOLCHAIN }}
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+          rustup default "$RUST_TOOLCHAIN"
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: src-tauri
+          shared-key: linux
+          save-if: ${{ env.SAVE_CACHE == 'true' }}
+
+      - name: Versi dari tag
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: python3 .github/scripts/set-version.py "$VERSION"
+
+      - name: Build
+        env:
+          # AppImage di runner tanpa FUSE, dan strip bawaan linuxdeploy gagal pada binutils baru.
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+          NO_STRIP: "true"
+        run: bun run tauri build --bundles deb,appimage
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/appimage/*.AppImage
+
+  windows:
+    name: Windows (NSIS, cross-compile dari Linux)
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      XWIN_CACHE_DIR: ${{ github.workspace }}/.xwin-cache
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.tag && format('refs/tags/{0}', needs.prepare.outputs.tag) || '' }}
+          persist-credentials: false
+
+      - name: Paket sistem (cross-compile)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends nsis lld llvm clang
+          # Beberapa distribusi hanya menyediakan alat LLVM dengan akhiran versi; cargo-xwin butuh nama polos.
+          for tool in clang-cl llvm-lib llvm-rc llvm-ar lld-link; do
+            if ! command -v "$tool" >/dev/null; then
+              src="$(ls /usr/lib/llvm-*/bin/"$tool" 2>/dev/null | sort -V | tail -1 || true)"
+              [ -n "$src" ] && sudo ln -s "$src" "/usr/local/bin/$tool"
+            fi
+          done
+          for tool in clang-cl llvm-lib lld-link; do command -v "$tool" >/dev/null || { echo "::error::$tool tidak ditemukan"; exit 1; }; done
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Cache bun
+        id: bun-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+
+      - run: bun install --frozen-lockfile
+
+      - name: Simpan cache bun
+        if: env.SAVE_CACHE == 'true' && steps.bun-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+
+      - name: Rust ${{ env.RUST_TOOLCHAIN }} + target Windows
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --target x86_64-pc-windows-msvc
+          rustup default "$RUST_TOOLCHAIN"
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: src-tauri
+          shared-key: windows
+          cache-bin: "true"
+          save-if: ${{ env.SAVE_CACHE == 'true' }}
+
+      - name: cargo-xwin ${{ env.CARGO_XWIN_VERSION }}
+        run: |
+          if ! command -v cargo-xwin >/dev/null || ! cargo xwin --version | grep -q "$CARGO_XWIN_VERSION"; then
+            cargo install --locked cargo-xwin --version "$CARGO_XWIN_VERSION"
+          fi
+
+      # CRT dan Windows SDK (ratusan MB) diunduh cargo-xwin sekali; dengan cache, run berikutnya melewatinya.
+      # Dengan memakai cargo-xwin Anda menyetujui lisensi Microsoft SDK (lihat README cargo-xwin).
+      - name: Cache Windows SDK (xwin)
+        id: xwin-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .xwin-cache
+          key: xwin-${{ env.CARGO_XWIN_VERSION }}
+
+      - name: Versi dari tag
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: python3 .github/scripts/set-version.py "$VERSION"
+
+      - name: Build
+        run: bun run tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --bundles nsis
+
+      - name: Simpan cache Windows SDK
+        if: env.SAVE_CACHE == 'true' && steps.xwin-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .xwin-cache
+          key: xwin-${{ env.CARGO_XWIN_VERSION }}
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows
+          if-no-files-found: error
+          retention-days: 7
+          path: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+
+  publish:
+    name: Unggah ke rilis
+    needs: [prepare, linux, windows]
+    if: needs.prepare.outputs.upload == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: dist-release
+          merge-multiple: true
+
+      - name: Checksum
+        working-directory: dist-release
+        run: |
+          ls -la
+          sha256sum -- * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Unggah
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: gh release upload "$TAG" dist-release/* --clobber
