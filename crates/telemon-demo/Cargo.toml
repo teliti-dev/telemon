@@ -1,0 +1,12 @@
+[package]
+name = "telemon-demo"
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-only"
+publish = false
+description = "Server demo Telemon dengan router tiruan (hanya untuk mencoba UI; bukan untuk produksi)"
+
+[dependencies]
+telemon-core = { version = "0.1.0", path = "../telemon-core" }
+telemon-http = { version = "0.1.0", path = "../telemon-http" }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "net", "time", "sync", "signal"] }

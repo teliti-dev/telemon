@@ -575,13 +575,15 @@ impl Store {
     // ---------------- event ----------------
 
     /// Simpan event satu router dalam satu transaksi dan perbarui "event terakhir" user.
-    pub fn insert_events(&mut self, router_id: &str, events: &[Event]) -> Result<usize> {
+    pub fn insert_events_with_ids(&mut self, router_id: &str, events: &[Event]) -> Result<Vec<i64>> {
+        let mut ids = Vec::with_capacity(events.len());
         let tx = self.conn.transaction()?;
         for e in events {
             tx.execute(
                 "INSERT INTO events (at_ms, router_id, kind, username, address, caller_id, message) VALUES (?1,?2,?3,?4,?5,?6,?7)",
                 params![e.at_ms, router_id, e.kind.as_str(), e.username, e.address, e.caller_id, e.message],
             )?;
+            ids.push(tx.last_insert_rowid());
             if let Some(u) = &e.username {
                 let id = user_id(router_id, u);
                 // Hanya event yang tidak lebih lama dari event terakhir user yang mengubah keadaannya.
@@ -606,7 +608,11 @@ impl Store {
             }
         }
         tx.commit()?;
-        Ok(events.len())
+        Ok(ids)
+    }
+
+    pub fn insert_events(&mut self, router_id: &str, events: &[Event]) -> Result<usize> {
+        Ok(self.insert_events_with_ids(router_id, events)?.len())
     }
 
     /// Terbaru dulu. Pakai `before_id` dari baris terakhir untuk halaman berikutnya.
@@ -764,6 +770,15 @@ impl Store {
     pub fn restore_user(&mut self, id: &str) -> Result<bool> {
         let n = self.conn.execute("UPDATE users SET deleted_at = NULL, deleted_reason = NULL WHERE id = ?1 AND deleted_at IS NOT NULL", [id])?;
         Ok(n > 0)
+    }
+
+    /// Soft delete profile (hanya di Telemon; RouterOS tidak punya flag disabled untuk profile).
+    pub fn soft_delete_profile(&mut self, id: &str, now_ms: i64) -> Result<bool> {
+        Ok(self.conn.execute("UPDATE profiles SET deleted_at = ?2, deleted_reason = 'manual' WHERE id = ?1 AND deleted_at IS NULL", params![id, now_ms])? > 0)
+    }
+
+    pub fn restore_profile(&mut self, id: &str) -> Result<bool> {
+        Ok(self.conn.execute("UPDATE profiles SET deleted_at = NULL, deleted_reason = NULL WHERE id = ?1 AND deleted_at IS NOT NULL", [id])? > 0)
     }
 
     pub fn list_users(&self, router_id: Option<&str>, include_deleted: bool) -> Result<Vec<UserRow>> {

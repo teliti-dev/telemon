@@ -10,7 +10,7 @@ use tokio::time::{Instant, MissedTickBehavior, interval};
 use crate::events::{Detector, Event};
 use crate::poller::poll_once_status;
 use crate::router::{Error, RouterApi, ppp_active, ppp_profiles, ppp_secrets};
-use crate::store::{RetentionPolicy, RouterStatus, Store};
+use crate::store::{RetentionPolicy, RouterStatus, Store, SyncReport};
 
 /// Akses ke Store dibagi antar tugas; kunci hanya dipegang sebentar dan tidak melewati `await`.
 pub type SharedStore = Arc<Mutex<Store>>;
@@ -27,15 +27,16 @@ fn now_ms() -> i64 {
 }
 
 /// Ambil secret, profile, dan sesi aktif lalu timpa salinan lokal (Mikrotik = sumber kebenaran).
-pub async fn sync_router(api: &impl RouterApi, store: &SharedStore, router_id: &str) -> Result<(), Error> {
+pub async fn sync_router(api: &impl RouterApi, store: &SharedStore, router_id: &str) -> Result<(SyncReport, SyncReport), Error> {
     let (secrets, profiles, active) = (ppp_secrets(api).await?, ppp_profiles(api).await?, ppp_active(api).await?);
     let now = now_ms();
-    {
+    let (profile_report, user_report) = {
         let mut s = store.lock().expect("store lock");
         // Galat basis data tidak boleh mematikan pemantau; dilaporkan sebagai galat fatal untuk dicatat pemanggil.
-        s.sync_profiles(router_id, now, &profiles).map_err(|e| Error::Fatal(format!("simpan profile: {e}")))?;
-        s.sync_users(router_id, now, &secrets, &active).map_err(|e| Error::Fatal(format!("simpan user: {e}")))?;
-    }
+        let pr = s.sync_profiles(router_id, now, &profiles).map_err(|e| Error::Fatal(format!("simpan profile: {e}")))?;
+        let ur = s.sync_users(router_id, now, &secrets, &active).map_err(|e| Error::Fatal(format!("simpan user: {e}")))?;
+        (pr, ur)
+    };
     // Model dan versi: pelengkap, kegagalannya tidak menggagalkan sinkronisasi.
     let (model, version) = match api.print("/system/resource").await {
         Ok(rows) => rows.first().map(|r| (r.get("board-name").cloned().unwrap_or_default(), r.get("version").cloned().unwrap_or_default())).unwrap_or_default(),
@@ -43,7 +44,7 @@ pub async fn sync_router(api: &impl RouterApi, store: &SharedStore, router_id: &
     };
     let mut s = store.lock().expect("store lock");
     let _ = s.set_router_info(router_id, &model, &version, now);
-    Ok(())
+    Ok((user_report, profile_report))
 }
 
 /// Jalankan sampai `stop` bernilai true atau berubah. Event baru disimpan lalu (opsional)
@@ -53,7 +54,7 @@ pub async fn run_router(
     store: SharedStore,
     router_id: String,
     cfg: MonitorConfig,
-    tx: Option<mpsc::Sender<Event>>,
+    tx: Option<mpsc::Sender<(i64, Event)>>,
     mut stop: watch::Receiver<bool>,
 ) {
     let mut det = Detector::new();
@@ -96,12 +97,17 @@ pub async fn run_router(
         if events.is_empty() {
             continue;
         }
-        if let Err(e) = store.lock().expect("store lock").insert_events(&router_id, &events) {
-            eprintln!("telemon: gagal menyimpan event {router_id}: {e}");
-        }
+        let ids = match store.lock().expect("store lock").insert_events_with_ids(&router_id, &events) {
+            Ok(ids) => ids,
+            Err(e) => {
+                eprintln!("telemon: gagal menyimpan event {router_id}: {e}");
+                Vec::new()
+            }
+        };
+        // Id basis data ikut diteruskan agar klien tidak menampilkan event yang sama dua kali.
         if let Some(tx) = &tx {
-            for e in events {
-                let _ = tx.send(e).await;
+            for (id, e) in ids.into_iter().zip(events) {
+                let _ = tx.send((id, e)).await;
             }
         }
     }
@@ -120,7 +126,10 @@ pub async fn run_purge(store: SharedStore, policy: impl Fn() -> RetentionPolicy,
         if *stop.borrow() {
             return;
         }
-        if let Err(e) = store.lock().expect("store lock").purge(now_ms(), &policy()) {
+        // Kebijakan dibaca SEBELUM mengunci: closure-nya boleh membaca pengaturan dari Store yang sama,
+        // dan kunci std tidak reentrant (urutan evaluasi argumen pernah membuat seluruh aplikasi menggantung).
+        let p = policy();
+        if let Err(e) = store.lock().expect("store lock").purge(now_ms(), &p) {
             eprintln!("telemon: purge gagal: {e}");
         }
     }

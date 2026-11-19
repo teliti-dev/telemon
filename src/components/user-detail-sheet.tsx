@@ -93,36 +93,68 @@ function Field({
 }
 
 /** 24 batang, satu per jam; warna = kejadian terburuk pada jam itu. */
-/** Password PPPoE: tersembunyi bawaan, tombol tampil/sembunyikan dan salin. Hanya untuk peran berizin Ubah. */
+/**
+ * Password PPPoE: tersembunyi bawaan, tombol tampil/sembunyikan dan salin. Hanya untuk peran berizin Ubah.
+ * Di server nyata password tidak ikut snapshot: diambil saat ditampilkan/disalin (dan tercatat di riwayat server).
+ */
 function PasswordField({ user }: { user: PppUser }) {
   const t = useT()
+  const { api } = useStore()
   const [shown, setShown] = React.useState<string | null>(null)
-  const visible = shown === user.id
-  const btn = "shrink-0 rounded p-1 text-muted-foreground md:p-0.5 hover:bg-muted hover:text-foreground"
+  const [fetched, setFetched] = React.useState<{ id: string; value: string } | null>(null)
+  const [busy, setBusy] = React.useState(false)
+  const remote = !!api.revealUserPassword && user.password === undefined
+  const known = user.password ?? (fetched?.id === user.id ? fetched.value : undefined)
+  const visible = shown === user.id && known !== undefined
+  const btn = "shrink-0 rounded p-1 text-muted-foreground md:p-0.5 hover:bg-muted hover:text-foreground disabled:opacity-50"
+
+  async function load(): Promise<string | undefined> {
+    if (known !== undefined) return known
+    if (!remote) return undefined
+    setBusy(true)
+    try {
+      const value = await api.revealUserPassword!(user.id)
+      setFetched({ id: user.id, value })
+      return value
+    } catch (e) {
+      toast.error(e instanceof Error && /tidak ditemukan/i.test(e.message) ? t("Password belum tersimpan di Telemon") : e instanceof Error ? e.message : String(e))
+      return undefined
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const available = known !== undefined || remote
   return (
     <div className="min-w-0">
       <dt className="text-xs text-muted-foreground">{t("Password PPPoE")}</dt>
       <dd className="flex items-center gap-1">
-        <span className="min-w-0 truncate font-mono text-[13px]">
-          {user.password ? (visible ? user.password : "••••••••") : "-"}
-        </span>
-        {user.password && (
+        <span className="min-w-0 truncate font-mono text-[13px]">{available ? (visible ? known : "••••••••") : "-"}</span>
+        {available && (
           <>
             <button
               type="button"
+              disabled={busy}
               aria-label={visible ? t("Sembunyikan password") : t("Tampilkan password")}
               title={visible ? t("Sembunyikan password") : t("Tampilkan password")}
               aria-pressed={visible}
-              onClick={() => setShown(visible ? null : user.id)}
+              onClick={async () => {
+                if (visible) return setShown(null)
+                if ((await load()) !== undefined) setShown(user.id)
+              }}
               className={btn}
             >
               {visible ? <EyeOffIcon className="size-3.5" /> : <EyeIcon className="size-3.5" />}
             </button>
             <button
               type="button"
+              disabled={busy}
               aria-label={t("Salin password")}
               title={t("Salin password")}
-              onClick={() => copyText(user.password!, t("Password disalin"))}
+              onClick={async () => {
+                const v = await load()
+                if (v !== undefined) copyText(v, t("Password disalin"))
+              }}
               className={btn}
             >
               <CopyIcon className="size-3.5" />

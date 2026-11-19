@@ -68,6 +68,8 @@ pub fn routes<C: Connector>() -> Router<Arc<AppState<C>>> {
         .route("/api/routers/{id}/import", post(router_import::<C>))
         .route("/api/routers/{id}/plans", post(plan_create::<C>))
         .route("/api/plans/{id}/apply", post(plan_apply::<C>))
+        .route("/api/profiles/{id}/soft-delete", post(profile_soft_delete::<C>))
+        .route("/api/profiles/{id}/restore", post(profile_restore::<C>))
 }
 
 // ---------------- pembantu ----------------
@@ -433,10 +435,11 @@ async fn router_fingerprint<C: Connector>(State(st): St<C>, c: Caller, Json(r): 
     Ok(Json(json!({ "fingerprint": fp.to_hex() })))
 }
 
-async fn router_import<C: Connector>(State(st): St<C>, c: Caller, Path(id): Path<String>) -> ApiResult<StatusCode> {
+async fn router_import<C: Connector>(State(st): St<C>, c: Caller, Path(id): Path<String>) -> ApiResult<Json<Value>> {
     need(&st, &c, Resource::Router, Level::Update)?;
-    st.telemon.import_now(&id).await?;
-    Ok(StatusCode::NO_CONTENT)
+    let (users, profiles) = st.telemon.import_now(&id).await?;
+    let counts = |r: telemon_core::store::SyncReport| json!({ "added": r.added, "updated": r.updated + r.restored, "deleted": r.soft_deleted });
+    Ok(Json(json!({ "routerId": id, "at": st.now(), "users": counts(users), "profiles": counts(profiles) })))
 }
 
 // ---------------- tulis dengan tinjauan ----------------
@@ -574,4 +577,49 @@ async fn storage_purge<C: Connector>(State(st): St<C>, c: Caller) -> ApiResult<J
     };
     let _ = st.telemon.with_store(|s| s.record_audit(&entry));
     Ok(Json(purge_json(done)))
+}
+
+// ---------------- profile: tanda hapus lokal ----------------
+
+/// Profile hanya ditandai terhapus di Telemon (tidak ada perintah ke router); ditolak bila masih dipakai user.
+async fn profile_mark<C: Connector>(st: &Arc<AppState<C>>, c: &Caller, id: &str, delete: bool) -> ApiResult<Json<ProfileDto>> {
+    need(st, c, Resource::Profile, Level::Update)?;
+    let (router_id, name) = id.split_once(':').ok_or_else(ApiError::not_found)?;
+    let io = |e: rusqlite_err::E| ApiError::internal(e.0);
+    let exists = st.telemon.with_store(|s| s.list_profiles(Some(router_id), true).map_err(rusqlite_err::wrap)).map_err(io)?;
+    if !exists.iter().any(|p| p.name == name) {
+        return Err(ApiError::not_found());
+    }
+    if delete {
+        st.telemon.check_profile_deletable(router_id, name).await?;
+    }
+    let now = st.now();
+    let changed = st
+        .telemon
+        .with_store(|s| if delete { s.soft_delete_profile(id, now) } else { s.restore_profile(id) }.map_err(rusqlite_err::wrap))
+        .map_err(io)?;
+    if changed {
+        let entry = AuditEntry {
+            at_ms: now,
+            actor: c.session.username.clone(),
+            router_id: router_id.into(),
+            action: if delete { "profile.soft_delete" } else { "profile.restore" }.into(),
+            target: name.into(),
+            title: format!("{} profile {name}", if delete { "Hapus (soft)" } else { "Pulihkan" }),
+            changes: Vec::new(),
+            outcome: AuditOutcome::Ok,
+        };
+        let _ = st.telemon.with_store(|s| s.record_audit(&entry));
+    }
+    let rows = st.telemon.with_store(|s| s.list_profiles(Some(router_id), true).map_err(rusqlite_err::wrap)).map_err(io)?;
+    let row = rows.iter().find(|p| p.name == name).ok_or_else(ApiError::not_found)?;
+    Ok(Json(ProfileDto::from(row)))
+}
+
+async fn profile_soft_delete<C: Connector>(State(st): St<C>, c: Caller, Path(id): Path<String>) -> ApiResult<Json<ProfileDto>> {
+    profile_mark(&st, &c, &id, true).await
+}
+
+async fn profile_restore<C: Connector>(State(st): St<C>, c: Caller, Path(id): Path<String>) -> ApiResult<Json<ProfileDto>> {
+    profile_mark(&st, &c, &id, false).await
 }

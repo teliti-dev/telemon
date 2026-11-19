@@ -67,6 +67,16 @@ export interface TelemonApi {
   subscribe(onUpdate: (u: LiveUpdate) => void): () => void
   addRouter(input: NewRouter): Promise<RouterInfo>
   removeRouter(id: string): Promise<void>
+  /**
+   * Ambil sidik jari sertifikat api-ssl router untuk dikonfirmasi pengguna (percaya-saat-pertama).
+   * Hanya menyelesaikan handshake TLS; tidak mengirim kredensial.
+   */
+  fetchFingerprint(host: string, port: number): Promise<string>
+  /**
+   * Password PPPoE user bila tidak ikut di snapshot (server nyata: diambil saat ditampilkan dan tercatat
+   * di riwayat). Adapter contoh menyertakannya di `PppUser.password`.
+   */
+  revealUserPassword?(userId: string): Promise<string>
   /** Ubah koneksi router. Username/password kosong = tetap. */
   updateRouter(id: string, input: RouterEdit): Promise<RouterInfo>
   /**

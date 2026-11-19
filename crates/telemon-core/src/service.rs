@@ -184,6 +184,8 @@ impl Default for RuntimeConfig {
 /// Event dari satu router, untuk disalurkan ke UI.
 #[derive(Debug, Clone)]
 pub struct RouterEvent {
+    /// Id baris event di basis data (sama dengan id di `list_events`).
+    pub id: i64,
     pub router_id: String,
     pub event: Event,
 }
@@ -328,14 +330,14 @@ impl<C: Connector> Telemon<C> {
         let api = self.client(router_id)?;
         let cfg = *self.cfg.lock().expect("lock");
         let (stop_tx, stop_rx) = watch::channel(false);
-        let (tx, mut rx) = mpsc::channel::<Event>(64);
+        let (tx, mut rx) = mpsc::channel::<(i64, Event)>(64);
         let events = self.events.clone();
         let id = router_id.to_string();
         let forward = tokio::spawn({
             let id = id.clone();
             async move {
-                while let Some(event) = rx.recv().await {
-                    let _ = events.send(RouterEvent { router_id: id.clone(), event });
+                while let Some((eid, event)) = rx.recv().await {
+                    let _ = events.send(RouterEvent { id: eid, router_id: id.clone(), event });
                 }
             }
         });
@@ -413,10 +415,9 @@ impl<C: Connector> Telemon<C> {
     }
 
     /// Impor manual: timpa salinan lokal dengan data router sekarang.
-    pub async fn import_now(&self, router_id: &str) -> Res<()> {
+    pub async fn import_now(&self, router_id: &str) -> Res<(crate::store::SyncReport, crate::store::SyncReport)> {
         let api = self.client(router_id)?;
-        sync_router(&*api, &self.store, router_id).await?;
-        Ok(())
+        Ok(sync_router(&*api, &self.store, router_id).await?)
     }
 
     // ---------------- penulisan (rencana -> tinjau -> terapkan) ----------------
@@ -485,7 +486,7 @@ impl<A: RouterApi + Send + Sync> RouterApi for ArcApi<A> {
     }
 }
 
-async fn run_router_arc<A: RouterApi + Send + Sync + 'static>(api: Arc<A>, store: SharedStore, id: String, cfg: MonitorConfig, tx: mpsc::Sender<Event>, stop: watch::Receiver<bool>) {
+async fn run_router_arc<A: RouterApi + Send + Sync + 'static>(api: Arc<A>, store: SharedStore, id: String, cfg: MonitorConfig, tx: mpsc::Sender<(i64, Event)>, stop: watch::Receiver<bool>) {
     run_router(ArcApi(api), store, id, cfg, Some(tx), stop).await
 }
 
@@ -741,6 +742,20 @@ mod tests {
         t.import_now(&r.id).await.unwrap();
         assert_eq!(t.conn.last_creds.lock().unwrap().2, "baru");
         assert!(t.conn.connects.load(Ordering::SeqCst) > connects);
+    }
+
+    #[tokio::test]
+    async fn purge_berkala_dari_pengaturan_tidak_menggantung() {
+        let (t, _) = app(world(), 0);
+        let r = t.add_router(&nr("pusat", false), "pw").unwrap();
+        let old = Event { at_ms: 1, kind: EventKind::Connected, username: None, address: None, caller_id: None, message: "lama".into() };
+        t.with_store(|s| s.insert_events(&r.id, &[old])).unwrap();
+        // Kebijakan dibaca dari Store yang sama dengan yang dikunci purge: tidak boleh deadlock.
+        t.start_purge_from_settings(Duration::from_millis(10));
+        wait_until(|| t.with_store(|s| s.count_events()).unwrap() == 0).await;
+        // Penyimpanan tetap bisa dipakai (tidak terkunci selamanya).
+        assert!(t.with_store(|s| s.list_routers()).is_ok());
+        tokio::time::timeout(Duration::from_secs(3), t.shutdown()).await.expect("shutdown tidak menggantung");
     }
 
     #[tokio::test]

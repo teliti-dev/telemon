@@ -56,4 +56,13 @@ export default {
     "Turn on only if the API account below has write rights. Every write to the router still asks for confirmation.",
   "Username API": "API username",
   "tetap": "unchanged",
+  "Isi host router dulu": "Enter the router host first",
+  "Periksa dan percayai sertifikat router dulu": "Check and trust the router certificate first",
+  "Sertifikat router": "Router certificate",
+  "Sertifikat sudah dipercaya. Periksa ulang bila sertifikat router diganti.": "Certificate already trusted. Check again if the router certificate was replaced.",
+  "Router memakai sertifikat sendiri. Periksa sidik jarinya dan bandingkan dengan yang tampil di router sebelum dipercaya.": "The router uses its own certificate. Check its fingerprint and compare it with the one shown on the router before trusting it.",
+  "Periksa sertifikat": "Check certificate",
+  "Saya percaya sertifikat ini": "I trust this certificate",
+  "Password belum tersimpan di Telemon": "Password is not stored in Telemon yet",
+  "Memuat": "Loading",
 } satisfies Record<string, string>

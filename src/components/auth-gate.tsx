@@ -1,6 +1,7 @@
 import * as React from "react"
 import { Loader2Icon } from "lucide-react"
 
+import { UNAUTHENTICATED_EVENT } from "@/lib/data/http"
 import { useApi } from "@/lib/api-context"
 import { AuthContext } from "@/lib/auth-context"
 import { useT } from "@/lib/i18n"
@@ -34,6 +35,14 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       cancelled = true
     }
   }, [api, access])
+
+  // Server menjawab 401 di tengah pemakaian (sesi berakhir/dicabut): kembali ke halaman masuk.
+  React.useEffect(() => {
+    if (access === "desktop") return
+    const onExpired = () => setState((s) => (s.status === "authed" ? { status: "anon" } : s))
+    window.addEventListener(UNAUTHENTICATED_EVENT, onExpired)
+    return () => window.removeEventListener(UNAUTHENTICATED_EVENT, onExpired)
+  }, [access])
 
   const value = React.useMemo(
     () => ({

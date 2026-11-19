@@ -633,6 +633,42 @@ async fn kelola_router_lewat_http() {
     assert_eq!(t.call(Method::DELETE, &format!("/api/routers/{id}"), None, Some(&ca), &[], LAN).await.status, StatusCode::NOT_FOUND);
 }
 
+#[tokio::test]
+async fn impor_mengembalikan_hitungan_dan_profile_hapus_lokal() {
+    let t = harness();
+    let rid = t.router(true);
+    t.account("operator", "role-operator");
+    t.account("viewer", "role-viewer");
+    let (co, cv) = (t.login("operator").await, t.login("viewer").await);
+    let imp = |c: String| {
+        let (uri, t) = (format!("/api/routers/{rid}/import"), &t);
+        async move { t.post(&uri, json!({}), Some(&c)).await }
+    };
+    // Operator hanya boleh melihat router: impor termasuk Ubah.
+    assert_eq!(imp(co.clone()).await.status, StatusCode::FORBIDDEN);
+    t.account("admin", "role-admin");
+    let ca = t.login("admin").await;
+    let r = imp(ca.clone()).await;
+    assert_eq!((r.status, r.body["users"]["added"].as_u64(), r.body["profiles"]["added"].as_u64()), (StatusCode::OK, Some(1), Some(2)));
+    let r = imp(ca).await;
+    assert_eq!((r.body["users"]["added"].as_u64(), r.body["users"]["updated"].as_u64()), (Some(0), Some(1)));
+
+    // Profile: ditolak bila dipakai user; bisa dihapus (lokal) dan dipulihkan bila bebas.
+    let used = format!("/api/profiles/{rid}%3A10M");
+    let free = format!("/api/profiles/{rid}%3A20M");
+    assert_eq!(t.post(&format!("{used}/soft-delete"), json!({}), Some(&cv)).await.status, StatusCode::FORBIDDEN);
+    let r = t.post(&format!("{used}/soft-delete"), json!({}), Some(&co)).await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY, "{:?}", r.body);
+    assert!(r.body["error"]["message"].as_str().unwrap().contains("masih dipakai"));
+    let r = t.post(&format!("{free}/soft-delete"), json!({}), Some(&co)).await;
+    assert_eq!((r.status, r.body["deletedReason"].as_str()), (StatusCode::OK, Some("manual")));
+    assert!(r.body["deletedAt"].as_i64().is_some());
+    let r = t.post(&format!("{free}/restore"), json!({}), Some(&co)).await;
+    assert_eq!((r.status, r.body["deletedAt"].is_null()), (StatusCode::OK, true));
+    assert_eq!(t.post(&format!("/api/profiles/{rid}%3Atidakada/soft-delete"), json!({}), Some(&co)).await.status, StatusCode::NOT_FOUND);
+    assert_eq!(t.post("/api/profiles/tanpa-titik-dua/restore", json!({}), Some(&co)).await.status, StatusCode::NOT_FOUND);
+}
+
 // ---------------- event ----------------
 
 #[tokio::test]
@@ -834,5 +870,8 @@ async fn websocket_event_live_dengan_cookie_dan_izin() {
     .await
     .expect("event diterima");
     assert_eq!(msg["event"]["routerId"], rid);
+    // Id live = id di basis data (tanpa duplikat saat klien memuat daftar event).
+    let stored = t.telemon.with_store(|s| s.list_events(&telemon_core::store::EventQuery { limit: 50, ..Default::default() })).unwrap();
+    assert!(stored.iter().any(|e| e.id.to_string() == msg["event"]["id"].as_str().unwrap() && e.event.username.as_deref() == Some("sari")), "id live tidak cocok dengan basis data: {msg}");
     t.telemon.shutdown().await;
 }

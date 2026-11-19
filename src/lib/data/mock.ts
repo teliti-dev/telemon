@@ -1505,6 +1505,18 @@ export class MockApi implements TelemonApi {
     return { ...r }
   }
 
+  async fetchFingerprint(host: string, port: number): Promise<string> {
+    this.authorize("router")
+    await delay(700)
+    // Data contoh: sidik jari tetap per host dan port, bukan dari router sungguhan.
+    let h = 2166136261
+    const bytes = Array.from({ length: 32 }, (_, i) => {
+      for (const c of `${host}:${port}:${i}`) h = Math.imul(h ^ c.charCodeAt(0), 16777619)
+      return ((h >>> 0) & 255).toString(16).padStart(2, "0").toUpperCase()
+    })
+    return bytes.join(":")
+  }
+
   async removeRouter(id: string) {
     this.authorize("router")
     await delay(300)

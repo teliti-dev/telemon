@@ -364,6 +364,8 @@ export interface NewRouter {
   tls: boolean
   username: string
   password: string
+  /** Sidik jari sertifikat api-ssl yang sudah dikonfirmasi pengguna (wajib bila TLS dinyalakan atau diganti). */
+  fingerprint?: string
 }
 
 // ---- Dasbor AI (Pengaturan): provider, token, saldo, anggaran ----

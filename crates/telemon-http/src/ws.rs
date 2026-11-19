@@ -38,13 +38,11 @@ async fn stream<C: Connector>(st: Arc<AppState<C>>, mut socket: WebSocket, token
     let mut rx = st.telemon.subscribe();
     let mut tick = tokio::time::interval(RECHECK);
     tick.tick().await;
-    let mut seq: u64 = 0;
     loop {
         tokio::select! {
             ev = rx.recv() => match ev {
                 Ok(e) => {
-                    seq += 1;
-                    let dto = EventDto::from_event(format!("live-{seq}"), &e.router_id, &e.event);
+                    let dto = EventDto::from_event(e.id.to_string(), &e.router_id, &e.event);
                     let msg = json!({ "kind": "event", "event": dto }).to_string();
                     if socket.send(Message::Text(msg.into())).await.is_err() {
                         return;
