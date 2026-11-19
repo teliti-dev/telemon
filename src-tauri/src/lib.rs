@@ -2,9 +2,10 @@
 //! hanya: pilih penyimpanan rahasia, luncurkan, buka webview ke server loopback, dan matikan dengan rapi.
 
 mod secrets;
+mod updater;
 
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 use telemon_desktop::{Desktop, DesktopConfig, TunnelChoice, PREFERRED_PORT};
@@ -40,17 +41,24 @@ fn launch(app: &tauri::AppHandle) -> Result<WebviewUrl, String> {
   } else {
     desktop.entry_url()
   };
+  // Pembaruan: penyedia dipasang ke server, pemeriksaan otomatis dimulai (sekali setelah dibuka, lalu tiap 24 jam).
+  desktop.state.set_updater(Arc::new(updater::TauriUpdater::new(app.clone())));
+  let state = desktop.state.clone();
+  tauri::async_runtime::block_on(async move { state.start_update_checks() });
   app.manage(Running(Mutex::new(Some(desktop))));
   Ok(WebviewUrl::External(url.parse().map_err(|e: url::ParseError| e.to_string())?))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+  // Klien HTTP updater memakai rustls tanpa penyedia bawaan: pasang ring (diabaikan bila sudah terpasang).
+  let _ = rustls::crypto::ring::default_provider().install_default();
   let app = tauri::Builder::default()
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(tauri_plugin_log::Builder::default().level(log::LevelFilter::Info).build())?;
       }
+      app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
       let url = launch(app.handle()).unwrap_or_else(|e| {
         log::error!("peluncuran gagal: {e}");
         error_url(&e)

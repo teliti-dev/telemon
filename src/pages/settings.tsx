@@ -3,6 +3,7 @@ import { DatabaseIcon, RadioTowerIcon, RotateCcwIcon, ShieldIcon, SparklesIcon, 
 import { toast } from "sonner"
 
 import { AiDashboard } from "@/components/ai-dashboard"
+import { UpdateCard } from "@/components/update-card"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -320,6 +321,8 @@ function SettingsForm() {
         </Card>
 
         <div className="xl:col-span-2"><AiDashboard /></div>
+
+        <UpdateCard />
 
         <StorageCard key={storageKey} dirty={dirty} />
       </div>

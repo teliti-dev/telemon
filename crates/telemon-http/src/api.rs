@@ -55,6 +55,11 @@ pub fn routes<C: Connector>() -> Router<Arc<AppState<C>>> {
         .route("/api/share/lan", post(share_lan::<C>))
         .route("/api/share/publik", post(share_publik::<C>))
         .route("/api/share/require-2fa", post(share_require_2fa::<C>))
+        // pembaruan aplikasi (hanya aplikasi desktop)
+        .route("/api/update", get(update_get::<C>))
+        .route("/api/update/check", post(update_check::<C>))
+        .route("/api/update/install", post(update_install::<C>))
+        .route("/api/update/channel", post(update_channel::<C>))
         // pengaturan dan penyimpanan
         .route("/api/settings", get(settings_get::<C>).put(settings_put::<C>))
         .route("/api/storage", get(storage_get::<C>))
@@ -710,4 +715,33 @@ async fn share_require_2fa<C: Connector>(State(st): St<C>, c: Caller, Json(r): J
     st.set_share(r.required, public_on);
     st.telemon.with_store(|s| s.kv_set("share.require_2fa", if r.required { "true" } else { "false" }).map_err(rusqlite_err::wrap)).map_err(|e| ApiError::internal(e.0))?;
     Ok(Json(st.share_json(true).await))
+}
+
+// ---------------- pembaruan aplikasi (hanya desktop) ----------------
+
+async fn update_get<C: Connector>(State(st): St<C>, c: Caller) -> ApiResult<Json<Value>> {
+    desktop_only(&c)?;
+    Ok(Json(st.update_json()))
+}
+
+async fn update_check<C: Connector>(State(st): St<C>, c: Caller) -> ApiResult<Json<Value>> {
+    desktop_only(&c)?;
+    st.check_update().await?;
+    Ok(Json(st.update_json()))
+}
+
+async fn update_install<C: Connector>(State(st): St<C>, c: Caller) -> ApiResult<Json<Value>> {
+    desktop_only(&c)?;
+    Ok(Json(st.install_update().await?))
+}
+
+#[derive(serde::Deserialize)]
+pub struct ChannelReq {
+    channel: String,
+}
+
+async fn update_channel<C: Connector>(State(st): St<C>, c: Caller, Json(r): Json<ChannelReq>) -> ApiResult<Json<Value>> {
+    desktop_only(&c)?;
+    st.set_update_channel(&r.channel)?;
+    Ok(Json(st.update_json()))
 }

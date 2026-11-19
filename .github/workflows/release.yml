@@ -46,6 +46,7 @@ jobs:
       tag: ${{ steps.meta.outputs.tag }}
       version: ${{ steps.meta.outputs.version }}
       upload: ${{ steps.meta.outputs.upload }}
+      skip: ${{ steps.meta.outputs.skip }}
     steps:
       - id: meta
         env:
@@ -54,6 +55,13 @@ jobs:
         run: |
           set -euo pipefail
           tag="${RELEASE_TAG:-$INPUT_TAG}"
+          # Rilis `channel-rc` hanya pembawa manifest kanal uji pembaruan; bukan rilis yang dibangun.
+          if [ "$tag" = "channel-rc" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "tag=" >> "$GITHUB_OUTPUT"; echo "version=0.0.0-ci" >> "$GITHUB_OUTPUT"; echo "upload=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
           if [ -z "$tag" ]; then
             echo "tag=" >> "$GITHUB_OUTPUT"
             echo "version=0.0.0-ci" >> "$GITHUB_OUTPUT"
@@ -73,6 +81,7 @@ jobs:
   linux:
     name: Linux (deb, AppImage)
     needs: prepare
+    if: needs.prepare.outputs.skip != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -161,6 +170,9 @@ jobs:
           # AppImage di runner tanpa FUSE, dan strip bawaan linuxdeploy gagal pada binutils baru.
           APPIMAGE_EXTRACT_AND_RUN: "1"
           NO_STRIP: "true"
+          # Tanda tangan berkas pembaruan (ADR 0023); build gagal bila kunci tidak ada.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: bun run tauri build --bundles deb,appimage
 
       - name: Simpan cache alat AppImage
@@ -178,10 +190,12 @@ jobs:
           path: |
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/release/bundle/appimage/*.AppImage.sig
 
   windows:
     name: Windows (NSIS, cross-compile dari Linux)
     needs: prepare
+    if: needs.prepare.outputs.skip != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -263,6 +277,9 @@ jobs:
         run: python3 .github/scripts/set-version.py "$VERSION"
 
       - name: Build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: bun run tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --bundles nsis
 
       - name: Simpan cache Windows SDK
@@ -277,7 +294,9 @@ jobs:
           name: windows
           if-no-files-found: error
           retention-days: 7
-          path: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+          path: |
+            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe.sig
 
   publish:
     name: Unggah ke rilis
@@ -288,6 +307,12 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.tag && format('refs/tags/{0}', needs.prepare.outputs.tag) || '' }}
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: dist-release
@@ -305,9 +330,28 @@ jobs:
           sha256sum -- * > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
+      - name: Manifest pembaruan (latest.json)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" --json body --jq .body > notes.md
+          # Dibuat SEBELUM unggah agar rilis tanpa tanda tangan lengkap gagal di sini, bukan di klien.
+          python3 .github/scripts/make-latest-json.py --dir dist-release --tag "$TAG" --repo "$GH_REPO" --notes-file notes.md --out latest.json
+          cat latest.json | python3 -c "import sys,json;m=json.load(sys.stdin);print({k:v['url'] for k,v in m['platforms'].items()})"
+
       - name: Unggah
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.prepare.outputs.tag }}
-        run: gh release upload "$TAG" dist-release/* --clobber
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG" dist-release/* latest.json --clobber
+          # Kanal uji: rilis bergerak `channel-rc` memuat manifest rilis terbaru (stabil maupun pra-rilis).
+          if ! gh release view channel-rc >/dev/null 2>&1; then
+            gh release create channel-rc --prerelease --title "Kanal uji pembaruan" --notes "Hanya pembawa latest.json untuk kanal uji pembaruan aplikasi. Bukan rilis yang dapat dipasang." --target "$(git rev-parse HEAD)"
+          fi
+          gh release upload channel-rc latest.json --clobber

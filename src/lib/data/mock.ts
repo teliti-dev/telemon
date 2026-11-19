@@ -1505,6 +1505,41 @@ export class MockApi implements TelemonApi {
     return { ...r }
   }
 
+  private updateChannel: "stable" | "rc" = "stable"
+  private updateChecked: number | undefined
+
+  private updateStatus() {
+    return {
+      supported: true,
+      currentVersion: "0.1.0",
+      canInstall: true,
+      channel: this.updateChannel,
+      checkedAt: this.updateChecked,
+      available: this.updateChecked ? { version: this.updateChannel === "rc" ? "0.2.0-rc.1" : "0.1.1", notes: "Contoh catatan rilis: perbaikan kecil dan peningkatan kecepatan." } : undefined,
+    }
+  }
+
+  async getUpdateStatus() {
+    return this.updateStatus()
+  }
+
+  async checkUpdate() {
+    await delay(700)
+    this.updateChecked = Date.now()
+    return this.updateStatus()
+  }
+
+  async setUpdateChannel(channel: "stable" | "rc") {
+    this.updateChannel = channel
+    this.updateChecked = undefined
+    return this.updateStatus()
+  }
+
+  async installUpdate(): Promise<{ installed: string; backup: string }> {
+    await delay(1500)
+    throw new Error(t("Data contoh: pembaruan tidak benar-benar dipasang"))
+  }
+
   async fetchFingerprint(host: string, port: number): Promise<string> {
     this.authorize("router")
     await delay(700)

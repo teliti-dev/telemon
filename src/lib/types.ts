@@ -439,3 +439,18 @@ export interface AiDashboard {
 }
 
 export type AiBudgetInput = Pick<AiBudget, "monthlyUsd" | "alertPercent" | "hardStop">
+
+// ---- Pembaruan aplikasi (hanya aplikasi desktop; ADR 0023) ----
+export type UpdateChannel = "stable" | "rc"
+
+export interface UpdateStatus {
+  /** Aplikasi ini punya mekanisme pembaruan. */
+  supported: boolean
+  currentVersion?: string
+  /** Bisa memasang sendiri (Linux: hanya AppImage; paket .deb dipasang manual). */
+  canInstall: boolean
+  channel: UpdateChannel
+  checkedAt?: number
+  available?: { version: string; notes?: string; date?: string }
+  error?: string
+}

@@ -1083,6 +1083,16 @@ impl Store {
         tx.commit()
     }
 
+    /// Salinan utuh basis data yang konsisten (SQLite `VACUUM INTO`; aman saat WAL aktif dan saat ada penulisan).
+    /// `dest` tidak boleh sudah ada. Rahasia di dalamnya tetap terenkripsi dengan kunci yang sama.
+    pub fn backup_to(&self, dest: &std::path::Path) -> Result<()> {
+        if dest.exists() {
+            return Err(rusqlite::Error::InvalidParameterName(format!("{} sudah ada", dest.display())));
+        }
+        self.conn.execute("VACUUM INTO ?1", [dest.to_string_lossy().as_ref()])?;
+        Ok(())
+    }
+
     /// Nilai bebas (di luar `Settings`), mis. pilihan yang hanya diatur dari aplikasi desktop.
     pub fn kv_get(&self, key: &str) -> Result<Option<String>> {
         self.conn.query_row("SELECT v FROM settings WHERE k = ?1", [key], |r| r.get(0)).optional()
@@ -1686,6 +1696,29 @@ mod tests {
         assert_eq!(normalize_fingerprint(&format!(" {} ", ["aB"; 32].join("-"))), Some(["AB"; 32].join(":")));
         assert_eq!(normalize_fingerprint("AA:BB"), None);
         assert_eq!(normalize_fingerprint(&"gg".repeat(32)), None);
+    }
+
+    #[test]
+    fn cadangan_basis_data_utuh_dan_tidak_menimpa() {
+        let dir = std::env::temp_dir().join(format!("telemon-bak-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let src = dir.join("a.db");
+        let mut s = Store::open(&src).unwrap();
+        s.unlock(&key()).unwrap();
+        s.sync_users("r1", 1, &[secret_pw("budi", Some("rahasia123"))], &[]).unwrap();
+        s.insert_events("r1", &[ev(1, EventKind::Connected, Some("budi"))]).unwrap();
+        let dest = dir.join("b.db");
+        s.backup_to(&dest).unwrap();
+        // Salinan bisa dibuka sendiri dan isinya sama.
+        let copy = Store::open(&dest).unwrap();
+        assert_eq!(copy.count_events().unwrap(), 1);
+        assert_eq!(copy.list_users(None, false).unwrap().len(), 1);
+        // Rahasia di salinan tetap terenkripsi (tidak polos).
+        let raw = std::fs::read(&dest).unwrap();
+        assert!(!raw.windows(10).any(|w| w == b"rahasia123"));
+        // Tidak menimpa berkas yang sudah ada.
+        assert!(s.backup_to(&dest).is_err());
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

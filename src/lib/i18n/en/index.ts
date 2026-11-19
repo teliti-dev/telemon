@@ -10,6 +10,7 @@ import profiles from "./profiles"
 import routers from "./routers"
 import settings from "./settings"
 import shell from "./shell"
+import update from "./update"
 import users from "./users"
 
 /**
@@ -27,6 +28,7 @@ export const EN: Record<string, string> = {
   ...routers,
   ...admin,
   ...ai,
+  ...update,
   ...aidash,
   ...settings,
   ...data,

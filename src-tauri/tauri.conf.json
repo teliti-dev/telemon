@@ -30,6 +30,18 @@
     },
     "resources": {
       "../dist": "ui"
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEVCMUQxNUQwNDUwRDVBQUMKUldTc1dnMUYwQlVkNjdjaWQ1eGZCR25NV3ZCdUJpYXhJeWdQTGIzR2hPWFhIUjRRbjc5N1lxN2MK",
+      "endpoints": [
+        "https://github.com/teliti-dev/telemon/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

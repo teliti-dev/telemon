@@ -31,6 +31,8 @@ import type {
   ShareBind,
   ShareState,
   UserMeta,
+  UpdateChannel,
+  UpdateStatus,
   UserMetaInput,
 } from "../types"
 
@@ -77,6 +79,12 @@ export interface TelemonApi {
    * di riwayat). Adapter contoh menyertakannya di `PppUser.password`.
    */
   revealUserPassword?(userId: string): Promise<string>
+  // ---- Pembaruan aplikasi (hanya aplikasi desktop; tidak ada di akses browser) ----
+  getUpdateStatus?(): Promise<UpdateStatus>
+  checkUpdate?(): Promise<UpdateStatus>
+  /** Cadangkan basis data lalu pasang pembaruan yang ditemukan; aplikasi memulai ulang sendiri. */
+  installUpdate?(): Promise<{ installed: string; backup: string; restarting?: boolean }>
+  setUpdateChannel?(channel: UpdateChannel): Promise<UpdateStatus>
   /** Ubah koneksi router. Username/password kosong = tetap. */
   updateRouter(id: string, input: RouterEdit): Promise<RouterInfo>
   /**

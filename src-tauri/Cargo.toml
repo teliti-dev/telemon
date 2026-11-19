@@ -27,6 +27,9 @@ telemon-core = { path = "../crates/telemon-core" }
 telemon-desktop = { path = "../crates/telemon-desktop" }
 # Keyring OS: Credential Manager (Windows), Secret Service lewat zbus murni Rust (Linux, tanpa libdbus), Keychain (macOS).
 keyring = "4"
+tauri-plugin-updater = "2"
+# Penyedia kripto bawaan untuk klien HTTP updater (reqwest rustls-no-provider): ring, sama dengan sisanya.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 url = "2"
 
 # Binary kecil: tanpa OpenSSL/aws-lc (pakai rustls + ring bila perlu TLS), tanpa C bawaan selain SQLite statis. ADR 0010.

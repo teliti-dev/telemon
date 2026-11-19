@@ -6,6 +6,7 @@ import { AuthGate } from "@/components/auth-gate"
 import { BottomNav } from "@/components/bottom-nav"
 import { PageSkeleton } from "@/components/skeletons"
 import { SiteHeader } from "@/components/site-header"
+import { UpdateBanner } from "@/components/update-banner"
 import { UserDetailSheet } from "@/components/user-detail-sheet"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -159,6 +160,7 @@ function Content() {
       style={ai.docked ? { paddingRight: AI_DOCK_WIDTH } : undefined}
     >
       <SiteHeader title={t(TITLES[page]) /* i18n-ignore: kunci tk */} />
+      <UpdateBanner />
       <main className={`${PAGE_CONTAINER} flex-1 py-4 pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:py-6`}>
         {body}
       </main>

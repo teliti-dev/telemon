@@ -27,6 +27,8 @@ import type {
   UserInput,
   UserMeta,
   UserMetaInput,
+  UpdateChannel,
+  UpdateStatus,
   UserPatch,
 } from "../types"
 import type { LiveUpdate, Snapshot, TelemonApi } from "./api"
@@ -535,6 +537,27 @@ export class HttpApi implements TelemonApi {
   }
   purgeNow() {
     return this.req<PurgeCounts>("POST", "/api/storage/purge", {})
+  }
+
+  // ---------------- pembaruan aplikasi (hanya desktop) ----------------
+
+  getUpdateStatus() {
+    return this.req<UpdateStatus>("GET", "/api/update")
+  }
+  checkUpdate() {
+    return this.req<UpdateStatus>("POST", "/api/update/check", {})
+  }
+  setUpdateChannel(channel: UpdateChannel) {
+    return this.req<UpdateStatus>("POST", "/api/update/channel", { channel })
+  }
+  async installUpdate(): Promise<{ installed: string; backup: string; restarting?: boolean }> {
+    try {
+      return await this.req<{ installed: string; backup: string }>("POST", "/api/update/install", {})
+    } catch (e) {
+      // Aplikasi menutup atau memulai ulang sendiri saat memasang: sambungan terputus bukan kegagalan.
+      if (e instanceof TypeError) return { installed: "", backup: "", restarting: true }
+      throw e
+    }
   }
 
   // ---------------- belum ada di server ----------------

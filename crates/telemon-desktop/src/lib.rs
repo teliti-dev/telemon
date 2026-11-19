@@ -156,6 +156,7 @@ impl Desktop {
 
     /// Hentikan berbagi, pemantau, dan server. Dipanggil saat aplikasi ditutup.
     pub async fn shutdown(self) {
+        self.state.stop_update_checks();
         self.state.stop_public().await;
         self.state.shutdown_lan().await;
         self.telemon.shutdown().await;

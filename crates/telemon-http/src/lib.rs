@@ -7,6 +7,7 @@ mod error;
 mod guard;
 mod share;
 mod state;
+mod update;
 mod ws;
 
 use std::future::Future;
@@ -24,6 +25,7 @@ use tower_http::services::{ServeDir, ServeFile};
 pub use error::ApiError;
 pub use guard::{COOKIE, DESKTOP_COOKIE, client_info, origin_ok};
 pub use share::{DEFAULT_LAN_PORT, Tunnel};
+pub use update::{KEEP_BACKUPS, UpdateInfo, Updater, prune_backups};
 pub use state::{AppState, HttpConfig, PlanCache, RateLimiter};
 
 /// Router axum lengkap (API + UI) untuk akses jarak jauh (LAN/Publik; login akun).

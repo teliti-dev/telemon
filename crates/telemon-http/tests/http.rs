@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use telemon_core::auth::{Auth, HashParams, Level, LoginOutcome, NewAccount, Permissions, Resource, RoleInput, Via, base32_decode, totp_code};
 use telemon_core::store::Store;
 use telemon_core::{Connector, Error, MemorySecrets, RouterApi, Row, RuntimeConfig, SecretStore, Telemon, TlsMode};
-use telemon_http::{AppState, HttpConfig, Tunnel, app, app_desktop};
+use telemon_http::{AppState, HttpConfig, Tunnel, UpdateInfo, Updater, app, app_desktop};
 use tower::ServiceExt;
 
 const T0: i64 = 1_000_000_000_000;
@@ -1106,6 +1106,189 @@ async fn akses_publik_mati_otomatis_setelah_durasi() {
     assert_eq!(s["publik"]["status"], "off", "harus mati otomatis setelah durasi");
     assert_eq!(tunnel.stops.load(Ordering::SeqCst), 1);
     t.st.shutdown_lan().await;
+}
+
+// ---------------- pembaruan aplikasi ----------------
+
+#[derive(Default)]
+struct FakeUpdater {
+    /// Versi yang ditawarkan per kanal.
+    offer: Mutex<std::collections::HashMap<String, String>>,
+    checks: Mutex<Vec<String>>,
+    installs: AtomicUsize,
+    check_error: Mutex<Option<String>>,
+    install_error: Mutex<Option<String>>,
+}
+
+type Fut<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send + 'a>>;
+
+impl Updater for FakeUpdater {
+    fn current_version(&self) -> String {
+        "0.1.0".into()
+    }
+    fn check(&self, channel: &str) -> Fut<'_, Result<Option<UpdateInfo>, String>> {
+        let channel = channel.to_string();
+        Box::pin(async move {
+            self.checks.lock().unwrap().push(channel.clone());
+            if let Some(e) = self.check_error.lock().unwrap().clone() {
+                return Err(e);
+            }
+            Ok(self.offer.lock().unwrap().get(&channel).map(|v| UpdateInfo { version: v.clone(), notes: Some("catatan rilis".into()), date: None }))
+        })
+    }
+    fn install(&self) -> Fut<'_, Result<(), String>> {
+        Box::pin(async move {
+            if let Some(e) = self.install_error.lock().unwrap().clone() {
+                return Err(e);
+            }
+            self.installs.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        })
+    }
+}
+
+fn update_harness(name: &str) -> (T, Arc<FakeUpdater>, PathBuf) {
+    let dir = std::env::temp_dir().join(format!("telemon-upd-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let t = harness_with(HttpConfig { db_path: dir.join("telemon.db").display().to_string(), ..Default::default() });
+    let u = Arc::new(FakeUpdater::default());
+    t.st.set_updater(u.clone());
+    (t, u, dir)
+}
+
+use std::path::PathBuf;
+
+#[tokio::test]
+async fn pembaruan_hanya_desktop_dan_tanpa_penyedia_tidak_didukung() {
+    let t = harness();
+    let c = desk_cookie();
+    let g = t.desk(Method::GET, "/api/update", None, Some(&c), LOOP).await;
+    assert_eq!((g.status, g.body["supported"].as_bool()), (StatusCode::OK, Some(false)));
+    assert_eq!(t.desk(Method::POST, "/api/update/check", Some(json!({})), Some(&c), LOOP).await.status, StatusCode::NOT_IMPLEMENTED);
+    assert_eq!(t.desk(Method::POST, "/api/update/install", Some(json!({})), Some(&c), LOOP).await.status, StatusCode::NOT_IMPLEMENTED);
+    // Akun jarak jauh, bahkan admin, tidak boleh memeriksa atau memasang.
+    t.account("admin", "role-admin");
+    let ca = t.login("admin").await;
+    for (m, p, b) in [(Method::GET, "/api/update", None), (Method::POST, "/api/update/check", Some(json!({}))), (Method::POST, "/api/update/install", Some(json!({}))), (Method::POST, "/api/update/channel", Some(json!({"channel": "rc"})))] {
+        let r = t.call(m, p, b, Some(&ca), &[], LAN).await;
+        assert_eq!((r.status, r.code()), (StatusCode::FORBIDDEN, "forbidden"), "{p}");
+    }
+}
+
+#[tokio::test]
+async fn periksa_kanal_dan_status() {
+    let (t, u, _dir) = update_harness("check");
+    let c = desk_cookie();
+    let call = |m: Method, p: &'static str, b: Option<Value>| t.desk(m, p, b, Some(&c), LOOP);
+    let g = call(Method::GET, "/api/update", None).await.body;
+    assert_eq!((g["supported"].as_bool(), g["currentVersion"].as_str(), g["channel"].as_str(), g["available"].is_null(), g["checkedAt"].is_null()), (Some(true), Some("0.1.0"), Some("stable"), true, true));
+    // Tidak ada pembaruan.
+    let r = call(Method::POST, "/api/update/check", Some(json!({}))).await;
+    assert_eq!((r.status, r.body["available"].is_null(), r.body["checkedAt"].is_null()), (StatusCode::OK, true, false));
+    // Ada di kanal stabil.
+    u.offer.lock().unwrap().insert("stable".into(), "0.2.0".into());
+    u.offer.lock().unwrap().insert("rc".into(), "0.3.0-rc.1".into());
+    let r = call(Method::POST, "/api/update/check", Some(json!({}))).await;
+    assert_eq!((r.body["available"]["version"].as_str(), r.body["available"]["notes"].as_str()), (Some("0.2.0"), Some("catatan rilis")));
+    // Ganti kanal: hasil lama dihapus, pemeriksaan berikutnya memakai kanal baru, dan pilihan bertahan.
+    assert_eq!(call(Method::POST, "/api/update/channel", Some(json!({"channel": "beta"}))).await.status, StatusCode::BAD_REQUEST);
+    let r = call(Method::POST, "/api/update/channel", Some(json!({"channel": "rc"}))).await;
+    assert_eq!((r.body["channel"].as_str(), r.body["available"].is_null()), (Some("rc"), true));
+    assert_eq!(call(Method::POST, "/api/update/check", Some(json!({}))).await.body["available"]["version"], "0.3.0-rc.1");
+    assert_eq!(u.checks.lock().unwrap().as_slice(), ["stable", "stable", "rc"]);
+    assert_eq!(t.telemon.with_store(|s| s.kv_get("update.channel")).unwrap().as_deref(), Some("rc"));
+    // Gagal memeriksa (mis. tanpa internet): galat jelas, status memuat galatnya, berhasil berikutnya membersihkan.
+    *u.check_error.lock().unwrap() = Some("tanpa internet".into());
+    let r = call(Method::POST, "/api/update/check", Some(json!({}))).await;
+    assert_eq!((r.status, r.code()), (StatusCode::BAD_GATEWAY, "update_check_failed"));
+    assert!(r.body["error"]["message"].as_str().unwrap().contains("tanpa internet"));
+    assert_eq!(call(Method::GET, "/api/update", None).await.body["error"], "tanpa internet");
+    *u.check_error.lock().unwrap() = None;
+    assert!(call(Method::POST, "/api/update/check", Some(json!({}))).await.body["error"].is_null());
+}
+
+#[tokio::test]
+async fn pasang_mencadangkan_dulu_dan_membatasi_jumlah_cadangan() {
+    let (t, u, dir) = update_harness("install");
+    let rid = t.router(false);
+    t.telemon.with_store(|s| s.insert_events(&rid, &[telemon_core::Event { at_ms: 1, kind: telemon_core::EventKind::Connected, username: None, address: None, caller_id: None, message: "m".into() }])).unwrap();
+    let c = desk_cookie();
+    let post = |p: &'static str| t.desk(Method::POST, p, Some(json!({})), Some(&c), LOOP);
+    // Belum diperiksa: tidak ada yang dipasang.
+    let r = post("/api/update/install").await;
+    assert_eq!((r.status, r.code()), (StatusCode::CONFLICT, "no_update"));
+    assert_eq!(u.installs.load(Ordering::SeqCst), 0);
+
+    u.offer.lock().unwrap().insert("stable".into(), "0.2.0".into());
+    post("/api/update/check").await;
+    let r = post("/api/update/install").await;
+    assert_eq!((r.status, r.body["installed"].as_str()), (StatusCode::OK, Some("0.2.0")), "{:?}", r.body);
+    assert_eq!(u.installs.load(Ordering::SeqCst), 1);
+    // Cadangan ada, utuh, dan bernama jelas.
+    let backups: Vec<_> = std::fs::read_dir(dir.join("backups")).unwrap().flatten().map(|e| e.path()).collect();
+    assert_eq!(backups.len(), 1);
+    assert!(backups[0].file_name().unwrap().to_string_lossy().contains("sebelum-0.2.0"), "{backups:?}");
+    assert_eq!(r.body["backup"].as_str().unwrap(), backups[0].display().to_string());
+    assert_eq!(telemon_core::store::Store::open(&backups[0]).unwrap().count_events().unwrap(), 1, "cadangan harus bisa dibuka dan berisi data");
+
+    // Lebih banyak pasang: hanya KEEP_BACKUPS terbaru yang disimpan.
+    for v in ["0.2.1", "0.2.2", "0.2.3", "0.2.4"] {
+        u.offer.lock().unwrap().insert("stable".into(), v.into());
+        t.clock.fetch_add(1000, Ordering::SeqCst);
+        post("/api/update/check").await;
+        assert_eq!(post("/api/update/install").await.status, StatusCode::OK);
+    }
+    let mut names: Vec<String> = std::fs::read_dir(dir.join("backups")).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into()).collect();
+    names.sort();
+    assert_eq!(names.len(), telemon_http::KEEP_BACKUPS);
+    assert!(names.last().unwrap().contains("0.2.4") && !names.iter().any(|n| n.contains("sebelum-0.2.0")), "{names:?}");
+}
+
+#[tokio::test]
+async fn gagal_cadangan_membatalkan_pasang_dan_gagal_pasang_menjaga_data() {
+    let (t, u, dir) = update_harness("fail");
+    let c = desk_cookie();
+    let post = |p: &'static str| t.desk(Method::POST, p, Some(json!({})), Some(&c), LOOP);
+    u.offer.lock().unwrap().insert("stable".into(), "0.2.0".into());
+    post("/api/update/check").await;
+    // Folder cadangan tidak bisa dibuat (sudah ada berkas bernama `backups`): pasang dibatalkan.
+    std::fs::write(dir.join("backups"), b"bukan folder").unwrap();
+    let r = post("/api/update/install").await;
+    assert_eq!(r.status, StatusCode::INTERNAL_SERVER_ERROR, "{:?}", r.body);
+    assert_eq!(u.installs.load(Ordering::SeqCst), 0, "tanpa cadangan tidak boleh memasang");
+    std::fs::remove_file(dir.join("backups")).unwrap();
+    // Gagal memasang: galat jelas memuat lokasi cadangan; pembaruan tetap tersedia untuk dicoba lagi.
+    *u.install_error.lock().unwrap() = Some("tanda tangan tidak valid".into());
+    let r = post("/api/update/install").await;
+    assert_eq!((r.status, r.code()), (StatusCode::BAD_GATEWAY, "update_install_failed"));
+    let m = r.body["error"]["message"].as_str().unwrap();
+    assert!(m.contains("tanda tangan tidak valid") && m.contains("cadangan") && m.contains("backups"), "{m}");
+    assert_eq!(t.desk(Method::GET, "/api/update", None, Some(&c), LOOP).await.body["available"]["version"], "0.2.0");
+    *u.install_error.lock().unwrap() = None;
+    assert_eq!(post("/api/update/install").await.status, StatusCode::OK);
+}
+
+#[tokio::test(start_paused = true)]
+async fn pemeriksaan_otomatis_setelah_dibuka_lalu_tiap_24_jam() {
+    let (t, u, _dir) = update_harness("auto");
+    u.offer.lock().unwrap().insert("stable".into(), "0.2.0".into());
+    t.st.start_update_checks();
+    for _ in 0..5 {
+        tokio::task::yield_now().await;
+    }
+    assert!(u.checks.lock().unwrap().is_empty(), "tidak langsung saat dibuka");
+    tokio::time::advance(Duration::from_secs(21)).await;
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    assert_eq!(u.checks.lock().unwrap().len(), 1, "sekali setelah jeda awal");
+    assert_eq!(t.desk(Method::GET, "/api/update", None, Some(&desk_cookie()), LOOP).await.body["available"]["version"], "0.2.0");
+    tokio::time::advance(Duration::from_secs(24 * 3600)).await;
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    assert_eq!(u.checks.lock().unwrap().len(), 2, "lalu tiap 24 jam");
+    t.st.stop_update_checks();
+    tokio::time::advance(Duration::from_secs(48 * 3600)).await;
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    assert_eq!(u.checks.lock().unwrap().len(), 2, "berhenti setelah dihentikan");
 }
 
 // ---------------- UI statis ----------------
