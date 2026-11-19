@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
-use telemon_desktop::{Desktop, DesktopConfig, PREFERRED_PORT};
+use telemon_desktop::{Desktop, DesktopConfig, TunnelChoice, PREFERRED_PORT};
 
 struct Running(Mutex<Option<Desktop>>);
 
@@ -33,7 +33,7 @@ fn launch(app: &tauri::AppHandle) -> Result<WebviewUrl, String> {
   // meneruskan /api dan /desktop-entry ke server ini (vite.config.ts).
   let dev = cfg!(debug_assertions);
   let static_dir = if dev { None } else { Some(app.path().resource_dir().map_err(|e| e.to_string())?.join("ui")) };
-  let cfg = DesktopConfig { db_path: data_dir.join("telemon.db"), static_dir, secrets, port: PREFERRED_PORT };
+  let cfg = DesktopConfig { db_path: data_dir.join("telemon.db"), static_dir, secrets, port: PREFERRED_PORT, tunnel: TunnelChoice::Official };
   let desktop = tauri::async_runtime::block_on(Desktop::start(cfg)).map_err(|e| e.to_string())?;
   let url = if dev {
     format!("http://localhost:5173/desktop-entry?t={}", desktop.token)
