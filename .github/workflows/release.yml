@@ -293,10 +293,15 @@ jobs:
           path: dist-release
           merge-multiple: true
 
-      - name: Checksum
+      - name: Ratakan dan buat checksum
         working-directory: dist-release
         run: |
+          set -euo pipefail
+          # Artefak Linux menyimpan subfolder (appimage/, deb/): ratakan agar hanya berkas yang diunggah.
+          find . -mindepth 2 -type f -exec mv -t . {} +
+          find . -mindepth 1 -type d -empty -delete
           ls -la
+          test -z "$(find . -mindepth 1 -type d)" || { echo "::error::masih ada folder di dist-release"; exit 1; }
           sha256sum -- * > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
