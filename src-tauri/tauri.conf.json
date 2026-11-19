@@ -35,7 +35,14 @@
     "macOS": {
       "minimumSystemVersion": "11.0",
       "signingIdentity": "-"
-    }
+    },
+    "publisher": "Teliti",
+    "copyright": "Copyright © 2026 Teliti (https://teliti.net/). Licensed under AGPL-3.0.",
+    "homepage": "https://teliti.net/",
+    "license": "AGPL-3.0-only",
+    "licenseFile": "../LICENSE",
+    "category": "Utility",
+    "shortDescription": "Monitor PPPoE users and events across MikroTik routers"
   },
   "plugins": {
     "updater": {

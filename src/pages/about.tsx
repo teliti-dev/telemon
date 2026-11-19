@@ -1,10 +1,10 @@
-import { BugIcon, CopyIcon, ExternalLinkIcon, CodeIcon, PackageIcon, ZapIcon } from "lucide-react"
+import { BugIcon, CopyIcon, ExternalLinkIcon, CodeIcon, GlobeIcon, PackageIcon, ZapIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { copyText } from "@/hooks/use-copy"
-import { APP_VERSION, ISSUES_URL, LICENSE_URL, RELEASES_PAGE_URL, REPO_URL, THIRD_PARTY } from "@/lib/app-info"
+import { APP_VERSION, COPYRIGHT, ISSUES_URL, LICENSE_URL, ORG_NAME, ORG_URL, RELEASES_PAGE_URL, REPO_URL, THIRD_PARTY } from "@/lib/app-info"
 import { useLang, useT } from "@/lib/i18n"
 import { useStore } from "@/lib/store-context"
 
@@ -48,6 +48,10 @@ export function AboutPage() {
                 <Badge variant="secondary" className="font-mono">{APP_VERSION}</Badge>
               </CardTitle>
               <CardDescription>{t("Pemantau user dan event PPPoE di banyak router Mikrotik.")}</CardDescription>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {COPYRIGHT} · {t("Dikembangkan oleh")}{" "}
+                <a href={ORG_URL} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-foreground">{ORG_NAME}</a>
+              </p>
             </div>
           </div>
         </CardHeader>
@@ -55,6 +59,7 @@ export function AboutPage() {
           <LinkButton href={REPO_URL} icon={<CodeIcon />}>{t("Kode sumber")}</LinkButton>
           <LinkButton href={RELEASES_PAGE_URL} icon={<PackageIcon />}>{t("Rilis")}</LinkButton>
           <LinkButton href={ISSUES_URL} icon={<BugIcon />}>{t("Laporkan masalah")}</LinkButton>
+          <LinkButton href={ORG_URL} icon={<GlobeIcon />}>{ORG_NAME}</LinkButton>
         </CardContent>
       </Card>
 

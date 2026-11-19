@@ -1,6 +1,7 @@
 /** English translations for the About page. */
 export default {
   "Tentang": "About",
+  "Dikembangkan oleh": "Developed by",
   "Pemantau user dan event PPPoE di banyak router Mikrotik.": "Monitor PPPoE users and events across many MikroTik routers.",
   "Kode sumber": "Source code",
   "Rilis": "Releases",

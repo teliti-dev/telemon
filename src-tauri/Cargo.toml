@@ -4,7 +4,8 @@ version = "0.1.0"
 description = "Monitoring PPPoE multi-Mikrotik"
 authors = ["Teliti"]
 license = "AGPL-3.0-only"
-repository = ""
+repository = "https://github.com/teliti-dev/telemon"
+homepage = "https://teliti.net/"
 edition = "2024"
 rust-version = "1.90"
 

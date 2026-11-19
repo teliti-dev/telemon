@@ -107,3 +107,7 @@ Code comments refer to architecture decisions by number (for example "ADR 0021")
 ## License
 
 [AGPL-3.0](LICENSE). Telemon uses the AGPL-licensed `mikrotik-rs` client.
+
+---
+
+Copyright © 2026 [Teliti](https://teliti.net/). See [NOTICE](NOTICE).

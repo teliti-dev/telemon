@@ -1,5 +1,8 @@
 /** Informasi aplikasi yang tampil di halaman Tentang. */
 export const APP_VERSION: string = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "dev"
+export const ORG_NAME = "Teliti"
+export const ORG_URL = "https://teliti.net/"
+export const COPYRIGHT = `© 2026 ${ORG_NAME}`
 export const REPO_URL = "https://github.com/teliti-dev/telemon"
 export const ISSUES_URL = `${REPO_URL}/issues`
 export const RELEASES_PAGE_URL = `${REPO_URL}/releases`
