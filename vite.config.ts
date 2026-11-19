@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
@@ -5,9 +6,13 @@ import { defineConfig } from "vite"
 
 const devTarget = process.env.VITE_TELEMON_URL ?? (process.env.TAURI_ENV_PLATFORM ? "http://127.0.0.1:47831" : undefined)
 
+const pkg = JSON.parse(readFileSync(resolve(import.meta.dirname, "package.json"), "utf8")) as { version: string }
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // Versi aplikasi untuk halaman Tentang; workflow rilis menyamakan package.json dengan tag sebelum build.
+  define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   // Tauri butuh port tetap; layar tidak dibersihkan agar log Rust tetap terlihat.
   clearScreen: false,
   server: {

@@ -24,6 +24,7 @@ import { useIsDesktop } from "@/hooks/use-media-query"
 import { navigate, navigatePath, useRoute, type Page } from "@/lib/route"
 import { StoreProvider } from "@/lib/store"
 import { useStore } from "@/lib/store-context"
+import { AboutPage } from "@/pages/about"
 import { AccountPage } from "@/pages/account"
 import { AiChatPage } from "@/components/ai-chat-dock"
 import { AppearancePage } from "@/pages/appearance"
@@ -47,6 +48,7 @@ const TITLES: Record<Page, string> = {
   berbagi: tk("Berbagi"),
   admin: tk("Admin"),
   pengaturan: tk("Pengaturan"),
+  tentang: tk("Tentang"),
   akun: tk("Akun saya"),
   import: tk("Import dari Mikrotik"),
   appearance: tk("Appearance"),
@@ -123,6 +125,7 @@ function Content() {
       case "ringkasan": return <OverviewPage onOpenUser={openUserFn} />
       case "event": return <EventsPage key={hash} params={params} onOpenUser={openUserFn} />
       case "berbagi": return <SharePage />
+      case "tentang": return <AboutPage />
       case "pengaturan":
         if (s0 === "ai-provider" && s1 === "new") return <AiProviderFormPage />
         if (s0 === "ai-provider" && s1 && s2 === "edit") return <AiProviderFormPage providerId={s1} />

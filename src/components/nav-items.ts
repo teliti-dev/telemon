@@ -1,6 +1,7 @@
 import {
   ActivityIcon,
   GaugeIcon,
+  InfoIcon,
   RadioTowerIcon,
   SettingsIcon,
   Share2Icon,
@@ -37,6 +38,7 @@ export const NAV: NavItem[] = [
   { page: "berbagi", label: tk("Berbagi"), icon: Share2Icon, desktopOnly: true, end: true, more: true },
   { page: "admin", label: tk("Admin"), icon: UserCogIcon, resources: ["admin"], end: true, more: true },
   { page: "pengaturan", label: tk("Pengaturan"), icon: SettingsIcon, resources: ["pengaturan"], end: true, more: true },
+  { page: "tentang", label: tk("Tentang"), icon: InfoIcon, end: true, more: true },
 ]
 
 /** Menu yang tampil: desktop semua; jarak jauh hanya yang izinnya bukan "Tanpa akses". */

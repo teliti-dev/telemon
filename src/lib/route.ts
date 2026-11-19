@@ -9,6 +9,7 @@ export const PAGES = [
   "berbagi",
   "admin",
   "pengaturan",
+  "tentang",
   "akun",
   "import",
   "appearance",

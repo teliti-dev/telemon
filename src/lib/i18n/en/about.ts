@@ -1,0 +1,22 @@
+/** English translations for the About page. */
+export default {
+  "Tentang": "About",
+  "Pemantau user dan event PPPoE di banyak router Mikrotik.": "Monitor PPPoE users and events across many MikroTik routers.",
+  "Kode sumber": "Source code",
+  "Rilis": "Releases",
+  "Laporkan masalah": "Report an issue",
+  "Info diagnostik": "Diagnostic info",
+  "Sertakan ini saat melaporkan masalah. Tidak memuat data router, akun, atau kata sandi.": "Include this when reporting an issue. It contains no router, account, or password data.",
+  "Versi": "Version",
+  "Akses": "Access",
+  "Aplikasi desktop": "Desktop app",
+  "Browser": "Browser",
+  "Bahasa": "Language",
+  "Peramban": "Browser engine",
+  "Info diagnostik disalin": "Diagnostic info copied",
+  "Salin info": "Copy info",
+  "Lisensi": "License",
+  "Telemon adalah perangkat lunak bebas berlisensi GNU AGPL-3.0. Kamu boleh memakai, mempelajari, mengubah, dan membagikannya; versi yang dimodifikasi dan disediakan lewat jaringan harus menyertakan kode sumbernya.": "Telemon is free software licensed under the GNU AGPL-3.0. You may use, study, modify, and share it; a modified version offered over a network must make its source code available.",
+  "Baca teks lisensi": "Read the license text",
+  "Komponen pihak ketiga": "Third-party components",
+} as Record<string, string>

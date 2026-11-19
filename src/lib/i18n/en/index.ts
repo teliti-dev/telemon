@@ -1,3 +1,4 @@
+import about from "./about"
 import admin from "./admin"
 import ai from "./ai"
 import aidash from "./aidash"
@@ -29,6 +30,7 @@ export const EN: Record<string, string> = {
   ...admin,
   ...ai,
   ...update,
+  ...about,
   ...aidash,
   ...settings,
   ...data,
