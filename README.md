@@ -45,8 +45,9 @@ Download the file for your system from the [Releases](https://github.com/teliti-
 | Windows | `Telemon_<version>_x64-setup.exe` | In app |
 | Linux | `Telemon_<version>_amd64.AppImage` | In app |
 | Debian, Ubuntu | `Telemon_<version>_amd64.deb` | Notified only; install the new `.deb` yourself |
+| macOS 11+ (Apple Silicon and Intel) | `Telemon_<version>_universal.dmg` | In app |
 
-The Windows installer is not code-signed yet, so SmartScreen will warn on first run. Release files carry a minisign signature (`.sig`) that the in-app updater verifies.
+The Windows installer is not code-signed yet, so SmartScreen will warn on first run. The macOS app is signed ad-hoc but not notarized (no Apple Developer account yet): on first launch, right-click the app and choose **Open**, or run `xattr -cr /Applications/Telemon.app`. The macOS build has been compiled and packaged by CI but not yet run on a Mac. On macOS the automatic `cloudflared` download for public access is not available yet; LAN sharing works. Release files carry a minisign signature (`.sig`) that the in-app updater verifies.
 
 Pre-releases are on the test channel. Stable releases will use the stable channel; there is none yet.
 
@@ -97,7 +98,7 @@ Layout: `src/` React UI (Vite, TypeScript, shadcn/ui), `crates/telemon-core` Rou
 
 ## Releasing
 
-Create a GitHub Release with a tag `vX.Y.Z`. `.github/workflows/release.yml` builds Linux (`.deb`, `.AppImage`) and Windows (NSIS `.exe`) on Linux runners, signs the updater artifacts, and uploads them with `SHA256SUMS.txt` and `latest.json`. Prereleases are published to the `channel-rc` test channel.
+Create a GitHub Release with a tag `vX.Y.Z`. `.github/workflows/release.yml` builds Linux (`.deb`, `.AppImage`), Windows (NSIS `.exe`, cross-compiled on Linux) and macOS (universal `.dmg`, on a macOS runner), signs the updater artifacts, and uploads them with `SHA256SUMS.txt` and `latest.json`. Prereleases are published to the `channel-rc` test channel.
 
 ## Design notes
 
