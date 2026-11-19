@@ -93,6 +93,7 @@ export class HttpApi implements TelemonApi {
   private lastInventory = new Map<string, string>()
   private lastRouters = new Map<string, string>()
   private seenEvents = new Set<string>()
+  private lastShare = ""
   private ws: WebSocket | null = null
   private timer: ReturnType<typeof setInterval> | null = null
   private debounce: ReturnType<typeof setTimeout> | null = null
@@ -139,11 +140,17 @@ export class HttpApi implements TelemonApi {
   // ---------------- snapshot dan live ----------------
 
   async snapshot(): Promise<Snapshot> {
-    const d = await this.req<Omit<Snapshot, "share">>("GET", "/api/snapshot")
+    const d = await this.req<Snapshot>("GET", "/api/snapshot")
     this.routers = d.routers
     for (const e of d.events) this.seenEvents.add(e.id)
     this.remember(d)
-    return { ...d, share: this.share() }
+    return { ...d, share: this.shareOf(d.share) }
+  }
+
+  /** Status berbagi dari server; bila server lama tidak mengirimnya, nilai aman untuk browser. */
+  private shareOf(s?: ShareState): ShareState {
+    if (s) return { ...s, features: { ...s.features, ai: false } }
+    return this.share()
   }
 
   /** Berbagi (serve/publik) dikelola dari aplikasi desktop; browser hanya perlu tahu fitur yang ada. */
@@ -172,7 +179,7 @@ export class HttpApi implements TelemonApi {
 
   /** Sinkron ulang dengan server dan kirim yang berubah (router, inventaris user/profil). */
   async poll(): Promise<Snapshot> {
-    const d = await this.req<Omit<Snapshot, "share">>("GET", "/api/snapshot")
+    const d = await this.req<Snapshot>("GET", "/api/snapshot")
     const ids = new Set(d.routers.map((r) => r.id))
     for (const r of d.routers) {
       const key = JSON.stringify(r)
@@ -201,7 +208,12 @@ export class HttpApi implements TelemonApi {
       }
     }
     this.routers = d.routers
-    return { ...d, share: this.share() }
+    const share = this.shareOf(d.share)
+    if (JSON.stringify(share) !== this.lastShare) {
+      this.lastShare = JSON.stringify(share)
+      this.emit({ kind: "share", share })
+    }
+    return { ...d, share }
   }
 
   subscribe(onUpdate: (u: LiveUpdate) => void): () => void {
@@ -545,8 +557,23 @@ export class HttpApi implements TelemonApi {
   saveAiBudget(): Promise<void> {
     return Promise.reject(this.unsupported("Anggaran AI"))
   }
-  setRequire2fa(): Promise<ShareState> {
-    return Promise.reject(this.unsupported("Pengaturan Berbagi"))
+  // ---------------- berbagi (hanya aplikasi desktop; server menolak akun jarak jauh) ----------------
+
+  private async shareCall(path: string, body: unknown): Promise<ShareState> {
+    const s = this.shareOf(await this.req<ShareState>("POST", path, body))
+    this.lastShare = JSON.stringify(s)
+    this.emit({ kind: "share", share: s })
+    return s
+  }
+  setRequire2fa(required: boolean): Promise<ShareState> {
+    return this.shareCall("/api/share/require-2fa", { required })
+  }
+  setLanShare(opts: { enabled: boolean; bind: "lan" | "localhost"; port: number }): Promise<ShareState> {
+    return this.shareCall("/api/share/lan", opts)
+  }
+  setPublicShare(): Promise<ShareState> {
+    // Server menjawab 501 sampai Cloudflare Quick Tunnel tersedia.
+    return this.shareCall("/api/share/publik", {})
   }
   // eslint-disable-next-line require-yield
   async *askAi(): AsyncGenerator<AiStreamEvent> {
@@ -563,11 +590,5 @@ export class HttpApi implements TelemonApi {
   }
   deleteAiChat(): Promise<void> {
     return Promise.reject(this.unsupported("Riwayat AI chat"))
-  }
-  setLanShare(): Promise<ShareState> {
-    return Promise.reject(this.unsupported("Berbagi"))
-  }
-  setPublicShare(): Promise<ShareState> {
-    return Promise.reject(this.unsupported("Berbagi"))
   }
 }

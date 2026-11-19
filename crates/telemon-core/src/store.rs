@@ -1083,6 +1083,16 @@ impl Store {
         tx.commit()
     }
 
+    /// Nilai bebas (di luar `Settings`), mis. pilihan yang hanya diatur dari aplikasi desktop.
+    pub fn kv_get(&self, key: &str) -> Result<Option<String>> {
+        self.conn.query_row("SELECT v FROM settings WHERE k = ?1", [key], |r| r.get(0)).optional()
+    }
+
+    pub fn kv_set(&mut self, key: &str, value: &str) -> Result<()> {
+        self.conn.execute("INSERT INTO settings (k, v) VALUES (?1, ?2) ON CONFLICT(k) DO UPDATE SET v = ?2", params![key, value])?;
+        Ok(())
+    }
+
     /// Jumlah baris untuk kartu Penyimpanan: (event, user, user terhapus, profile terhapus).
     pub fn storage_counts(&self) -> Result<(u64, u64, u64, u64)> {
         Ok((

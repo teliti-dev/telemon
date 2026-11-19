@@ -17,6 +17,49 @@ use crate::error::ApiError;
 use crate::state::AppState;
 
 pub const COOKIE: &str = "telemon_session";
+/// Cookie penanda aplikasi desktop (nilai = token acak per peluncuran).
+pub const DESKTOP_COOKIE: &str = "telemon_desktop";
+
+/// Permukaan server: `Remote` (LAN/Publik, login akun) atau `Desktop` (hanya loopback, token per
+/// peluncuran, tanpa login: sama dengan pemilik di aplikasi desktop, ADR 0005).
+#[derive(Clone)]
+pub enum Surface {
+    Remote,
+    Desktop(Arc<str>),
+}
+
+pub fn ct_eq(a: &[u8], b: &[u8]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+}
+
+/// Sesi tiruan pemilik desktop: semua izin maksimum. `role_id` sengaja bukan peran nyata supaya guard
+/// "tidak mengubah peran yang sedang dipakai" tidak berlaku, dan `account_id` tidak cocok akun mana pun.
+pub fn desktop_session() -> Session {
+    use telemon_core::auth::{Permissions, Resource};
+    let mut permissions = Permissions::default();
+    for r in Resource::ALL {
+        permissions.set(r, r.max_level());
+    }
+    Session {
+        id: "desktop".into(),
+        account_id: "desktop".into(),
+        username: "desktop".into(),
+        display_name: "Aplikasi desktop".into(),
+        role_id: "desktop".into(),
+        role_name: "Desktop".into(),
+        permissions,
+        via: Via::Lan,
+        two_factor: false,
+    }
+}
+
+/// Cookie desktop valid (hanya dari loopback pada permukaan Desktop).
+pub fn is_desktop(surface: &Surface, h: &HeaderMap, peer: SocketAddr) -> bool {
+    match surface {
+        Surface::Desktop(token) => peer.ip().is_loopback() && cookie_value(h, DESKTOP_COOKIE).is_some_and(|c| ct_eq(c.as_bytes(), token.as_bytes())),
+        Surface::Remote => false,
+    }
+}
 
 pub fn cookie_value(h: &HeaderMap, name: &str) -> Option<String> {
     h.get_all(header::COOKIE).iter().filter_map(|v| v.to_str().ok()).flat_map(|v| v.split(';')).find_map(|kv| {
@@ -96,11 +139,35 @@ pub fn clear_cookie(secure: bool) -> HeaderValue {
     HeaderValue::from_str(&c).expect("cookie valid")
 }
 
-/// Pemanggil terautentikasi: sesi dari cookie (izin terkini dibaca ulang tiap permintaan).
+/// Pemanggil terautentikasi: sesi dari cookie (izin terkini dibaca ulang tiap permintaan), atau pemilik
+/// desktop pada permukaan Desktop.
 pub struct Caller {
     pub session: Session,
     pub token: String,
     pub info: ClientInfo,
+    /// Pemilik di aplikasi desktop (bukan akun): boleh mengubah hal yang hanya milik desktop.
+    pub desktop: bool,
+}
+
+/// Dipakai bersama oleh REST dan WebSocket.
+pub async fn resolve_caller<C: Connector>(st: &Arc<AppState<C>>, surface: &Surface, headers: &HeaderMap, peer: SocketAddr) -> Result<Caller, ApiError> {
+    let info = client_info(headers, peer);
+    if let Surface::Desktop(_) = surface {
+        // Permukaan desktop tidak menerima sesi akun: hanya token desktop.
+        return if is_desktop(surface, headers, peer) {
+            Ok(Caller { session: desktop_session(), token: String::new(), info, desktop: true })
+        } else {
+            Err(ApiError::unauthenticated())
+        };
+    }
+    let token = cookie_value(headers, COOKIE).ok_or_else(ApiError::unauthenticated)?;
+    let auth = st.auth.clone();
+    let t = token.clone();
+    let mut session = tokio::task::spawn_blocking(move || auth.authenticate(&t)).await.map_err(ApiError::internal)??;
+    // Aturan akses publik mengikuti jalur permintaan ini, bukan jalur saat login: cookie yang dipakai
+    // lewat tunnel publik tidak mendapat hak LAN.
+    session.via = info.via;
+    Ok(Caller { session, token, info, desktop: false })
 }
 
 impl<C: Connector> FromRequestParts<Arc<AppState<C>>> for Caller {
@@ -108,15 +175,8 @@ impl<C: Connector> FromRequestParts<Arc<AppState<C>>> for Caller {
 
     async fn from_request_parts(parts: &mut Parts, st: &Arc<AppState<C>>) -> Result<Self, ApiError> {
         let peer = parts.extensions.get::<ConnectInfo<SocketAddr>>().map(|c| c.0).ok_or_else(|| ApiError::internal("alamat klien tidak tersedia"))?;
-        let token = cookie_value(&parts.headers, COOKIE).ok_or_else(ApiError::unauthenticated)?;
-        let auth = st.auth.clone();
-        let t = token.clone();
-        let mut session = tokio::task::spawn_blocking(move || auth.authenticate(&t)).await.map_err(|e| ApiError::internal(e))??;
-        let info = client_info(&parts.headers, peer);
-        // Aturan akses publik mengikuti jalur permintaan ini, bukan jalur saat login: cookie yang dipakai
-        // lewat tunnel publik tidak mendapat hak LAN.
-        session.via = info.via;
-        Ok(Caller { session, token, info })
+        let surface = parts.extensions.get::<Surface>().cloned().unwrap_or(Surface::Remote);
+        resolve_caller(st, &surface, &parts.headers, peer).await
     }
 }
 

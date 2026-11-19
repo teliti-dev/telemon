@@ -16,26 +16,30 @@ use tokio::sync::broadcast::error::RecvError;
 
 use crate::dto::EventDto;
 use crate::error::ApiError;
-use crate::guard::{COOKIE, client_info, cookie_value, origin_ok};
+use crate::guard::{Surface, origin_ok, resolve_caller};
 use crate::state::AppState;
 
 const RECHECK: Duration = Duration::from_secs(30);
 
-pub async fn handler<C: Connector>(State(st): State<Arc<AppState<C>>>, ConnectInfo(peer): ConnectInfo<SocketAddr>, headers: HeaderMap, ws: WebSocketUpgrade) -> Result<Response, ApiError> {
+pub async fn handler<C: Connector>(
+    State(st): State<Arc<AppState<C>>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    axum::Extension(surface): axum::Extension<Surface>,
+    headers: HeaderMap,
+    ws: WebSocketUpgrade,
+) -> Result<Response, ApiError> {
     if !origin_ok(&headers) {
         return Err(ApiError::forbidden("Asal permintaan tidak diizinkan"));
     }
-    let token = cookie_value(&headers, COOKIE).ok_or_else(ApiError::unauthenticated)?;
-    let auth = st.auth.clone();
-    let t = token.clone();
-    let mut session = tokio::task::spawn_blocking(move || auth.authenticate(&t)).await.map_err(ApiError::internal)??;
-    session.via = client_info(&headers, peer).via;
-    st.auth.authorize(Some(&session), Resource::Event, Level::Read)?;
-    Ok(ws.on_upgrade(move |socket| stream(st, socket, token)))
+    let caller = resolve_caller(&st, &surface, &headers, peer).await?;
+    st.auth.authorize(Some(&caller.session), Resource::Event, Level::Read)?;
+    Ok(ws.on_upgrade(move |socket| stream(st, socket, surface, headers, peer)))
 }
 
-async fn stream<C: Connector>(st: Arc<AppState<C>>, mut socket: WebSocket, token: String) {
+async fn stream<C: Connector>(st: Arc<AppState<C>>, mut socket: WebSocket, surface: Surface, headers: HeaderMap, peer: SocketAddr) {
     let mut rx = st.telemon.subscribe();
+    let mut epoch = st.lan_epoch.subscribe();
+    let remote = matches!(surface, Surface::Remote);
     let mut tick = tokio::time::interval(RECHECK);
     tick.tick().await;
     loop {
@@ -60,10 +64,13 @@ async fn stream<C: Connector>(st: Arc<AppState<C>>, mut socket: WebSocket, token
                 Some(Ok(Message::Close(_))) | None | Some(Err(_)) => return,
                 Some(Ok(_)) => {}
             },
+            // Server LAN dimatikan atau diganti: sambungan dari sana ikut ditutup.
+            _ = epoch.changed(), if remote => {
+                let _ = socket.send(Message::Close(None)).await;
+                return;
+            }
             _ = tick.tick() => {
-                let auth = st.auth.clone();
-                let t = token.clone();
-                let ok = tokio::task::spawn_blocking(move || auth.authenticate(&t)).await.ok().and_then(Result::ok).is_some_and(|s| s.permissions.get(Resource::Event) >= Level::Read);
+                let ok = resolve_caller(&st, &surface, &headers, peer).await.is_ok_and(|c| c.session.permissions.get(Resource::Event) >= Level::Read);
                 if !ok {
                     let _ = socket.send(Message::Close(None)).await;
                     return;

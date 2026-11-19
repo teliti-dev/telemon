@@ -49,6 +49,9 @@ pub struct AppState<C: Connector> {
     pub(crate) clock: Arc<dyn Fn() -> i64 + Send + Sync>,
     /// (wajib 2FA untuk semua, akses publik aktif): berasal dari halaman Berbagi di aplikasi desktop.
     share: Mutex<(bool, bool)>,
+    pub(crate) lan: tokio::sync::Mutex<crate::share::Lan>,
+    /// Naik tiap kali server LAN dimatikan/diganti: koneksi WebSocket dari server itu ikut ditutup.
+    pub(crate) lan_epoch: tokio::sync::watch::Sender<u64>,
 }
 
 impl<C: Connector> AppState<C> {
@@ -58,7 +61,10 @@ impl<C: Connector> AppState<C> {
 
     pub fn with_clock(telemon: Arc<Telemon<C>>, auth: Arc<Auth>, cfg: HttpConfig, clock: Arc<dyn Fn() -> i64 + Send + Sync>) -> Arc<Self> {
         let limiter = RateLimiter::new(cfg.login_per_minute, 60_000);
-        let st = Arc::new(Self { telemon, auth, cfg, limiter, plans: PlanCache::default(), clock, share: Mutex::new((false, false)) });
+        let st = Arc::new(Self { telemon, auth, cfg, limiter, plans: PlanCache::default(), clock, share: Mutex::new((false, false)), lan: tokio::sync::Mutex::new(crate::share::Lan::default()), lan_epoch: tokio::sync::watch::channel(0).0 });
+        if let Ok(Some(v)) = st.telemon.with_store(|s| s.kv_get("share.require_2fa")) {
+            st.share.lock().expect("lock").0 = v == "true";
+        }
         // Pengaturan tersimpan langsung berlaku (sesi, penguncian, izin tulis publik).
         let _ = st.reload_settings();
         st
@@ -69,6 +75,10 @@ impl<C: Connector> AppState<C> {
         let s = self.telemon.with_store(|st| st.get_settings()).map_err(|e| e.to_string())?;
         self.apply_policy(&s);
         Ok(s)
+    }
+
+    pub(crate) fn share_flags(&self) -> (bool, bool) {
+        *self.share.lock().expect("lock")
     }
 
     pub(crate) fn apply_policy(&self, s: &telemon_core::Settings) {

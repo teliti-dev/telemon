@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use telemon_core::auth::{Auth, HashParams, Level, LoginOutcome, NewAccount, Permissions, Resource, RoleInput, Via, base32_decode, totp_code};
 use telemon_core::store::Store;
 use telemon_core::{Connector, Error, MemorySecrets, RouterApi, Row, RuntimeConfig, SecretStore, Telemon, TlsMode};
-use telemon_http::{AppState, HttpConfig, app};
+use telemon_http::{AppState, HttpConfig, app, app_desktop};
 use tower::ServiceExt;
 
 const T0: i64 = 1_000_000_000_000;
@@ -784,6 +784,173 @@ async fn status_berbagi_mewajibkan_2fa_dan_penyimpanan_dibersihkan() {
     assert_eq!(t.get("/api/storage", Some(&ca)).await.body["events"], 0);
     let log = t.get("/api/audit?limit=100", Some(&ca)).await;
     assert!(log.body["entries"].as_array().unwrap().iter().any(|e| e["action"] == "storage.purge"));
+}
+
+// ---------------- permukaan desktop dan berbagi LAN ----------------
+
+const DESK_TOKEN: &str = "token-desktop-uji-0123456789abcdef";
+
+impl T {
+    /// Permintaan ke permukaan desktop (router terpisah dengan token).
+    async fn desk(&self, method: Method, uri: &str, body: Option<Value>, cookie: Option<&str>, peer: &str) -> Resp {
+        let mut b = Request::builder().method(method).uri(uri);
+        if body.is_some() {
+            b = b.header(header::CONTENT_TYPE, "application/json");
+        }
+        if let Some(c) = cookie {
+            b = b.header(header::COOKIE, c);
+        }
+        let mut req = b.body(body.map_or(Body::empty(), |v| Body::from(v.to_string()))).unwrap();
+        req.extensions_mut().insert(ConnectInfo(peer.parse::<SocketAddr>().unwrap()));
+        let res = app_desktop(self.st.clone(), DESK_TOKEN).oneshot(req).await.unwrap();
+        let (parts, body) = res.into_parts();
+        let bytes = body.collect().await.unwrap().to_bytes();
+        let body = serde_json::from_slice(&bytes).unwrap_or_else(|_| Value::String(String::from_utf8_lossy(&bytes).into()));
+        Resp { status: parts.status, headers: parts.headers, body }
+    }
+}
+
+fn desk_cookie() -> String {
+    format!("telemon_desktop={DESK_TOKEN}")
+}
+
+#[tokio::test]
+async fn permukaan_desktop_butuh_token_dari_loopback() {
+    let t = harness();
+    // Tanpa cookie: tidak ada akses, dan sesi akun tidak diterima di permukaan desktop.
+    assert_eq!(t.desk(Method::GET, "/api/snapshot", None, None, LOOP).await.status, StatusCode::UNAUTHORIZED);
+    t.account("admin", "role-admin");
+    let acct = t.login("admin").await;
+    let as_account = format!("telemon_session={acct}");
+    assert_eq!(t.desk(Method::GET, "/api/snapshot", None, Some(&as_account), LOOP).await.status, StatusCode::UNAUTHORIZED);
+    // Pintu masuk: token salah ditolak, benar menukar dengan cookie lalu mengalihkan ke UI.
+    assert_eq!(t.desk(Method::GET, "/desktop-entry?t=salah", None, None, LOOP).await.status, StatusCode::FORBIDDEN);
+    let entry = t.desk(Method::GET, &format!("/desktop-entry?t={DESK_TOKEN}"), None, None, LOOP).await;
+    assert_eq!(entry.status, StatusCode::SEE_OTHER);
+    let sc = entry.set_cookie();
+    assert!(sc.contains(&desk_cookie()) && sc.contains("HttpOnly") && sc.contains("SameSite=Strict"), "{sc}");
+    // Token benar tetapi bukan dari loopback: ditolak (server desktop seharusnya tidak terjangkau, ini lapis kedua).
+    assert_eq!(t.desk(Method::GET, &format!("/desktop-entry?t={DESK_TOKEN}"), None, None, LAN).await.status, StatusCode::FORBIDDEN);
+    assert_eq!(t.desk(Method::GET, "/api/snapshot", None, Some(&desk_cookie()), LAN).await.status, StatusCode::UNAUTHORIZED);
+    // Dengan cookie dari loopback: pemilik.
+    let h = t.desk(Method::GET, "/api/health", None, Some(&desk_cookie()), LOOP).await;
+    assert_eq!((h.body["ok"].as_bool(), h.body["desktop"].as_bool()), (Some(true), Some(true)));
+    assert_eq!(t.desk(Method::GET, "/api/health", None, None, LOOP).await.body["desktop"], false);
+    // Permukaan jarak jauh tidak pernah menganggap siapa pun desktop, bahkan dengan cookie dan token yang sama.
+    let r = t.call(Method::GET, "/api/health", None, None, &[("cookie", &desk_cookie())], LOOP).await;
+    assert_eq!(r.body["desktop"], false);
+    assert_eq!(t.call(Method::GET, "/desktop-entry?t=x", None, None, &[], LOOP).await.status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn pemilik_desktop_punya_semua_izin_dan_tercatat_sebagai_desktop() {
+    let t = harness();
+    let rid = t.router(true);
+    t.telemon.import_now(&rid).await.unwrap();
+    let c = desk_cookie();
+    for path in ["/api/accounts", "/api/roles", "/api/settings", "/api/audit", "/api/storage"] {
+        assert_eq!(t.desk(Method::GET, path, None, Some(&c), LOOP).await.status, StatusCode::OK, "{path}");
+    }
+    // Tulis ke router; izin tulis lewat publik hanya bisa diubah oleh desktop.
+    let plan = t.desk(Method::POST, &format!("/api/routers/{rid}/plans"), Some(json!({"action": "user.soft_delete", "name": "budi"})), Some(&c), LOOP).await;
+    assert_eq!(plan.status, StatusCode::OK, "{:?}", plan.body);
+    let ap = t.desk(Method::POST, &format!("/api/plans/{}/apply", plan.body["planId"].as_str().unwrap()), Some(json!({})), Some(&c), LOOP).await;
+    assert_eq!(ap.status, StatusCode::OK);
+    let mut s = t.desk(Method::GET, "/api/settings", None, Some(&c), LOOP).await.body;
+    s["remote"]["allowPublicWrite"] = json!(true);
+    let r = t.desk(Method::PUT, "/api/settings", Some(s), Some(&c), LOOP).await;
+    assert_eq!((r.status, r.body["remote"]["allowPublicWrite"].as_bool()), (StatusCode::OK, Some(true)));
+    assert!(t.auth.policy().allow_public_write, "berlaku langsung");
+    let log = t.desk(Method::GET, "/api/audit?limit=50", None, Some(&c), LOOP).await;
+    let entries = log.body["entries"].as_array().unwrap();
+    assert!(entries.iter().any(|e| e["action"] == "user.soft_delete" && e["actor"] == "desktop"));
+    assert!(entries.iter().any(|e| e["action"] == "settings.update" && e["actor"] == "desktop"));
+    // Mengelola akun dari desktop: tidak terhalang aturan "akun sendiri".
+    let created = t.desk(Method::POST, "/api/accounts", Some(json!({"username": "baru", "displayName": "B", "password": "password-uji", "roleId": "role-admin"})), Some(&c), LOOP).await;
+    assert_eq!(created.status, StatusCode::CREATED);
+    let id = created.body["id"].as_str().unwrap().to_string();
+    assert_eq!(t.desk(Method::DELETE, &format!("/api/accounts/{id}"), None, Some(&c), LOOP).await.status, StatusCode::NO_CONTENT);
+    // Peran bawaan boleh diedit dari desktop.
+    let role = t.desk(Method::POST, "/api/roles/role-viewer/reset", Some(json!({})), Some(&c), LOOP).await;
+    assert_eq!(role.status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn berbagi_hanya_desktop_dan_lan_mewajibkan_login() {
+    let t = harness_with(HttpConfig { login_per_minute: 1000, ..Default::default() });
+    t.account("admin", "role-admin");
+    let ca = t.login("admin").await;
+    let c = desk_cookie();
+    // Akun jarak jauh (bahkan admin) tidak boleh mengatur berbagi; permukaan jarak jauh tidak punya rute berbagi untuk desktop.
+    for (m, p, b) in [(Method::GET, "/api/share", None), (Method::POST, "/api/share/lan", Some(json!({"enabled": true, "bind": "localhost", "port": 0}))), (Method::POST, "/api/share/require-2fa", Some(json!({"required": true})))] {
+        let r = t.call(m, p, b, Some(&ca), &[], LAN).await;
+        assert_eq!((r.status, r.code()), (StatusCode::FORBIDDEN, "forbidden"), "{p}");
+    }
+    // Desktop: status awal.
+    let s = t.desk(Method::GET, "/api/share", None, Some(&c), LOOP).await;
+    assert_eq!((s.body["lan"]["enabled"].as_bool(), s.body["lan"]["port"].as_u64(), s.body["auth"]["require2fa"].as_bool()), (Some(false), Some(7878), Some(false)));
+    // Validasi.
+    assert_eq!(t.desk(Method::POST, "/api/share/lan", Some(json!({"enabled": true, "bind": "lan", "port": 80})), Some(&c), LOOP).await.status, StatusCode::BAD_REQUEST);
+    assert_eq!(t.desk(Method::POST, "/api/share/lan", Some(json!({"enabled": true, "bind": "semua", "port": 7878})), Some(&c), LOOP).await.status, StatusCode::BAD_REQUEST);
+    // Publik belum ada: jujur 501.
+    assert_eq!(t.desk(Method::POST, "/api/share/publik", Some(json!({})), Some(&c), LOOP).await.status, StatusCode::NOT_IMPLEMENTED);
+
+    // Port dipakai pihak lain: galat jelas, status tetap mati.
+    let blocker = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let busy = blocker.local_addr().unwrap().port();
+    if busy >= 1024 {
+        let r = t.desk(Method::POST, "/api/share/lan", Some(json!({"enabled": true, "bind": "localhost", "port": busy})), Some(&c), LOOP).await;
+        assert_eq!((r.status, r.code()), (StatusCode::CONFLICT, "port_in_use"), "{:?}", r.body);
+        assert_eq!(t.desk(Method::GET, "/api/share", None, Some(&c), LOOP).await.body["lan"]["enabled"], false);
+    }
+    drop(blocker);
+
+    // Nyalakan di port bebas: server sungguhan dengan login akun.
+    let free = { let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap(); l.local_addr().unwrap().port() };
+    let on = t.desk(Method::POST, "/api/share/lan", Some(json!({"enabled": true, "bind": "localhost", "port": free})), Some(&c), LOOP).await;
+    assert_eq!((on.status, on.body["lan"]["enabled"].as_bool()), (StatusCode::OK, Some(true)), "{:?}", on.body);
+    assert_eq!(on.body["lan"]["url"], format!("http://127.0.0.1:{free}"));
+    let base = format!("http://127.0.0.1:{free}");
+    let get = |path: &str, cookie: Option<String>| {
+        let url = format!("{base}{path}");
+        async move {
+            let mut req = tokio::net::TcpStream::connect(("127.0.0.1", free)).await.unwrap();
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let ck = cookie.map(|c| format!("Cookie: {c}\r\n")).unwrap_or_default();
+            let path = url.split(&format!("{free}")).nth(1).unwrap().to_string();
+            req.write_all(format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{free}\r\n{ck}Connection: close\r\n\r\n").as_bytes()).await.unwrap();
+            let mut buf = String::new();
+            req.read_to_string(&mut buf).await.unwrap();
+            buf
+        }
+    };
+    // Tanpa login: tidak ada data. Cookie desktop di server LAN tidak berarti apa-apa (permukaan jarak jauh).
+    assert!(get("/api/snapshot", None).await.starts_with("HTTP/1.1 401"));
+    assert!(get("/api/snapshot", Some(desk_cookie())).await.starts_with("HTTP/1.1 401"), "cookie desktop tidak boleh dikenali di server LAN");
+    let health = get("/api/health", Some(desk_cookie())).await;
+    assert!(health.contains("\"desktop\":false"), "{health}");
+    assert!(get("/api/snapshot", Some(format!("telemon_session={ca}"))).await.starts_with("HTTP/1.1 200"), "akun yang login boleh");
+
+    // Matikan: port dilepas dan tidak lagi menjawab.
+    let off = t.desk(Method::POST, "/api/share/lan", Some(json!({"enabled": false, "bind": "localhost", "port": free})), Some(&c), LOOP).await;
+    assert_eq!(off.body["lan"]["enabled"], false);
+    assert!(tokio::net::TcpStream::connect(("127.0.0.1", free)).await.is_err(), "port harus tertutup");
+    // Nyalakan lagi di port yang sama (dilepas bersih).
+    let again = t.desk(Method::POST, "/api/share/lan", Some(json!({"enabled": true, "bind": "localhost", "port": free})), Some(&c), LOOP).await;
+    assert_eq!(again.body["lan"]["enabled"], true, "{:?}", again.body);
+    t.st.shutdown_lan().await;
+    assert!(tokio::net::TcpStream::connect(("127.0.0.1", free)).await.is_err());
+
+    // Wajib 2FA dari desktop: berlaku langsung dan bertahan (tersimpan).
+    t.account("pantau", "role-monitor");
+    let r = t.desk(Method::POST, "/api/share/require-2fa", Some(json!({"required": true})), Some(&c), LOOP).await;
+    assert_eq!(r.body["auth"]["require2fa"], true);
+    assert_eq!(t.post("/api/login", json!({"username": "pantau", "password": "password-uji"}), None).await.body["status"], "2fa_setup_required");
+    assert_eq!(t.telemon.with_store(|s| s.kv_get("share.require_2fa")).unwrap().as_deref(), Some("true"));
+    // Snapshot desktop memuat status asli; jarak jauh tidak memuat alamat server.
+    let snap = t.desk(Method::GET, "/api/snapshot", None, Some(&c), LOOP).await;
+    assert_eq!(snap.body["share"]["auth"]["require2fa"], true);
+    assert!(t.get("/api/snapshot", Some(&ca)).await.body["share"]["lan"]["url"].is_null());
 }
 
 // ---------------- UI statis ----------------

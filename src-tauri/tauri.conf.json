@@ -10,17 +10,7 @@
     "beforeBuildCommand": "bun run build"
   },
   "app": {
-    "windows": [
-      {
-        "title": "Telemon",
-        "width": 1280,
-        "height": 800,
-        "resizable": true,
-        "fullscreen": false,
-        "minWidth": 360,
-        "minHeight": 560
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": null
     }
@@ -37,6 +27,9 @@
     ],
     "android": {
       "debugApplicationIdSuffix": ".debug"
+    },
+    "resources": {
+      "../dist": "ui"
     }
   }
 }

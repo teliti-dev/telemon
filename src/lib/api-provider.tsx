@@ -25,16 +25,18 @@ function forcedMock(): boolean {
 
 /**
  * Memilih sumber data:
- * - aplikasi desktop (Tauri): adapter Tauri belum ada, sementara data contoh;
+ * - aplikasi desktop (Tauri): webview memuat UI dari server loopback aplikasi (ADR 0021); `/api/health` melaporkan
+ *   `desktop: true`, jadi adapter HTTP dipakai sebagai pemilik (tanpa login);
  * - browser yang dilayani server Telemon (`/api/health` menjawab): adapter HTTP (data nyata, wajib login);
  * - selain itu (mis. `bun run dev` tanpa server): data contoh.
  */
 async function createApi(): Promise<ApiValue> {
-  if (!forcedMock() && !("__TAURI_INTERNALS__" in window)) {
+  if (!forcedMock()) {
     try {
       const res = await fetch("/api/health", { cache: "no-store" })
-      const body = res.ok ? ((await res.json()) as { ok?: boolean }) : null
-      if (body?.ok === true) return { api: new HttpApi(), access: "remote" }
+      const body = res.ok ? ((await res.json()) as { ok?: boolean; desktop?: boolean }) : null
+      // `desktop: true` hanya bila server loopback aplikasi desktop mengenali token peluncuran ini.
+      if (body?.ok === true) return { api: new HttpApi(), access: body.desktop === true ? "desktop" : "remote" }
     } catch {
       /* tidak ada server: pakai data contoh */
     }

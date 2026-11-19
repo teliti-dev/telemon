@@ -17,14 +17,14 @@ use telemon_core::{AuditEntry, AuditOutcome, Change, Connector, EventKind, TlsMo
 
 use crate::dto::*;
 use crate::error::{ApiError, ApiResult};
-use crate::guard::{Caller, Client, clear_cookie, session_cookie};
+use crate::guard::{Caller, Client, DESKTOP_COOKIE, Surface, clear_cookie, ct_eq, is_desktop, session_cookie};
 use crate::state::{AppState, PendingPlan};
 
 type St<C> = State<Arc<AppState<C>>>;
 
 pub fn routes<C: Connector>() -> Router<Arc<AppState<C>>> {
     Router::new()
-        .route("/api/health", get(|| async { Json(json!({ "ok": true })) }))
+        .route("/api/health", get(health::<C>))
         // masuk
         .route("/api/login", post(login::<C>))
         .route("/api/login/2fa", post(login_2fa::<C>))
@@ -50,6 +50,11 @@ pub fn routes<C: Connector>() -> Router<Arc<AppState<C>>> {
         .route("/api/roles", get(roles_list::<C>).post(roles_create::<C>))
         .route("/api/roles/{id}", put(roles_update::<C>).delete(roles_delete::<C>))
         .route("/api/roles/{id}/reset", post(roles_reset::<C>))
+        // berbagi (hanya aplikasi desktop)
+        .route("/api/share", get(share_get::<C>))
+        .route("/api/share/lan", post(share_lan::<C>))
+        .route("/api/share/publik", post(share_publik::<C>))
+        .route("/api/share/require-2fa", post(share_require_2fa::<C>))
         // pengaturan dan penyimpanan
         .route("/api/settings", get(settings_get::<C>).put(settings_put::<C>))
         .route("/api/storage", get(storage_get::<C>))
@@ -308,6 +313,7 @@ async fn snapshot<C: Connector>(State(st): St<C>, c: Caller) -> ApiResult<Json<V
         "profiles": profiles.iter().map(ProfileDto::from).collect::<Vec<_>>(),
         "events": events.iter().map(EventDto::from).collect::<Vec<_>>(),
         "metas": metas,
+        "share": st.share_json(c.desktop).await,
     })))
 }
 
@@ -506,7 +512,7 @@ async fn settings_put<C: Connector>(State(st): St<C>, c: Caller, Json(req): Json
     need(&st, &c, Resource::Pengaturan, Level::Update)?;
     let next = telemon_core::Settings::from(&req);
     let old = st.telemon.with_store(|s| s.get_settings().map_err(rusqlite_err::wrap)).map_err(|e| ApiError::internal(e.0))?;
-    if next.remote.allow_public_write != old.remote.allow_public_write {
+    if next.remote.allow_public_write != old.remote.allow_public_write && !c.desktop {
         return Err(ApiError::forbidden("Izin tulis lewat akses publik hanya bisa diubah dari aplikasi desktop"));
     }
     next.validate().map_err(ApiError::bad)?;
@@ -622,4 +628,77 @@ async fn profile_soft_delete<C: Connector>(State(st): St<C>, c: Caller, Path(id)
 
 async fn profile_restore<C: Connector>(State(st): St<C>, c: Caller, Path(id): Path<String>) -> ApiResult<Json<ProfileDto>> {
     profile_mark(&st, &c, &id, false).await
+}
+
+// ---------------- desktop dan berbagi ----------------
+
+/// Kesehatan server. `desktop: true` hanya bila permintaan membawa token desktop yang sah.
+async fn health<C: Connector>(
+    axum::Extension(surface): axum::Extension<Surface>,
+    axum::extract::ConnectInfo(peer): axum::extract::ConnectInfo<std::net::SocketAddr>,
+    headers: HeaderMap,
+) -> Json<Value> {
+    Json(json!({ "ok": true, "desktop": is_desktop(&surface, &headers, peer) }))
+}
+
+#[derive(serde::Deserialize)]
+pub struct EntryQuery {
+    t: String,
+}
+
+/// Pintu masuk webview aplikasi desktop: menukar token dengan cookie lalu membuka UI.
+pub async fn desktop_entry<C: Connector>(
+    axum::Extension(surface): axum::Extension<Surface>,
+    axum::extract::ConnectInfo(peer): axum::extract::ConnectInfo<std::net::SocketAddr>,
+    Query(q): Query<EntryQuery>,
+) -> Result<Response, ApiError> {
+    let Surface::Desktop(token) = surface else { return Err(ApiError::not_found()) };
+    if !peer.ip().is_loopback() || !ct_eq(q.t.as_bytes(), token.as_bytes()) {
+        return Err(ApiError::forbidden("Token desktop tidak valid"));
+    }
+    let cookie = format!("{DESKTOP_COOKIE}={token}; HttpOnly; SameSite=Strict; Path=/");
+    let mut r = axum::response::Redirect::to("/").into_response();
+    r.headers_mut().append(header::SET_COOKIE, header::HeaderValue::from_str(&cookie).map_err(ApiError::internal)?);
+    Ok(r)
+}
+
+fn desktop_only(c: &Caller) -> ApiResult<()> {
+    if c.desktop { Ok(()) } else { Err(ApiError::forbidden("Hanya bisa dilakukan dari aplikasi desktop")) }
+}
+
+async fn share_get<C: Connector>(State(st): St<C>, c: Caller) -> ApiResult<Json<Value>> {
+    desktop_only(&c)?;
+    Ok(Json(st.share_json(true).await))
+}
+
+#[derive(serde::Deserialize)]
+pub struct LanReq {
+    enabled: bool,
+    bind: String,
+    port: u16,
+}
+
+async fn share_lan<C: Connector>(State(st): St<C>, c: Caller, Json(r): Json<LanReq>) -> ApiResult<Json<Value>> {
+    desktop_only(&c)?;
+    st.set_lan(r.enabled, &r.bind, r.port).await?;
+    Ok(Json(st.share_json(true).await))
+}
+
+/// Akses Publik (Cloudflare Quick Tunnel, ADR 0003) belum diimplementasikan.
+async fn share_publik<C: Connector>(c: Caller) -> ApiResult<Json<Value>> {
+    desktop_only(&c)?;
+    Err(ApiError::new(StatusCode::NOT_IMPLEMENTED, "not_implemented", "Akses publik belum tersedia"))
+}
+
+#[derive(serde::Deserialize)]
+pub struct Require2faReq {
+    required: bool,
+}
+
+async fn share_require_2fa<C: Connector>(State(st): St<C>, c: Caller, Json(r): Json<Require2faReq>) -> ApiResult<Json<Value>> {
+    desktop_only(&c)?;
+    let (_, public_on) = st.share_flags();
+    st.set_share(r.required, public_on);
+    st.telemon.with_store(|s| s.kv_set("share.require_2fa", if r.required { "true" } else { "false" }).map_err(rusqlite_err::wrap)).map_err(|e| ApiError::internal(e.0))?;
+    Ok(Json(st.share_json(true).await))
 }
