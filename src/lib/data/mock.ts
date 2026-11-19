@@ -321,7 +321,7 @@ export class MockApi implements TelemonApi {
   private aiProviders: AiProvider[] = [
     { id: "p1", name: "Anthropic", kind: "anthropic", model: "claude-sonnet-5-5", keyHint: "sk-ant-…x7Qa", status: "ok", latencyMs: 820, checkedAt: Date.now() - 600_000, isDefault: true, balanceUsd: 38.42 },
     { id: "p2", name: "DeepSeek", kind: "deepseek", model: "deepseek-chat", keyHint: "sk-ds…92fD", status: "error", error: "401: kunci ditolak atau kedaluwarsa", checkedAt: Date.now() - 3600_000, isDefault: false, balanceUsd: 0 },
-    { id: "p3", name: "9Router", kind: "ninerouter", model: "combo-cepat", baseUrl: "http://172.20.0.2:8080/v1", keyHint: "sk-9r…41cB", status: "ok", latencyMs: 1400, checkedAt: Date.now() - 900_000, isDefault: false, balanceUsd: null },
+    { id: "p3", name: "9Router", kind: "ninerouter", model: "combo-cepat", baseUrl: "http://10.0.0.5:8080/v1", keyHint: "sk-9r…41cB", status: "ok", latencyMs: 1400, checkedAt: Date.now() - 900_000, isDefault: false, balanceUsd: null },
   ]
   private aiBudget: AiBudgetInput = { monthlyUsd: 25, alertPercent: 80, hardStop: false }
   private sessions: MockSession[]

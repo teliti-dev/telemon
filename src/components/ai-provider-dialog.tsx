@@ -132,7 +132,7 @@ export function AiProviderForm({ provider, onSaved, onClose }: { provider?: AiPr
       {needsUrl && (
         <div className="grid gap-1.5">
           <Label htmlFor="pv-url">{t("URL dasar")}</Label>
-          <Input id="pv-url" className="font-mono" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="http://172.20.0.2:8080/v1" inputMode="url" autoCapitalize="off" spellCheck={false} />
+          <Input id="pv-url" className="font-mono" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="http://10.0.0.5:8080/v1" inputMode="url" autoCapitalize="off" spellCheck={false} />
         </div>
       )}
       {needsKey && (
