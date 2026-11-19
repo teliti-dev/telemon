@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use telemon_core::auth::{Auth, HashParams, Level, LoginOutcome, NewAccount, Permissions, Resource, RoleInput, Via, base32_decode, totp_code};
 use telemon_core::store::Store;
 use telemon_core::{Connector, Error, MemorySecrets, RouterApi, Row, RuntimeConfig, SecretStore, Telemon, TlsMode};
-use telemon_http::{AppState, HttpConfig, app, app_desktop};
+use telemon_http::{AppState, HttpConfig, Tunnel, app, app_desktop};
 use tower::ServiceExt;
 
 const T0: i64 = 1_000_000_000_000;
@@ -892,8 +892,8 @@ async fn berbagi_hanya_desktop_dan_lan_mewajibkan_login() {
     // Validasi.
     assert_eq!(t.desk(Method::POST, "/api/share/lan", Some(json!({"enabled": true, "bind": "lan", "port": 80})), Some(&c), LOOP).await.status, StatusCode::BAD_REQUEST);
     assert_eq!(t.desk(Method::POST, "/api/share/lan", Some(json!({"enabled": true, "bind": "semua", "port": 7878})), Some(&c), LOOP).await.status, StatusCode::BAD_REQUEST);
-    // Publik belum ada: jujur 501.
-    assert_eq!(t.desk(Method::POST, "/api/share/publik", Some(json!({})), Some(&c), LOOP).await.status, StatusCode::NOT_IMPLEMENTED);
+    // Tanpa penyedia tunnel (aplikasi tidak memasangnya): jujur 501.
+    assert_eq!(t.desk(Method::POST, "/api/share/publik", Some(json!({"enabled": true, "durationHours": 8})), Some(&c), LOOP).await.status, StatusCode::NOT_IMPLEMENTED);
 
     // Port dipakai pihak lain: galat jelas, status tetap mati.
     let blocker = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -951,6 +951,161 @@ async fn berbagi_hanya_desktop_dan_lan_mewajibkan_login() {
     let snap = t.desk(Method::GET, "/api/snapshot", None, Some(&c), LOOP).await;
     assert_eq!(snap.body["share"]["auth"]["require2fa"], true);
     assert!(t.get("/api/snapshot", Some(&ca)).await.body["share"]["lan"]["url"].is_null());
+}
+
+// ---------------- akses Publik (tunnel) ----------------
+
+#[derive(Default)]
+struct FakeTunnel {
+    starts: Mutex<Vec<u16>>,
+    stops: AtomicUsize,
+    fail: Mutex<Option<String>>,
+    dead: std::sync::atomic::AtomicBool,
+}
+
+impl Tunnel for FakeTunnel {
+    fn start(&self, port: u16) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<String, String>> + Send + '_>> {
+        Box::pin(async move {
+            self.starts.lock().unwrap().push(port);
+            match self.fail.lock().unwrap().clone() {
+                Some(e) => Err(e),
+                None => Ok("https://contoh-uji.trycloudflare.com".to_string()),
+            }
+        })
+    }
+    fn stop(&self) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + '_>> {
+        Box::pin(async move {
+            self.stops.fetch_add(1, Ordering::SeqCst);
+        })
+    }
+    fn alive(&self) -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send + '_>> {
+        Box::pin(async move { !self.dead.load(Ordering::SeqCst) })
+    }
+}
+
+async fn lan_on(t: &T, c: &str) -> u16 {
+    let free = { let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap(); l.local_addr().unwrap().port() };
+    let r = t.desk(Method::POST, "/api/share/lan", Some(json!({"enabled": true, "bind": "localhost", "port": free})), Some(c), LOOP).await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    free
+}
+
+#[tokio::test]
+async fn akses_publik_syarat_status_dan_dua_fa() {
+    let t = harness_with(HttpConfig { login_per_minute: 1000, ..Default::default() });
+    let tunnel = Arc::new(FakeTunnel::default());
+    t.st.set_tunnel(tunnel.clone());
+    let c = desk_cookie();
+    let on = |h: u32| json!({"enabled": true, "durationHours": h});
+    let pub_call = |body: Value| t.desk(Method::POST, "/api/share/publik", Some(body), Some(&c), LOOP);
+
+    // Akun jarak jauh tidak boleh.
+    t.account("pantau", "role-monitor");
+    let ca = t.login("pantau").await;
+    assert_eq!(t.call(Method::POST, "/api/share/publik", Some(on(8)), Some(&ca), &[], LAN).await.status, StatusCode::FORBIDDEN);
+    // Syarat: server LAN menyala; durasi sah.
+    let r = pub_call(on(8)).await;
+    assert_eq!((r.status, r.code()), (StatusCode::CONFLICT, "lan_off"), "{:?}", r.body);
+    let port = lan_on(&t, &c).await;
+    assert_eq!(pub_call(on(3)).await.status, StatusCode::BAD_REQUEST);
+    assert!(tunnel.starts.lock().unwrap().is_empty(), "tunnel tidak boleh dinyalakan sebelum syarat terpenuhi");
+
+    // Gagal menyalakan: galat jelas, status error, 2FA tidak dipaksa, bisa dicoba lagi.
+    *tunnel.fail.lock().unwrap() = Some("unduhan gagal".into());
+    let r = pub_call(on(8)).await;
+    assert_eq!((r.status, r.code()), (StatusCode::BAD_GATEWAY, "tunnel_failed"));
+    assert!(r.body["error"]["message"].as_str().unwrap().contains("unduhan gagal"));
+    let s = t.desk(Method::GET, "/api/share", None, Some(&c), LOOP).await.body;
+    assert_eq!((s["publik"]["status"].as_str(), s["publik"]["error"].as_str()), (Some("error"), Some("unduhan gagal")));
+    assert_eq!(t.post("/api/login", json!({"username": "pantau", "password": "password-uji"}), None).await.body["status"], "ok", "belum publik: 2FA tidak dipaksa");
+    assert_eq!(tunnel.stops.load(Ordering::SeqCst), 1, "tunnel setengah jalan dibersihkan");
+
+    // Berhasil: URL, kedaluwarsa, 2FA wajib untuk semua, URL tidak terlihat akun jarak jauh.
+    *tunnel.fail.lock().unwrap() = None;
+    let r = pub_call(on(8)).await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    assert_eq!(*tunnel.starts.lock().unwrap().last().unwrap(), port, "tunnel mengarah ke port server LAN");
+    let p = &r.body["publik"];
+    assert_eq!((p["status"].as_str(), p["url"].as_str(), p["durationHours"].as_u64()), (Some("on"), Some("https://contoh-uji.trycloudflare.com"), Some(8)));
+    assert!(p["expiresAt"].as_i64().unwrap() > T0 + 7 * 3_600_000);
+    assert_eq!(t.post("/api/login", json!({"username": "pantau", "password": "password-uji"}), None).await.body["status"], "2fa_setup_required", "selama publik aktif 2FA wajib");
+    let remote_view = t.get("/api/snapshot", Some(&ca)).await.body;
+    assert_eq!(remote_view["share"]["publik"]["status"], "on");
+    assert!(remote_view["share"]["publik"]["url"].is_null(), "alamat tunnel tidak ditampilkan ke akun jarak jauh");
+    // Ganda ditolak.
+    assert_eq!(pub_call(on(8)).await.status, StatusCode::CONFLICT);
+
+    // Matikan: tunnel dihentikan dan 2FA tidak lagi dipaksa.
+    let stops = tunnel.stops.load(Ordering::SeqCst);
+    let off = pub_call(json!({"enabled": false})).await;
+    assert_eq!(off.body["publik"]["status"], "off");
+    assert_eq!(tunnel.stops.load(Ordering::SeqCst), stops + 1);
+    assert_eq!(t.post("/api/login", json!({"username": "pantau", "password": "password-uji"}), None).await.body["status"], "ok");
+    // Mematikan yang sudah mati tidak menghentikan tunnel lagi.
+    pub_call(json!({"enabled": false})).await;
+    assert_eq!(tunnel.stops.load(Ordering::SeqCst), stops + 1);
+
+    // Mematikan server LAN saat publik aktif memutus tunnel.
+    assert_eq!(pub_call(on(4)).await.status, StatusCode::OK);
+    let stops = tunnel.stops.load(Ordering::SeqCst);
+    t.desk(Method::POST, "/api/share/lan", Some(json!({"enabled": false, "bind": "localhost", "port": port})), Some(&c), LOOP).await;
+    assert_eq!(tunnel.stops.load(Ordering::SeqCst), stops + 1, "tunnel harus berhenti bersama server LAN");
+    assert_eq!(t.desk(Method::GET, "/api/share", None, Some(&c), LOOP).await.body["publik"]["status"], "off");
+}
+
+#[tokio::test(start_paused = true)]
+async fn tunnel_yang_mati_sendiri_tidak_ditampilkan_aktif() {
+    let t = harness();
+    let tunnel = Arc::new(FakeTunnel::default());
+    t.st.set_tunnel(tunnel.clone());
+    let c = desk_cookie();
+    lan_on(&t, &c).await;
+    t.account("pantau", "role-monitor");
+    let r = t.desk(Method::POST, "/api/share/publik", Some(json!({"enabled": true, "durationHours": 8})), Some(&c), LOOP).await;
+    assert_eq!(r.body["publik"]["status"], "on");
+    for _ in 0..5 {
+        tokio::task::yield_now().await;
+    }
+    tunnel.dead.store(true, Ordering::SeqCst);
+    tokio::time::advance(Duration::from_secs(11)).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    for _ in 0..20 {
+        tokio::task::yield_now().await;
+    }
+    let s = t.desk(Method::GET, "/api/share", None, Some(&c), LOOP).await.body;
+    assert_eq!(s["publik"]["status"], "error");
+    assert!(s["publik"]["error"].as_str().unwrap().contains("terputus"));
+    assert_eq!(tunnel.stops.load(Ordering::SeqCst), 1);
+    assert!(!t.auth.policy().require_2fa);
+    t.st.shutdown_lan().await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn akses_publik_mati_otomatis_setelah_durasi() {
+    let t = harness();
+    let tunnel = Arc::new(FakeTunnel::default());
+    t.st.set_tunnel(tunnel.clone());
+    let c = desk_cookie();
+    lan_on(&t, &c).await;
+    let r = t.desk(Method::POST, "/api/share/publik", Some(json!({"enabled": true, "durationHours": 1})), Some(&c), LOOP).await;
+    assert_eq!(r.body["publik"]["status"], "on", "{:?}", r.body);
+    // Tugas timer baru terdaftar saat pertama dijadwalkan: beri kesempatan sebelum memajukan jam virtual.
+    for _ in 0..5 {
+        tokio::task::yield_now().await;
+    }
+    tokio::time::advance(Duration::from_secs(3599)).await;
+    tokio::task::yield_now().await;
+    assert_eq!(t.desk(Method::GET, "/api/share", None, Some(&c), LOOP).await.body["publik"]["status"], "on", "belum lewat satu jam");
+    tokio::time::advance(Duration::from_secs(2)).await;
+    // Beri kesempatan tugas timer berjalan (jam virtual: tidur singkat memajukan waktu bila semua tugas menganggur).
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    for _ in 0..20 {
+        tokio::task::yield_now().await;
+    }
+    let s = t.desk(Method::GET, "/api/share", None, Some(&c), LOOP).await.body;
+    assert_eq!(s["publik"]["status"], "off", "harus mati otomatis setelah durasi");
+    assert_eq!(tunnel.stops.load(Ordering::SeqCst), 1);
+    t.st.shutdown_lan().await;
 }
 
 // ---------------- UI statis ----------------

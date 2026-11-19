@@ -4,6 +4,7 @@
 //! adapter HTTP yang sama dengan akses browser, tetapi sebagai pemilik (tanpa login) lewat token per peluncuran.
 //! Crate ini tidak bergantung pada Tauri sehingga seluruh alurnya teruji di mesin tanpa WebKitGTK.
 
+pub mod cloudflared;
 pub mod secrets;
 
 use std::net::SocketAddr;
@@ -30,6 +31,19 @@ pub struct DesktopConfig {
     pub secrets: Arc<dyn SecretStore>,
     /// Nol = pilih port acak.
     pub port: u16,
+    pub tunnel: TunnelChoice,
+}
+
+/// Penyedia akses Publik.
+#[derive(Clone, Default)]
+pub enum TunnelChoice {
+    /// `cloudflared` resmi, diunduh otomatis ke `<folder data>/bin` saat pertama dibutuhkan (ADR 0022).
+    #[default]
+    Official,
+    /// Tanpa akses Publik.
+    Off,
+    /// Penyedia lain (uji).
+    Custom(Arc<dyn telemon_http::Tunnel>),
 }
 
 pub struct Desktop {
@@ -103,6 +117,16 @@ impl Desktop {
         let http_cfg = HttpConfig { static_dir: cfg.static_dir, db_path: cfg.db_path.display().to_string(), ..Default::default() };
         let state = AppState::new(telemon.clone(), auth, http_cfg);
 
+        match &cfg.tunnel {
+            TunnelChoice::Official => {
+                let bin = cfg.db_path.parent().map_or_else(|| PathBuf::from("bin"), |d| d.join("bin"));
+                if let Some(cf) = cloudflared::Cloudflared::official(bin) {
+                    state.set_tunnel(Arc::new(cf));
+                }
+            }
+            TunnelChoice::Custom(t) => state.set_tunnel(t.clone()),
+            TunnelChoice::Off => {}
+        }
         // Pemantau semua router tersimpan dan purge berkala dari pengaturan.
         telemon.start_all().map_err(|e| StartError::Storage(e.to_string()))?;
         telemon.start_purge_from_settings(Duration::from_secs(3600));
@@ -132,6 +156,7 @@ impl Desktop {
 
     /// Hentikan berbagi, pemantau, dan server. Dipanggil saat aplikasi ditutup.
     pub async fn shutdown(self) {
+        self.state.stop_public().await;
         self.state.shutdown_lan().await;
         self.telemon.shutdown().await;
         let _ = self.stop.send(());

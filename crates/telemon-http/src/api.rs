@@ -684,10 +684,19 @@ async fn share_lan<C: Connector>(State(st): St<C>, c: Caller, Json(r): Json<LanR
     Ok(Json(st.share_json(true).await))
 }
 
-/// Akses Publik (Cloudflare Quick Tunnel, ADR 0003) belum diimplementasikan.
-async fn share_publik<C: Connector>(c: Caller) -> ApiResult<Json<Value>> {
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublikReq {
+    enabled: bool,
+    #[serde(default)]
+    duration_hours: u32,
+}
+
+/// Akses Publik lewat Cloudflare Quick Tunnel (ADR 0003): hanya dari desktop, butuh server LAN menyala.
+async fn share_publik<C: Connector>(State(st): St<C>, c: Caller, Json(r): Json<PublikReq>) -> ApiResult<Json<Value>> {
     desktop_only(&c)?;
-    Err(ApiError::new(StatusCode::NOT_IMPLEMENTED, "not_implemented", "Akses publik belum tersedia"))
+    st.set_public(r.enabled, r.duration_hours).await?;
+    Ok(Json(st.share_json(true).await))
 }
 
 #[derive(serde::Deserialize)]

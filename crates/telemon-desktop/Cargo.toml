@@ -8,9 +8,12 @@ description = "Peluncur aplikasi desktop Telemon: membuka penyimpanan, kredensia
 
 [dependencies]
 serde_json = "1.0.154"
+sha2 = "0.11.1"
 telemon-core = { version = "0.1.0", path = "../telemon-core" }
 telemon-http = { version = "0.1.0", path = "../telemon-http" }
-tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "net", "time", "sync", "signal"] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "net", "time", "sync", "signal", "process", "io-util"] }
+ureq = { version = "3.5.2", default-features = false, features = ["rustls"] }
 
 [dev-dependencies]
 http-body-util = "0.1.5"
+serde_json = "1.0.154"

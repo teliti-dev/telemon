@@ -4,7 +4,7 @@ use std::sync::Arc;
 use telemon_core::store::NewRouter;
 use telemon_core::SecretStore;
 use telemon_desktop::secrets::FileSecrets;
-use telemon_desktop::{Desktop, DesktopConfig, StartError};
+use telemon_desktop::{Desktop, DesktopConfig, StartError, TunnelChoice};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 fn tmp(name: &str) -> PathBuf {
@@ -15,7 +15,7 @@ fn tmp(name: &str) -> PathBuf {
 }
 
 fn cfg(dir: &PathBuf, port: u16) -> DesktopConfig {
-    DesktopConfig { db_path: dir.join("data").join("telemon.db"), static_dir: None, secrets: Arc::new(FileSecrets::open(dir.join("secrets.json")).unwrap()), port }
+    DesktopConfig { db_path: dir.join("data").join("telemon.db"), static_dir: None, secrets: Arc::new(FileSecrets::open(dir.join("secrets.json")).unwrap()), port, tunnel: TunnelChoice::Off }
 }
 
 /// GET mentah ke server loopback; mengembalikan seluruh respons (status, header, badan).
@@ -136,6 +136,7 @@ async fn kegagalan_baca_sesaat_tidak_menimpa_kunci_lama() {
         static_dir: None,
         secrets: Arc::new(Flaky { inner: FileSecrets::open(dir.join("secrets.json")).unwrap(), blind: std::sync::atomic::AtomicBool::new(blind) }),
         port: 0,
+        tunnel: TunnelChoice::Off,
     };
     Desktop::start(mk(false)).await.unwrap().shutdown().await;
     let before = std::fs::read_to_string(dir.join("secrets.json")).unwrap();
@@ -170,4 +171,65 @@ fn file_secrets_dasar() {
     assert!(!p.with_extension("tmp").exists(), "tidak ada berkas sementara tersisa");
     std::fs::write(&p, "{rusak").unwrap();
     assert!(FileSecrets::open(p).is_err(), "berkas rusak tidak boleh diam-diam dianggap kosong");
+}
+
+#[cfg(unix)]
+mod publik {
+    use super::*;
+    use std::time::Duration;
+    use telemon_desktop::cloudflared::{Cloudflared, Program};
+
+    async fn post(port: u16, path: &str, cookie: &str, body: &str) -> String {
+        let mut s = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        s.write_all(format!("POST {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nCookie: {cookie}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
+        let mut out = String::new();
+        s.read_to_string(&mut out).await.unwrap();
+        out
+    }
+
+    async fn cookie_of(d: &Desktop) -> String {
+        let port = d.addr.port();
+        let entry = get(port, &d.entry_url().replace(&format!("http://127.0.0.1:{port}"), ""), None).await;
+        entry.lines().find(|l| l.to_lowercase().starts_with("set-cookie:")).unwrap().split_once(':').unwrap().1.split(';').next().unwrap().trim().to_string()
+    }
+
+    fn body(r: &str) -> serde_json::Value {
+        serde_json::from_str(r.split("\r\n\r\n").nth(1).unwrap_or("{}")).unwrap_or_default()
+    }
+
+    #[tokio::test]
+    async fn publik_lewat_peluncur_dengan_sidecar_tiruan() {
+        let dir = tmp("publik");
+        // Skrip tiruan cloudflared: mencetak URL lalu mati sendiri setelah 2 detik (mensimulasikan proses crash).
+        let cf = Cloudflared::new(dir.join("bin"), Program::Custom("/bin/sh".into(), vec!["-c".into(), "echo 'INF https://uji-publik.trycloudflare.com' >&2; sleep 2".into()]));
+        let mut c = cfg(&dir, 0);
+        c.tunnel = TunnelChoice::Custom(Arc::new(cf));
+        let d = Desktop::start(c).await.unwrap();
+        let (port, ck) = (d.addr.port(), cookie_of(&d).await);
+
+        // Tanpa server LAN: ditolak dengan alasan jelas.
+        let r = post(port, "/api/share/publik", &ck, r#"{"enabled":true,"durationHours":8}"#).await;
+        assert!(status(&r).contains("409") && r.contains("lan_off"), "{r}");
+
+        let free = { let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap(); l.local_addr().unwrap().port() };
+        let r = post(port, "/api/share/lan", &ck, &format!(r#"{{"enabled":true,"bind":"localhost","port":{free}}}"#)).await;
+        assert!(status(&r).contains("200"), "{r}");
+        let r = post(port, "/api/share/publik", &ck, r#"{"enabled":true,"durationHours":8}"#).await;
+        let b = body(&r);
+        assert_eq!((b["publik"]["status"].as_str(), b["publik"]["url"].as_str()), (Some("on"), Some("https://uji-publik.trycloudflare.com")), "{r}");
+
+        // Proses cloudflared mati sendiri: dalam beberapa detik status menjadi galat, bukan "Aktif" dengan URL mati.
+        let mut status_now = String::new();
+        for _ in 0..30 {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            let r = get(port, "/api/share", Some(&ck)).await;
+            status_now = body(&r)["publik"]["status"].as_str().unwrap_or("").to_string();
+            if status_now == "error" {
+                break;
+            }
+        }
+        assert_eq!(status_now, "error", "tunnel yang mati harus terdeteksi");
+        d.shutdown().await;
+    }
+
 }

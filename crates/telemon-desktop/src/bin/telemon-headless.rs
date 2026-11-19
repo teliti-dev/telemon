@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use telemon_desktop::secrets::FileSecrets;
-use telemon_desktop::{Desktop, DesktopConfig, PREFERRED_PORT};
+use telemon_desktop::{Desktop, DesktopConfig, PREFERRED_PORT, TunnelChoice};
 
 fn arg(name: &str) -> Option<String> {
     let a: Vec<String> = std::env::args().collect();
@@ -27,6 +27,7 @@ async fn main() {
         static_dir: arg("--static").map(PathBuf::from),
         secrets: Arc::new(secrets),
         port: arg("--port").and_then(|p| p.parse().ok()).unwrap_or(PREFERRED_PORT),
+        tunnel: if arg("--no-tunnel").is_some() { TunnelChoice::Off } else { TunnelChoice::Official },
     };
     let d = Desktop::start(cfg).await.unwrap_or_else(|e| {
         eprintln!("gagal memulai: {e}");

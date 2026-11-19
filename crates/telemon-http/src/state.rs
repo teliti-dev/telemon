@@ -50,6 +50,8 @@ pub struct AppState<C: Connector> {
     /// (wajib 2FA untuk semua, akses publik aktif): berasal dari halaman Berbagi di aplikasi desktop.
     share: Mutex<(bool, bool)>,
     pub(crate) lan: tokio::sync::Mutex<crate::share::Lan>,
+    pub(crate) publik: tokio::sync::Mutex<crate::share::Publik>,
+    pub(crate) tunnel: Mutex<Option<Arc<dyn crate::share::Tunnel>>>,
     /// Naik tiap kali server LAN dimatikan/diganti: koneksi WebSocket dari server itu ikut ditutup.
     pub(crate) lan_epoch: tokio::sync::watch::Sender<u64>,
 }
@@ -61,7 +63,7 @@ impl<C: Connector> AppState<C> {
 
     pub fn with_clock(telemon: Arc<Telemon<C>>, auth: Arc<Auth>, cfg: HttpConfig, clock: Arc<dyn Fn() -> i64 + Send + Sync>) -> Arc<Self> {
         let limiter = RateLimiter::new(cfg.login_per_minute, 60_000);
-        let st = Arc::new(Self { telemon, auth, cfg, limiter, plans: PlanCache::default(), clock, share: Mutex::new((false, false)), lan: tokio::sync::Mutex::new(crate::share::Lan::default()), lan_epoch: tokio::sync::watch::channel(0).0 });
+        let st = Arc::new(Self { telemon, auth, cfg, limiter, plans: PlanCache::default(), clock, share: Mutex::new((false, false)), lan: tokio::sync::Mutex::new(crate::share::Lan::default()), publik: tokio::sync::Mutex::new(crate::share::Publik::default()), tunnel: Mutex::new(None), lan_epoch: tokio::sync::watch::channel(0).0 });
         if let Ok(Some(v)) = st.telemon.with_store(|s| s.kv_get("share.require_2fa")) {
             st.share.lock().expect("lock").0 = v == "true";
         }

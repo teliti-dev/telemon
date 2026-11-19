@@ -571,9 +571,8 @@ export class HttpApi implements TelemonApi {
   setLanShare(opts: { enabled: boolean; bind: "lan" | "localhost"; port: number }): Promise<ShareState> {
     return this.shareCall("/api/share/lan", opts)
   }
-  setPublicShare(): Promise<ShareState> {
-    // Server menjawab 501 sampai Cloudflare Quick Tunnel tersedia.
-    return this.shareCall("/api/share/publik", {})
+  setPublicShare(opts: { enabled: boolean; durationHours: number }): Promise<ShareState> {
+    return this.shareCall("/api/share/publik", opts)
   }
   // eslint-disable-next-line require-yield
   async *askAi(): AsyncGenerator<AiStreamEvent> {

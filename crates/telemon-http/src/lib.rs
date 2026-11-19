@@ -23,7 +23,7 @@ use tower_http::services::{ServeDir, ServeFile};
 
 pub use error::ApiError;
 pub use guard::{COOKIE, DESKTOP_COOKIE, client_info, origin_ok};
-pub use share::DEFAULT_LAN_PORT;
+pub use share::{DEFAULT_LAN_PORT, Tunnel};
 pub use state::{AppState, HttpConfig, PlanCache, RateLimiter};
 
 /// Router axum lengkap (API + UI) untuk akses jarak jauh (LAN/Publik; login akun).
