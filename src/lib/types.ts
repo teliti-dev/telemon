@@ -388,6 +388,9 @@ export interface AiProvider {
   isDefault: boolean
   /** Sisa saldo (USD); null = penyedia tidak melaporkan saldo (mis. model lokal). */
   balanceUsd: number | null
+  /** Harga per 1 juta token (USD) untuk menghitung biaya; kosong = biaya tidak dihitung. */
+  priceInPerMtok?: number
+  priceOutPerMtok?: number
 }
 
 export interface AiProviderInput {
@@ -397,6 +400,8 @@ export interface AiProviderInput {
   baseUrl?: string
   /** Kosong saat edit = kunci tetap. */
   apiKey?: string
+  priceInPerMtok?: number
+  priceOutPerMtok?: number
 }
 
 export interface AiUsageDay {

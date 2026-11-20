@@ -57,13 +57,15 @@ export function AiProviderForm({ provider, onSaved, onClose }: { provider?: AiPr
   const [model, setModel] = React.useState(provider?.model ?? "")
   const [baseUrl, setBaseUrl] = React.useState(provider?.baseUrl ?? "")
   const [apiKey, setApiKey] = React.useState("")
+  const [priceIn, setPriceIn] = React.useState(provider?.priceInPerMtok === undefined ? "" : String(provider.priceInPerMtok))
+  const [priceOut, setPriceOut] = React.useState(provider?.priceOutPerMtok === undefined ? "" : String(provider.priceOutPerMtok))
   const [show, setShow] = React.useState(false)
   const [busy, setBusy] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
 
   const needsKey = true
   const needsUrl = kind === "ninerouter"
-  const valid = name.trim() && model.trim() && (!needsKey || editing || apiKey.trim().length >= 8) && (!needsUrl || /^https?:\/\/\S+$/.test(baseUrl.trim()))
+  const valid = name.trim() && model.trim() && (!needsKey || editing || apiKey.trim().length >= 8) && (!needsUrl || /^https?:\/\/\S+$/.test(baseUrl.trim())) && [priceIn, priceOut].every((v) => v.trim() === "" || (Number.isFinite(Number(v)) && Number(v) >= 0))
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -77,6 +79,8 @@ export function AiProviderForm({ provider, onSaved, onClose }: { provider?: AiPr
         model,
         baseUrl: needsUrl ? baseUrl : undefined,
         apiKey: needsKey && apiKey.trim() ? apiKey.trim() : undefined,
+        priceInPerMtok: priceIn.trim() === "" ? undefined : Number(priceIn),
+        priceOutPerMtok: priceOut.trim() === "" ? undefined : Number(priceOut),
       })
       toast.success(editing ? t("Provider disimpan") : t("Provider ditambahkan"))
       onSaved?.()
@@ -164,6 +168,14 @@ export function AiProviderForm({ provider, onSaved, onClose }: { provider?: AiPr
           </div>
         </div>
       )}
+      <div className="grid gap-1.5">
+        <Label>{t("Harga per 1 juta token (USD, opsional)")}</Label>
+        <div className="grid grid-cols-2 gap-2">
+          <Input value={priceIn} onChange={(e) => setPriceIn(e.target.value)} inputMode="decimal" placeholder={t("Masuk")} aria-label={t("Harga token masuk per 1 juta (USD)")} className="font-mono" />
+          <Input value={priceOut} onChange={(e) => setPriceOut(e.target.value)} inputMode="decimal" placeholder={t("Keluar")} aria-label={t("Harga token keluar per 1 juta (USD)")} className="font-mono" />
+        </div>
+        <p className="text-xs text-muted-foreground">{t("Dipakai untuk menghitung biaya dan anggaran. Kosong = biaya tidak dihitung (tetap tercatat jumlah token).")}</p>
+      </div>
       {error && (
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>

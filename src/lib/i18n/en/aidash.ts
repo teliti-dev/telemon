@@ -1,4 +1,10 @@
 export default {
+  "Harga per 1 juta token (USD, opsional)": "Price per 1M tokens (USD, optional)",
+  "Masuk": "Input",
+  "Keluar": "Output",
+  "Harga token masuk per 1 juta (USD)": "Input token price per 1M (USD)",
+  "Harga token keluar per 1 juta (USD)": "Output token price per 1M (USD)",
+  "Dipakai untuk menghitung biaya dan anggaran. Kosong = biaya tidak dihitung (tetap tercatat jumlah token).": "Used to compute cost and budget. Empty = cost is not computed (token counts are still recorded).",
   "Aksi": "Actions",
   "Pilih aksi": "Choose an action",
   "Provider tidak ditemukan": "Provider not found",
