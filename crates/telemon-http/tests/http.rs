@@ -1537,4 +1537,21 @@ mod ai_tests {
         assert_eq!(t.call(Method::DELETE, "/api/ai/chats/c-1", None, Some(&o), &[], LAN).await.status, StatusCode::NOT_FOUND);
         assert_eq!(t.call(Method::DELETE, "/api/ai/chats/c-1", None, Some(&a), &[], LAN).await.status, StatusCode::OK);
     }
+
+    #[tokio::test]
+    async fn url_dasar_provider_hanya_bisa_diubah_dari_desktop() {
+        let t = harness();
+        with_ai(&t, vec![]);
+        t.account("admin", "role-admin");
+        let c = t.login("admin").await;
+        let custom = json!({ "name": "Router9", "kind": "ninerouter", "model": "m", "baseUrl": "http://10.0.0.9:20128/v1", "apiKey": "kunci-uji-123456" });
+        let r = t.post("/api/ai/providers", custom.clone(), Some(&c)).await;
+        assert_eq!(r.status, StatusCode::FORBIDDEN, "akun jarak jauh tidak boleh menetapkan URL kustom: {:?}", r.body);
+        // Provider resmi tanpa URL tetap boleh; edit tanpa mengubah URL juga.
+        let ok = t.post("/api/ai/providers", PROVIDER(), Some(&c)).await;
+        assert_eq!(ok.status, StatusCode::OK);
+        let id = ok.body["id"].as_str().unwrap().to_string();
+        let bad = t.call(Method::PUT, &format!("/api/ai/providers/{id}"), Some(json!({ "name": "X", "kind": "openai", "model": "m", "baseUrl": "http://169.254.169.254/" })), Some(&c), &[], LAN).await;
+        assert_eq!(bad.status, StatusCode::FORBIDDEN, "SSRF ke alamat internal harus ditolak");
+    }
 }

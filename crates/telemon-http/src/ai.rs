@@ -127,14 +127,32 @@ async fn dashboard<C: Connector>(State(st): St<C>, c: Caller, Query(q): Query<Da
     Ok(Json(serde_json::to_value(d).map_err(ApiError::internal)?))
 }
 
+/// URL dasar kustom (9Router) membuat server mengirim permintaan ke alamat itu; membiarkan akun jarak jauh
+/// mengaturnya membuka celah SSRF ke jaringan dalam. Karena itu hanya aplikasi desktop (pemilik) yang boleh
+/// mengubahnya; akun jarak jauh boleh menyimpan ulang provider selama URL-nya tidak berubah.
+fn guard_base_url<C: Connector>(st: &AppState<C>, c: &Caller, existing_id: Option<&str>, input: &AiProviderInput) -> ApiResult<()> {
+    if c.desktop {
+        return Ok(());
+    }
+    let wanted = input.base_url.as_deref().map(str::trim).map(|u| u.trim_end_matches('/')).filter(|u| !u.is_empty());
+    let Some(wanted) = wanted else { return Ok(()) };
+    let current = existing_id.and_then(|id| svc(st).ok()?.providers().ok()?.into_iter().find(|p| p.id == id)).and_then(|p| p.base_url);
+    if current.as_deref() == Some(wanted) {
+        return Ok(());
+    }
+    Err(ApiError::forbidden("URL dasar provider hanya bisa diatur dari aplikasi desktop"))
+}
+
 async fn provider_create<C: Connector>(State(st): St<C>, c: Caller, Json(input): Json<AiProviderInput>) -> ApiResult<Json<Value>> {
     need(&st, &c, Resource::Pengaturan, Level::Update)?;
+    guard_base_url(&st, &c, None, &input)?;
     let p = svc(&st)?.save_provider(None, input)?;
     Ok(Json(serde_json::to_value(p).map_err(ApiError::internal)?))
 }
 
 async fn provider_update<C: Connector>(State(st): St<C>, c: Caller, Path(id): Path<String>, Json(input): Json<AiProviderInput>) -> ApiResult<Json<Value>> {
     need(&st, &c, Resource::Pengaturan, Level::Update)?;
+    guard_base_url(&st, &c, Some(&id), &input)?;
     let p = svc(&st)?.save_provider(Some(&id), input)?;
     Ok(Json(serde_json::to_value(p).map_err(ApiError::internal)?))
 }
