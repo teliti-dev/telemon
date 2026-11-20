@@ -262,7 +262,7 @@ impl<C: Connector> AppState<C> {
             "lan": { "enabled": enabled, "bind": lan.bind, "port": lan.port, "url": if owner { url } else { None } },
             "publik": pub_state,
             "auth": { "require2fa": require_2fa, "allowPublicWrite": settings.remote.allow_public_write },
-            "features": { "ai": false, "aiMask": settings.ai.mask_sensitive },
+            "features": { "ai": self.ai_ready(), "aiMask": settings.ai.mask_sensitive },
         })
     }
 }

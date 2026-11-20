@@ -7,8 +7,10 @@ description = "Server HTTP Telemon: API JSON, login, WebSocket (mode Serve/Publi
 
 [dependencies]
 axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio", "ws", "query", "matched-path"] }
+futures-core = "0.3.34"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+telemon-ai = { version = "0.1.0", path = "../telemon-ai" }
 telemon-core = { version = "0.1.0", path = "../telemon-core" }
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "net", "time", "sync"] }
 tower-http = { version = "0.7.1", default-features = false, features = ["fs"] }

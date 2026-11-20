@@ -1,6 +1,7 @@
 //! Server HTTP Telemon untuk mode Serve (LAN) dan Publik: API JSON, login bercookie, WebSocket event,
 //! dan penyajian UI. Semua logika bisnis ada di `telemon-core`; crate ini hanya membungkusnya.
 
+mod ai;
 mod api;
 mod dto;
 mod error;

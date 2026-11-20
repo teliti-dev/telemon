@@ -1380,3 +1380,161 @@ async fn websocket_event_live_dengan_cookie_dan_izin() {
     assert!(stored.iter().any(|e| e.id.to_string() == msg["event"]["id"].as_str().unwrap() && e.event.username.as_deref() == Some("sari")), "id live tidak cocok dengan basis data: {msg}");
     t.telemon.shutdown().await;
 }
+
+// ---------------------------------------------------------------- AI (ADR 0007, 0024)
+
+mod ai_tests {
+    use super::*;
+    use std::collections::VecDeque;
+    use telemon_ai::{AiService, Completion, Llm, LlmConfig, LlmError, LlmFuture, Msg, ToolCall, ToolSpec, Usage};
+
+    struct Fake(Mutex<VecDeque<Result<Completion, LlmError>>>);
+
+    impl Llm for Fake {
+        fn complete<'a>(&'a self, _c: &'a LlmConfig, _s: &'a str, _m: &'a [Msg], _t: &'a [ToolSpec]) -> LlmFuture<'a> {
+            let next = self.0.lock().unwrap().pop_front().unwrap_or_else(|| Err(LlmError("skrip habis".into())));
+            Box::pin(async move { next })
+        }
+    }
+
+    fn say(t: &str) -> Result<Completion, LlmError> {
+        Ok(Completion { text: t.into(), tool_calls: vec![], usage: Usage { input: 10, output: 5 } })
+    }
+
+    fn tool(name: &str, args: Value) -> Result<Completion, LlmError> {
+        Ok(Completion { text: String::new(), tool_calls: vec![ToolCall { id: "c1".into(), name: name.into(), args }], usage: Usage { input: 10, output: 5 } })
+    }
+
+    fn with_ai(t: &T, script: Vec<Result<Completion, LlmError>>) {
+        let svc = AiService::new(t.telemon.store(), t.telemon.secrets().clone(), t.auth.clone(), Arc::new(Fake(Mutex::new(script.into())))).with_clock(Arc::new(|| T0));
+        t.st.set_ai(Arc::new(svc));
+    }
+
+    const PROVIDER: fn() -> Value = || json!({ "name": "Utama", "kind": "openai", "model": "gpt-x", "apiKey": "sk-RAHASIA-JANGAN-BOCOR-9999" });
+
+    fn lines(r: &Resp) -> Vec<Value> {
+        r.body.as_str().unwrap_or("").lines().filter(|l| !l.is_empty()).map(|l| serde_json::from_str(l).unwrap()).collect()
+    }
+
+    #[tokio::test]
+    async fn tanpa_layanan_rute_ai_menjawab_501_dan_fitur_mati() {
+        let t = harness();
+        t.account("admin", "role-admin");
+        let c = t.login("admin").await;
+        let r = t.get("/api/ai/dashboard", Some(&c)).await;
+        assert_eq!((r.status, r.code()), (StatusCode::NOT_IMPLEMENTED, "not_implemented"));
+        let snap = t.get("/api/snapshot", Some(&c)).await;
+        assert_eq!(snap.body["share"]["features"]["ai"], false);
+    }
+
+    #[tokio::test]
+    async fn pertanyaan_dialirkan_sebagai_ndjson_dan_fitur_menyala_setelah_provider_ada() {
+        let t = harness();
+        with_ai(&t, vec![tool("get_summary", json!({})), say("Semua normal.")]);
+        t.account("admin", "role-admin");
+        let c = t.login("admin").await;
+        assert_eq!(t.get("/api/snapshot", Some(&c)).await.body["share"]["features"]["ai"], false, "belum ada provider");
+        let p = t.post("/api/ai/providers", PROVIDER(), Some(&c)).await;
+        assert_eq!(p.status, StatusCode::OK, "{:?}", p.body);
+        assert!(!p.body.to_string().contains("RAHASIA"), "kunci tidak boleh dikembalikan");
+        assert_eq!(p.body["keyHint"], "sk-…9999");
+        assert_eq!(t.get("/api/snapshot", Some(&c)).await.body["share"]["features"]["ai"], true);
+        let q = t.post("/api/ai/ask", json!({ "messages": [{ "id": "m1", "role": "user", "text": "ringkas", "at": 1 }], "lang": "id" }), Some(&c)).await;
+        assert_eq!(q.status, StatusCode::OK);
+        assert_eq!(q.headers.get(header::CONTENT_TYPE).unwrap(), "application/x-ndjson");
+        let ev = lines(&q);
+        let kinds: Vec<&str> = ev.iter().map(|e| e["type"].as_str().unwrap()).collect();
+        assert_eq!(&kinds[..1], ["step"], "{kinds:?}");
+        assert!(kinds.contains(&"widget") && kinds.contains(&"text") && kinds.contains(&"sources"), "{kinds:?}");
+        assert_eq!(ev.iter().find(|e| e["type"] == "text").unwrap()["text"], "Semua normal.");
+        let d = t.get("/api/ai/dashboard?days=7", Some(&c)).await;
+        assert_eq!(d.status, StatusCode::OK);
+        assert_eq!(d.body["usage"].as_array().unwrap().iter().map(|x| x["requests"].as_i64().unwrap()).sum::<i64>(), 2);
+        assert!(!d.body.to_string().contains("RAHASIA"));
+    }
+
+    #[tokio::test]
+    async fn izin_menentukan_siapa_boleh_bertanya_dan_mengatur() {
+        let t = harness();
+        with_ai(&t, vec![say("x"), say("y")]);
+        t.account("admin", "role-admin");
+        t.account("budi", "role-viewer");
+        t.account("pantau", "role-monitor");
+        let admin = t.login("admin").await;
+        t.post("/api/ai/providers", PROVIDER(), Some(&admin)).await;
+        let ask = json!({ "messages": [{ "id": "m1", "role": "user", "text": "hai", "at": 1 }] });
+        for u in ["budi", "pantau"] {
+            let c = t.login(u).await;
+            assert_eq!(t.post("/api/ai/ask", ask.clone(), Some(&c)).await.status, StatusCode::FORBIDDEN, "{u} tanpa izin AI chat");
+            assert_eq!(t.post("/api/ai/providers", PROVIDER(), Some(&c)).await.status, StatusCode::FORBIDDEN, "{u} tidak boleh mengatur provider");
+            assert_eq!(t.get("/api/ai/chats", Some(&c)).await.status, StatusCode::FORBIDDEN);
+        }
+        assert_eq!(t.post("/api/ai/ask", ask, None).await.status, StatusCode::UNAUTHORIZED, "tanpa sesi");
+    }
+
+    #[tokio::test]
+    async fn galat_sebelum_jawaban_dimulai_menjadi_respons_http_biasa() {
+        let t = harness();
+        with_ai(&t, vec![]);
+        t.account("admin", "role-admin");
+        let c = t.login("admin").await;
+        let ask = json!({ "messages": [{ "id": "m1", "role": "user", "text": "hai", "at": 1 }] });
+        let r = t.post("/api/ai/ask", ask.clone(), Some(&c)).await;
+        assert_eq!((r.status, r.code()), (StatusCode::CONFLICT, "ai_unavailable"), "{:?}", r.body);
+        t.post("/api/ai/providers", PROVIDER(), Some(&c)).await;
+        let r = t.post("/api/ai/ask", json!({ "messages": [] }), Some(&c)).await;
+        assert_eq!(r.status, StatusCode::BAD_REQUEST);
+        // Model gagal di langkah pertama: tetap respons galat biasa (belum ada event).
+        let r = t.post("/api/ai/ask", ask, Some(&c)).await;
+        assert_eq!((r.status, r.code()), (StatusCode::BAD_GATEWAY, "ai_upstream"));
+    }
+
+    #[tokio::test]
+    async fn galat_setelah_event_pertama_menjadi_event_error() {
+        let t = harness();
+        with_ai(&t, vec![tool("get_summary", json!({})), Err(LlmError("penyedia menjawab 500: boom".into()))]);
+        t.account("admin", "role-admin");
+        let c = t.login("admin").await;
+        t.post("/api/ai/providers", PROVIDER(), Some(&c)).await;
+        let r = t.post("/api/ai/ask", json!({ "messages": [{ "id": "m1", "role": "user", "text": "hai", "at": 1 }] }), Some(&c)).await;
+        assert_eq!(r.status, StatusCode::OK);
+        let ev = lines(&r);
+        assert_eq!(ev.last().unwrap()["type"], "error");
+        assert!(ev.last().unwrap()["message"].as_str().unwrap().contains("boom"));
+    }
+
+    #[tokio::test]
+    async fn pertanyaan_dibatasi_per_akun_per_menit() {
+        let t = harness();
+        with_ai(&t, (0..40).map(|_| say("ok")).collect());
+        t.account("admin", "role-admin");
+        let c = t.login("admin").await;
+        t.post("/api/ai/providers", PROVIDER(), Some(&c)).await;
+        let ask = json!({ "messages": [{ "id": "m1", "role": "user", "text": "hai", "at": 1 }] });
+        let mut limited = 0;
+        for _ in 0..25 {
+            if t.post("/api/ai/ask", ask.clone(), Some(&c)).await.status == StatusCode::TOO_MANY_REQUESTS {
+                limited += 1;
+            }
+        }
+        assert_eq!(limited, 5, "20 pertanyaan per menit per akun");
+    }
+
+    #[tokio::test]
+    async fn riwayat_chat_hanya_milik_akun_sendiri_lewat_http() {
+        let t = harness();
+        with_ai(&t, vec![]);
+        t.account("admin", "role-admin");
+        t.account("oper", "role-operator");
+        let (a, o) = (t.login("admin").await, t.login("oper").await);
+        let chat = json!({ "id": "c-1", "title": "Rahasia admin", "pinned": false, "createdAt": 1, "updatedAt": 1, "messages": [{ "id": "m1", "role": "user", "text": "hai", "at": 1 }] });
+        let put = t.call(Method::PUT, "/api/ai/chats/c-1", Some(chat.clone()), Some(&a), &[], LAN).await;
+        assert_eq!(put.status, StatusCode::OK, "{:?}", put.body);
+        assert_eq!(t.get("/api/ai/chats", Some(&a)).await.body.as_array().unwrap().len(), 1);
+        assert!(t.get("/api/ai/chats", Some(&o)).await.body.as_array().unwrap().is_empty());
+        assert_eq!(t.get("/api/ai/chats/c-1", Some(&o)).await.status, StatusCode::NOT_FOUND);
+        assert_eq!(t.call(Method::PUT, "/api/ai/chats/c-1", Some(chat), Some(&o), &[], LAN).await.status, StatusCode::FORBIDDEN, "tidak boleh menimpa riwayat orang lain");
+        assert_eq!(t.call(Method::DELETE, "/api/ai/chats/c-1", None, Some(&o), &[], LAN).await.status, StatusCode::NOT_FOUND);
+        assert_eq!(t.call(Method::DELETE, "/api/ai/chats/c-1", None, Some(&a), &[], LAN).await.status, StatusCode::OK);
+    }
+}
