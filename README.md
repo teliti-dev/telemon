@@ -22,6 +22,7 @@ Pre-release (`v0.1.0-rc.x`). The core, server and UI are tested against a simula
 - **Write back to the router** (desktop only, per router, off by default): add, edit and soft-delete PPP secrets and profiles after a review dialog, with a change history. Telemon never deletes a secret or profile on the router; it disables or marks them.
 - **Secure storage.** Router credentials and PPPoE passwords are encrypted (ChaCha20-Poly1305). The database key lives in the OS keyring, with a `0600` file fallback when no keyring is available. TLS to the router supports certificate fingerprint pinning.
 - **Signed in-app updates** with a stable and a test channel. The database is backed up before an update installs.
+- **AI assistant** (read-only, off until you add a provider): ask questions about your users and events in plain language. It uses OpenAI-compatible APIs (OpenAI, DeepSeek, Gemini, 9Router) or Anthropic, only reads data the asker's role may see, masks IPs and MACs by default, never sees passwords, and has a monthly budget with a usage dashboard. Customer data is sent to the provider you choose.
 - **Bilingual UI** (English and Indonesian), light and dark themes, responsive down to phone width.
 
 | Users | User detail |
@@ -81,8 +82,9 @@ Checks:
 
 ```sh
 bun run typecheck && bun run lint && bun run i18n:check
-(cd crates/telemon-core    && cargo test)   # 96 tests
-(cd crates/telemon-http    && cargo test)   # 36 tests
+(cd crates/telemon-core    && cargo test)   # 100 tests
+(cd crates/telemon-http    && cargo test)   # 44 tests
+(cd crates/telemon-ai      && cargo test)   # 21 tests
 (cd crates/telemon-desktop && cargo test)   # 14 tests
 ```
 
@@ -94,7 +96,7 @@ cd crates/telemon-demo && cargo build --release
 ./target/release/telemon-demo --static ../../dist     # http://127.0.0.1:7878
 ```
 
-Layout: `src/` React UI (Vite, TypeScript, shadcn/ui), `crates/telemon-core` RouterOS client, poller, storage and accounts, `crates/telemon-http` Axum server, `crates/telemon-desktop` desktop wiring and `cloudflared` management, `src-tauri` the Tauri shell.
+Layout: `src/` React UI (Vite, TypeScript, shadcn/ui), `crates/telemon-core` RouterOS client, poller, storage and accounts, `crates/telemon-http` Axum server, `crates/telemon-ai` AI assistant (LLM clients, read-only tools), `crates/telemon-desktop` desktop wiring and `cloudflared` management, `src-tauri` the Tauri shell.
 
 ## Releasing
 
