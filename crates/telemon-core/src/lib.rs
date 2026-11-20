@@ -2,6 +2,7 @@
 //!
 //! Klien memakai `mikrotik-rs` (AGPL-3.0, ADR 0011) di balik trait [`RouterApi`] agar bisa diganti.
 
+pub mod aistore;
 pub mod auth;
 pub mod events;
 pub mod model;
@@ -28,3 +29,4 @@ pub use vault::{VaultError, generate_key};
 pub use tls::{Fingerprint, fetch_fingerprint, pinned_config};
 pub use service::{Connector, MemorySecrets, NetConnector, Probe, Resilient, RouterEvent, RuntimeConfig, SecretStore, ServiceError, Telemon};
 pub use settings::Settings;
+pub use aistore::{ChatMeta, ChatRow, ProviderRow, UsageRow};

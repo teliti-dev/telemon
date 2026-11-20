@@ -225,6 +225,11 @@ impl<C: Connector> Telemon<C> {
         }
     }
 
+    /// Penyimpanan rahasia (kunci API provider AI memakainya; kuncinya tidak pernah masuk basis data).
+    pub fn secrets(&self) -> &Arc<dyn SecretStore> {
+        &self.secrets
+    }
+
     pub fn store(&self) -> SharedStore {
         self.store.clone()
     }

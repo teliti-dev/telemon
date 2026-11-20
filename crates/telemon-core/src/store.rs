@@ -157,6 +157,46 @@ CREATE TABLE settings (
   k TEXT PRIMARY KEY,
   v TEXT NOT NULL
 );
+", "
+CREATE TABLE ai_providers (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  model TEXT NOT NULL,
+  base_url TEXT,
+  key_hint TEXT,
+  status TEXT NOT NULL DEFAULT 'unconfigured',
+  error TEXT,
+  latency_ms INTEGER,
+  checked_at INTEGER,
+  is_default INTEGER NOT NULL DEFAULT 0,
+  price_in REAL,
+  price_out REAL,
+  created_at INTEGER NOT NULL
+);
+CREATE TABLE ai_usage (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at INTEGER NOT NULL,
+  provider_id TEXT NOT NULL,
+  model TEXT NOT NULL,
+  account TEXT NOT NULL,
+  input_tokens INTEGER NOT NULL,
+  output_tokens INTEGER NOT NULL,
+  cost_usd REAL NOT NULL,
+  ok INTEGER NOT NULL,
+  latency_ms INTEGER NOT NULL
+);
+CREATE INDEX ai_usage_at ON ai_usage(at);
+CREATE TABLE ai_chats (
+  id TEXT PRIMARY KEY,
+  account TEXT NOT NULL,
+  title TEXT NOT NULL,
+  pinned INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  messages TEXT NOT NULL
+);
+CREATE INDEX ai_chats_account ON ai_chats(account, updated_at);
 "];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
