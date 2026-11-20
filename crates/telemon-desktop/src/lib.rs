@@ -15,7 +15,7 @@ use std::time::Duration;
 use telemon_core::auth::{Auth, HashParams};
 use telemon_core::store::Store;
 use telemon_core::{NetConnector, SecretStore, Telemon};
-use telemon_http::{AppState, HttpConfig};
+use telemon_http::{AppState, HttpConfig, HttpLlm};
 
 /// Port loopback pilihan: tetap, supaya asal (origin) webview stabil dan pilihan tema/bahasa di localStorage
 /// bertahan antar peluncuran. Bila terpakai, port acak.
@@ -116,6 +116,8 @@ impl Desktop {
         let auth = Arc::new(Auth::new(telemon.store(), HashParams::default()).map_err(|e| StartError::Storage(e.to_string()))?);
         let http_cfg = HttpConfig { static_dir: cfg.static_dir, db_path: cfg.db_path.display().to_string(), ..Default::default() };
         let state = AppState::new(telemon.clone(), auth, http_cfg);
+        // AI chat: bawaan mati sampai pemilik menambah provider di Pengaturan (ADR 0007, 0024).
+        state.enable_ai(Arc::new(HttpLlm::default()));
 
         match &cfg.tunnel {
             TunnelChoice::Official => {

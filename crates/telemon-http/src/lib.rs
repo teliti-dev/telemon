@@ -16,6 +16,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 pub use axum::Router;
+pub use telemon_ai::{AiService, HttpLlm, Llm};
 use axum::extract::DefaultBodyLimit;
 use axum::http::StatusCode;
 use axum::middleware::{from_fn_with_state};

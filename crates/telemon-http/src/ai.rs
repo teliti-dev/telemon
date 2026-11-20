@@ -45,6 +45,29 @@ impl<C: Connector> AppState<C> {
         *self.ai.svc.lock().expect("lock") = Some(svc);
     }
 
+    /// Pasang layanan AI dengan klien model `llm` dan jalankan pembersihan riwayat chat per jam (retensi di Pengaturan).
+    /// Harus dipanggil dari dalam runtime tokio.
+    pub fn enable_ai(self: &Arc<Self>, llm: Arc<dyn telemon_ai::Llm>) -> Arc<AiService> {
+        let svc = Arc::new(AiService::new(self.telemon.store(), self.telemon.secrets().clone(), self.auth.clone(), llm));
+        self.set_ai(svc.clone());
+        let (weak_st, task_svc) = (Arc::downgrade(self), svc.clone());
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(3600));
+            loop {
+                tick.tick().await;
+                let Some(st) = weak_st.upgrade() else { break };
+                let days = st.telemon.with_store(|s| s.get_settings()).ok().and_then(|s| s.retention.ai_chat_days);
+                let _ = task_svc.purge_chats(days);
+            }
+        });
+        svc
+    }
+
+    /// Layanan AI terpasang (untuk menyiapkan data awal, mis. provider demo).
+    pub fn ai_service(&self) -> Option<Arc<AiService>> {
+        self.ai()
+    }
+
     pub(crate) fn ai(&self) -> Option<Arc<AiService>> {
         self.ai.svc.lock().expect("lock").clone()
     }

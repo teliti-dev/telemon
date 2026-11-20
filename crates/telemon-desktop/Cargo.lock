@@ -1032,6 +1032,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0bf256ce5efdfa370213c1dabab5935a12e49f2c58d15e9eac2870d3b4f27263"
 
 [[package]]
+name = "telemon-ai"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "telemon-core",
+ "tokio",
+ "ureq",
+]
+
+[[package]]
 name = "telemon-core"
 version = "0.1.0"
 dependencies = [
@@ -1065,8 +1076,10 @@ name = "telemon-http"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "futures-core",
  "serde",
  "serde_json",
+ "telemon-ai",
  "telemon-core",
  "tokio",
  "tower-http",
