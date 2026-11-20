@@ -1,7 +1,9 @@
+import * as React from "react"
 import { GlobeIcon, WifiIcon, ZapIcon } from "lucide-react"
 
 import { AccountMenu } from "@/components/account-menu"
 import { AppearanceDrawer } from "@/components/appearance-drawer"
+import { WindowControls } from "@/components/window-controls"
 import { isNavActive } from "@/components/nav-items"
 import { Badge } from "@/components/ui/badge"
 import { useNavBadges } from "@/hooks/use-nav-badges"
@@ -11,6 +13,7 @@ import { PAGE_CONTAINER } from "@/lib/layout"
 import { href, useRoute } from "@/lib/route"
 import { useStore } from "@/lib/store-context"
 import { cn } from "@/lib/utils"
+import { initFrameless, useFrameless, winStartDragging, winToggleMaximize } from "@/lib/window"
 
 /**
  * Dua bagian yang langsung menjadi anak kolom halaman (bukan dibungkus satu header),
@@ -26,11 +29,36 @@ export function SiteHeader({ title }: { title: string }) {
   const badges = useNavBadges()
   const items = useNavItems()
   const firstEnd = items.findIndex((i) => i.end)
+  const frameless = useFrameless()
+  React.useEffect(initFrameless, [])
+
+  // Tanpa bilah bawaan, area kosong header menjadi tempat menyeret jendela (klik ganda = maksimalkan).
+  const dragProps = frameless
+    ? {
+        onMouseDown: (e: React.MouseEvent) => {
+          if (e.button !== 0 || e.detail > 1) return
+          if ((e.target as HTMLElement).closest("a,button,input,select,textarea,[role=button],[data-window-controls]")) return
+          winStartDragging()
+        },
+        onDoubleClick: (e: React.MouseEvent) => {
+          if ((e.target as HTMLElement).closest("a,button,input,select,textarea,[role=button],[data-window-controls]")) return
+          winToggleMaximize()
+        },
+      }
+    : {}
 
   return (
     <>
-      <div className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:static md:border-b-0 md:bg-background md:backdrop-blur-none">
-        <div className={cn(PAGE_CONTAINER, "flex h-12 items-center gap-2 md:h-14")}>
+      <div
+        {...dragProps}
+        className={cn(
+          "sticky top-0 z-30 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80",
+          // Tanpa bilah bawaan baris ini juga menampung tombol jendela, jadi harus tetap terlihat saat menggulir.
+          !frameless && "md:static md:border-b-0 md:bg-background md:backdrop-blur-none"
+        )}
+      >
+        <div className={cn("flex items-stretch", frameless ? "h-12 md:h-14" : "")}>
+        <div className={cn(PAGE_CONTAINER, "flex h-12 min-w-0 items-center gap-2 md:h-14")}>
           <a
             href={href("ringkasan")}
             aria-label={t("Telemon, ke Ringkasan")}
@@ -83,9 +111,11 @@ export function SiteHeader({ title }: { title: string }) {
             <AccountMenu />
           </div>
         </div>
+        {frameless && <WindowControls />}
+        </div>
       </div>
 
-      <div className="sticky top-0 z-20 hidden border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:block">
+      <div className={cn("sticky z-20 hidden border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:block", frameless ? "top-14" : "top-0")}>
         <nav aria-label={t("Menu utama")} className={cn(PAGE_CONTAINER, "-mb-px flex h-9 items-end gap-0.5")}>
           {items.map((item, index) => {
             const active = isNavActive(item.page, page)

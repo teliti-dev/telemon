@@ -1,5 +1,9 @@
 /** Terjemahan English area "shell": header, menu, Appearance, kerangka aplikasi, dan AI chat. */
 export default {
+  "Perkecil jendela": "Minimize",
+  "Perbesar jendela": "Maximize",
+  "Pulihkan jendela": "Restore",
+  "Tutup jendela": "Close",
   "Telemon, ke Ringkasan": "Telemon, go to Overview",
   "Menerima event live": "Receiving live events",
   "Serve ke browser aktif": "Browser serving is on",
