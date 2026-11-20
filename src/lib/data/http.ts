@@ -1,9 +1,12 @@
 import type {
   AccountSummary,
+  AiBudgetInput,
   AiChat,
   AiChatSummary,
   AiDashboard,
+  AiMessage,
   AiProvider,
+  AiProviderInput,
   AiStreamEvent,
   AppSettings,
   ImportResult,
@@ -31,6 +34,7 @@ import type {
   UpdateStatus,
   UserPatch,
 } from "../types"
+import { getLang } from "@/lib/i18n"
 import type { LiveUpdate, Snapshot, TelemonApi } from "./api"
 
 /** Galat dari server: `code` stabil (`forbidden`, `locked`, ...) dan pesan siap tampil. */
@@ -82,7 +86,7 @@ interface PlanResponse {
 /**
  * Adapter browser: JSON + cookie sesi + WebSocket ke server Telemon (mode Serve/Publik).
  * Tulis ke router memakai rencana di server: buat rencana lalu terapkan; klien tidak mengirim
- * langkah ke router. Fitur yang belum ada di server (AI chat, Berbagi) menolak dengan 501.
+ * langkah ke router. Fitur yang tidak dipasang di server menolak dengan 501.
  */
 export class HttpApi implements TelemonApi {
   readonly kind = "http" as const
@@ -135,10 +139,6 @@ export class HttpApi implements TelemonApi {
     return (opts.keepNulls ? data : dropNulls(data)) as T
   }
 
-  private unsupported(name: string): ApiError {
-    return new ApiError(`${name} belum tersedia di server`, 501, "not_implemented")
-  }
-
   // ---------------- snapshot dan live ----------------
 
   async snapshot(): Promise<Snapshot> {
@@ -151,7 +151,7 @@ export class HttpApi implements TelemonApi {
 
   /** Status berbagi dari server; bila server lama tidak mengirimnya, nilai aman untuk browser. */
   private shareOf(s?: ShareState): ShareState {
-    if (s) return { ...s, features: { ...s.features, ai: false } }
+    if (s) return s
     return this.share()
   }
 
@@ -560,26 +560,109 @@ export class HttpApi implements TelemonApi {
     }
   }
 
-  // ---------------- belum ada di server ----------------
+  // ---------------- AI (provider, anggaran, dasbor) ----------------
 
-  getAiDashboard(): Promise<AiDashboard> {
-    return Promise.reject(this.unsupported("Dasbor AI"))
+  getAiDashboard(days: 7 | 30): Promise<AiDashboard> {
+    return this.req<AiDashboard>("GET", `/api/ai/dashboard?days=${days}`, undefined, { keepNulls: true })
   }
-  saveAiProvider(): Promise<AiProvider> {
-    return Promise.reject(this.unsupported("Provider AI"))
+  saveAiProvider(id: string | null, input: AiProviderInput): Promise<AiProvider> {
+    const body = { ...input, apiKey: input.apiKey?.trim() || undefined }
+    return id
+      ? this.req<AiProvider>("PUT", `/api/ai/providers/${encodeURIComponent(id)}`, body, { keepNulls: true })
+      : this.req<AiProvider>("POST", "/api/ai/providers", body, { keepNulls: true })
   }
-  removeAiProvider(): Promise<void> {
-    return Promise.reject(this.unsupported("Provider AI"))
+  async removeAiProvider(id: string): Promise<void> {
+    await this.req("DELETE", `/api/ai/providers/${encodeURIComponent(id)}`)
   }
-  setDefaultAiProvider(): Promise<void> {
-    return Promise.reject(this.unsupported("Provider AI"))
+  async setDefaultAiProvider(id: string): Promise<void> {
+    await this.req("POST", `/api/ai/providers/${encodeURIComponent(id)}/default`, {})
   }
-  testAiProvider(): Promise<AiProvider> {
-    return Promise.reject(this.unsupported("Provider AI"))
+  testAiProvider(id: string): Promise<AiProvider> {
+    return this.req<AiProvider>("POST", `/api/ai/providers/${encodeURIComponent(id)}/test`, {}, { keepNulls: true })
   }
-  saveAiBudget(): Promise<void> {
-    return Promise.reject(this.unsupported("Anggaran AI"))
+  async saveAiBudget(input: AiBudgetInput): Promise<void> {
+    await this.req("PUT", "/api/ai/budget", input)
   }
+
+  // ---------------- AI chat ----------------
+
+  /**
+   * Pertanyaan dialirkan server sebagai NDJSON (satu objek JSON per baris). Galat sebelum jawaban dimulai datang
+   * sebagai respons HTTP biasa; galat sesudahnya sebagai event `error`.
+   */
+  async *askAi(messages: AiMessage[], opts?: { signal?: AbortSignal }): AsyncGenerator<AiStreamEvent> {
+    const slim = messages.map((m) => ({ id: m.id, role: m.role, text: m.text, at: m.at, ...(m.error ? { error: true } : {}) }))
+    const res = await this.f(this.base + "/api/ai/ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ messages: slim, lang: getLang() }),
+      signal: opts?.signal,
+    })
+    if (!res.ok) {
+      let e: { code?: string; message?: string } | undefined
+      try {
+        e = ((await res.json()) as { error?: { code?: string; message?: string } }).error
+      } catch {
+        /* bukan JSON */
+      }
+      if (res.status === 401) {
+        try {
+          window.dispatchEvent(new Event(UNAUTHENTICATED_EVENT))
+        } catch {
+          /* bukan di browser */
+        }
+      }
+      throw new ApiError(e?.message ?? `HTTP ${res.status}`, res.status, e?.code ?? "http")
+    }
+    if (!res.body) throw new ApiError("Server tidak mengirim aliran jawaban", 502, "no_stream")
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let buf = ""
+    const parse = (line: string): AiStreamEvent | { type: "error"; message: string } | null => {
+      if (!line.trim()) return null
+      try {
+        return JSON.parse(line) as AiStreamEvent | { type: "error"; message: string }
+      } catch {
+        return null
+      }
+    }
+    try {
+      for (;;) {
+        const { value, done } = await reader.read()
+        if (value) buf += decoder.decode(value, { stream: !done })
+        let nl: number
+        while ((nl = buf.indexOf("\n")) >= 0) {
+          const ev = parse(buf.slice(0, nl))
+          buf = buf.slice(nl + 1)
+          if (!ev) continue
+          if (ev.type === "error") throw new ApiError((ev as { message: string }).message, 502, "ai_upstream")
+          yield ev as AiStreamEvent
+        }
+        if (done) break
+      }
+      const last = parse(buf)
+      if (last) {
+        if (last.type === "error") throw new ApiError((last as { message: string }).message, 502, "ai_upstream")
+        yield last as AiStreamEvent
+      }
+    } finally {
+      reader.cancel().catch(() => {})
+    }
+  }
+  listAiChats(): Promise<AiChatSummary[]> {
+    return this.req<AiChatSummary[]>("GET", "/api/ai/chats")
+  }
+  getAiChat(id: string): Promise<AiChat> {
+    return this.req<AiChat>("GET", `/api/ai/chats/${encodeURIComponent(id)}`)
+  }
+  saveAiChat(chat: AiChat): Promise<AiChatSummary> {
+    return this.req<AiChatSummary>("PUT", `/api/ai/chats/${encodeURIComponent(chat.id)}`, chat)
+  }
+  async deleteAiChat(id: string): Promise<void> {
+    await this.req("DELETE", `/api/ai/chats/${encodeURIComponent(id)}`)
+  }
+
   // ---------------- berbagi (hanya aplikasi desktop; server menolak akun jarak jauh) ----------------
 
   private async shareCall(path: string, body: unknown): Promise<ShareState> {
@@ -596,21 +679,5 @@ export class HttpApi implements TelemonApi {
   }
   setPublicShare(opts: { enabled: boolean; durationHours: number }): Promise<ShareState> {
     return this.shareCall("/api/share/publik", opts)
-  }
-  // eslint-disable-next-line require-yield
-  async *askAi(): AsyncGenerator<AiStreamEvent> {
-    throw this.unsupported("AI chat")
-  }
-  listAiChats(): Promise<AiChatSummary[]> {
-    return Promise.resolve([])
-  }
-  getAiChat(): Promise<AiChat> {
-    return Promise.reject(this.unsupported("Riwayat AI chat"))
-  }
-  saveAiChat(): Promise<AiChatSummary> {
-    return Promise.reject(this.unsupported("Riwayat AI chat"))
-  }
-  deleteAiChat(): Promise<void> {
-    return Promise.reject(this.unsupported("Riwayat AI chat"))
   }
 }
