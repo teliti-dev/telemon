@@ -1,1 +1,0 @@
-Telemon is free software under the AGPL-3.0, provided without warranty. See [Disclaimer and license](Disclaimer-and-License). [Releases](https://github.com/teliti-dev/telemon/releases) · [Issues](https://github.com/teliti-dev/telemon/issues)

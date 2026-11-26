@@ -1,3 +1,5 @@
+[← Telemon documentation](Home.md)
+
 # Getting started
 
 This page takes you from download to your first data on screen.
@@ -21,11 +23,11 @@ Download the file for your system from the [Releases](https://github.com/teliti-
 
 ## 2. Open Telemon
 
-The desktop app needs **no login**. It keeps its data on your computer (see [Settings, updates and backups](Settings-Updates-and-Backups#where-your-data-lives)).
+The desktop app needs **no login**. It keeps its data on your computer (see [Settings, updates and backups](Settings-Updates-and-Backups.md#where-your-data-lives)).
 
 ## 3. Add your first router
 
-Open **Routers** and add the router. The details are in [Adding a router](Adding-a-Router). In short:
+Open **Routers** and add the router. The details are in [Adding a router](Adding-a-Router.md). In short:
 
 1. Create a **dedicated API account** on the router (group `read` is enough for monitoring).
 2. Enter the router's host, port (**8729 with TLS** is recommended, 8728 without) and the account.
@@ -36,15 +38,15 @@ Open **Routers** and add the router. The details are in [Adding a router](Adding
 After the first poll the router shows up as online and its users and events appear:
 
 - **Overview**: counters, router cards, latest events and charts.
-- **Users**: every PPPoE secret with its status. See [Users and events](Users-and-Events).
+- **Users**: every PPPoE secret with its status. See [Users and events](Users-and-Events.md).
 - **Events**: what just happened, with filters and search.
 
 ## 5. Next steps
 
 - Import users from the router, or look at one user's detail.
 - Press <kbd>Ctrl</kbd>+<kbd>K</kbd> to search everywhere.
-- [Share the dashboard](Sharing-and-Public-Access) to a phone or laptop.
-- [Turn on the AI assistant](AI-Assistant) if you want one.
+- [Share the dashboard](Sharing-and-Public-Access.md) to a phone or laptop.
+- [Turn on the AI assistant](AI-Assistant.md) if you want one.
 
 > [!TIP]
-> Want to look around first? The project has a demo server with simulated routers and made-up users. See [Development](Development#try-the-ui-without-a-router).
+> Want to look around first? The project has a demo server with simulated routers and made-up users. See [Development](Development.md#try-the-ui-without-a-router).

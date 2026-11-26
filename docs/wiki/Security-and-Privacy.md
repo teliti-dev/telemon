@@ -1,3 +1,5 @@
+[← Telemon documentation](Home.md)
+
 # Security and privacy
 
 What Telemon protects, and what stays your responsibility.
@@ -37,4 +39,4 @@ What Telemon protects, and what stays your responsibility.
 
 Open a [GitHub issue](https://github.com/teliti-dev/telemon/issues) that says you have a security report and ask for a private way to send it. **Do not put secrets, customer data or exploit details in the issue.**
 
-See also the [Disclaimer and license](Disclaimer-and-License).
+See also the [Disclaimer and license](Disclaimer-and-License.md).

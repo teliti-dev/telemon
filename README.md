@@ -15,7 +15,7 @@
   <a href="#install">Install</a> ·
   <a href="#quick-start">Quick start</a> ·
   <a href="#features">Features</a> ·
-  <a href="https://github.com/teliti-dev/telemon/wiki">Wiki</a> ·
+  <a href="docs/wiki/Home.md">Docs</a> ·
   <a href="https://github.com/teliti-dev/telemon/releases">Releases</a> ·
   <a href="https://github.com/teliti-dev/telemon/issues">Report a problem</a>
 </p>
@@ -60,7 +60,7 @@ It runs as a **desktop app** with its own local database (nothing to deploy), an
 4. **Wait for the first poll.** The router, its users and its events show up in *Overview*, *Users* and *Events*.
 5. **Optional:** import users from the router, share the dashboard to a browser, or turn on the AI assistant.
 
-The wiki has a step-by-step guide: [Getting started](https://github.com/teliti-dev/telemon/wiki/Getting-Started).
+The docs have a step-by-step guide: [Getting started](docs/wiki/Getting-Started.md).
 
 ## Features
 
@@ -186,7 +186,7 @@ The desktop window loads the same web UI over a loopback HTTP server that only a
 
 | Where | What |
 |---|---|
-| **[Wiki](https://github.com/teliti-dev/telemon/wiki)** | User guide: getting started, routers, users and events, sharing, accounts, AI, extensions, updates, troubleshooting |
+| **[User guide](docs/wiki/Home.md)** | User guide: getting started, routers, users and events, sharing, accounts, AI, extensions, updates, troubleshooting |
 | [`DISCLAIMER.md`](DISCLAIMER.md) | Warranty, liability and the risks specific to Telemon |
 | [`CLAUDE.md`](CLAUDE.md) and [`AGENTS.md`](AGENTS.md) | Conventions for people and tools working on the code |
 

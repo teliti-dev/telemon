@@ -1,3 +1,5 @@
+[← Telemon documentation](Home.md)
+
 # AI assistant
 
 An optional assistant that answers questions about your users and events in plain language. It is **off until you add a provider**, and it is **read-only**: it cannot change anything on a router.
