@@ -42,7 +42,12 @@
     "license": "AGPL-3.0-only",
     "licenseFile": "../LICENSE",
     "category": "Utility",
-    "shortDescription": "Monitor PPPoE users and events across MikroTik routers"
+    "shortDescription": "Monitor PPPoE users and events across MikroTik routers",
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons/icon.ico"
+      }
+    }
   },
   "plugins": {
     "updater": {
