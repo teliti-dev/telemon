@@ -1,3 +1,5 @@
+<p align="center"><img src="public/telemon.svg" alt="Telemon" width="96" height="96"></p>
+
 # Telemon
 
 Monitor PPPoE users and events across many MikroTik routers, from a desktop app or any browser.
