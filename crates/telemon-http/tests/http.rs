@@ -1876,6 +1876,32 @@ mod extensions {
         assert_eq!(t.get("/ext/net.teliti.demo/ui/index.js", Some(&c)).await.status, StatusCode::NOT_FOUND);
     }
 
+    /// Lisensi extension (ADR 0030) sampai ke pemakai: pratinjau paket (inspect) dan tampilan terpasang; tanpa lisensi = null.
+    #[tokio::test]
+    async fn lisensi_extension_tampil_di_pratinjau_dan_tampilan_terpasang() {
+        let d = dir();
+        let t = harness_with(on(&d));
+        t.account("admin", "role-admin");
+        let c = t.login("admin").await;
+        let with = |lic: &str| {
+            let m = format!(r#"{{"id":"net.teliti.lic","name":"Lic","version":"1.0.0","apiVersion":1,"publisher":"Teliti","ui":{{"entry":"ui/index.js"}}{lic}}}"#);
+            pack(&[("manifest.json".into(), m.into_bytes()), ("ui/index.js".into(), b"export default {}".to_vec())], Some(OFFICIAL)).unwrap()
+        };
+        let lic = r#","license":{"kind":"freemium","summary":"Free for 5 routers","url":"https://example.com/pricing"}"#;
+        let r = send(&t, Method::POST, "/api/extensions/inspect", with(lic), &c, &[], LAN).await;
+        assert_eq!(r.body["package"]["license"]["kind"], "freemium", "{:?}", r.body);
+        assert_eq!(r.body["package"]["license"]["url"], "https://example.com/pricing");
+        let r = install(&t, with(lic), &c).await;
+        assert_eq!((r.status, r.body["license"]["summary"].as_str()), (StatusCode::OK, Some("Free for 5 routers")), "{:?}", r.body);
+        // Tanpa lisensi: null (UI menampilkan "tidak dinyatakan").
+        let r = send(&t, Method::POST, "/api/extensions/inspect", with(""), &c, &[], LAN).await;
+        assert!(r.body["package"]["license"].is_null(), "{:?}", r.body);
+        // Lisensi tak valid ditolak saat pratinjau.
+        let r = send(&t, Method::POST, "/api/extensions/inspect", with(r#","license":{"kind":"free","url":"http://x.test"}"#), &c, &[], LAN).await;
+        assert_eq!(r.status, StatusCode::BAD_REQUEST, "{:?}", r.body);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
     #[tokio::test]
     async fn pasang_aktifkan_sajikan_dan_hapus() {
         let d = dir();

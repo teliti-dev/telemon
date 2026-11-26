@@ -14,7 +14,7 @@ import { Switch } from "@/components/ui/switch"
 import { reloadExtensions } from "@/lib/extensions/loader"
 import { tk, useT } from "@/lib/i18n"
 import { useStore } from "@/lib/store-context"
-import type { ExtensionAccess, ExtensionInfo, ExtensionLevel, ExtensionRequirement } from "@/lib/types"
+import type { ExtensionAccess, ExtensionInfo, ExtensionLevel, ExtensionLicense, ExtensionRequirement } from "@/lib/types"
 
 export const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
@@ -29,6 +29,45 @@ export function StatusBadge({ ext }: { ext: ExtensionInfo }) {
 export function TierBadge({ ext }: { ext: Pick<ExtensionInfo, "tier"> }) {
   const t = useT()
   return <Badge variant={ext.tier === "official" ? "default" : "outline"}>{ext.tier === "official" ? t("Official") : t("Publik")}</Badge>
+}
+
+export const LICENSE_KIND = {
+  "open-source": tk("Open source"),
+  free: tk("Gratis"),
+  freemium: tk("Freemium"),
+  paid: tk("Berbayar"),
+  trial: tk("Uji coba"),
+  proprietary: tk("Syarat khusus"),
+} as const
+
+/**
+ * Lisensi extension apa adanya dari penerbit: jenis (+ pengenal SPDX), ringkasan, dan tautan syarat lengkap.
+ * Tanpa lisensi tertulis = "Tidak dinyatakan". Telemon tidak menilai atau menegakkan isinya (ADR 0030).
+ */
+export function LicenseInfo({ license }: { license?: ExtensionLicense | null }) {
+  const t = useT()
+  if (!license) return <span className="text-muted-foreground">{t("Tidak dinyatakan penerbit")}</span>
+  return (
+    <span className="grid gap-1">
+      <span className="flex flex-wrap items-center gap-1.5">
+        {/* i18n-ignore: kunci ada di LICENSE_KIND (tk) */}
+        <Badge variant="outline">{t(LICENSE_KIND[license.kind])}</Badge>
+        {license.spdx && <code className="text-xs">{license.spdx}</code>}
+        {license.url && (
+          <a href={license.url} target="_blank" rel="noopener noreferrer" className="text-xs text-brand underline underline-offset-2">
+            {t("Syarat lengkap")}
+          </a>
+        )}
+      </span>
+      {license.summary && <span className="text-xs text-muted-foreground">{license.summary}</span>}
+    </span>
+  )
+}
+
+/** Pengingat singkat di tempat pemasangan dan detail: lisensi extension urusan penerbit, bukan Telemon. */
+export function LicenseNote() {
+  const t = useT()
+  return <p className="text-xs text-muted-foreground">{t("Lisensi extension ditentukan penerbitnya. Telemon tidak menjual, memverifikasi, atau menegakkan lisensi itu, dan tidak bertanggung jawab atas extension pihak ketiga.")}</p>
 }
 
 /** Ubah satu extension (aktif, izin) lalu muat ulang widget dan halaman di aplikasi. */

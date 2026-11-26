@@ -3,7 +3,7 @@ import { ArrowLeftIcon, ExternalLinkIcon, PuzzleIcon, ShieldAlertIcon, Trash2Ico
 import { toast } from "sonner"
 
 import { ConfirmDialog } from "@/components/confirm-dialog"
-import { AccessPanel, BackendInfo, Permissions, Requires, StatusBadge, TierBadge, ToggleExtensionDialog, errMsg, useExtensionPatch } from "@/components/extensions/parts"
+import { AccessPanel, BackendInfo, LicenseInfo, LicenseNote, Permissions, Requires, StatusBadge, TierBadge, ToggleExtensionDialog, errMsg, useExtensionPatch } from "@/components/extensions/parts"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -177,6 +177,9 @@ export function ExtensionDetailPage({ id }: { id: string }) {
               <code className="text-xs">{ext.id}</code>
             </Row>
             <Row label={t("Penerbit")}>{ext.publisher}</Row>
+            <Row label={t("Lisensi")}>
+              <LicenseInfo license={ext.license} />
+            </Row>
             <Row label={t("Versi")}>v{ext.version}</Row>
             <Row label={t("Tingkat")}>{ext.tier === "official" ? t("Official (buatan Teliti)") : t("Publik (pihak ketiga)")}</Row>
             <Row label={t("Tanda tangan")}>{ext.signed ? t("Valid") : t("Tidak bertanda tangan")}</Row>
@@ -187,6 +190,9 @@ export function ExtensionDetailPage({ id }: { id: string }) {
               {[ext.widgets.length > 0 && t("{n} widget", { n: ext.widgets.length }), (ext.pages ?? []).length > 0 && t("{n} halaman", { n: ext.pages.length }), ext.hasBackend && t("Backend")].filter(Boolean).join(" · ") || t("Hanya tampilan")}
             </Row>
           </dl>
+          <div className="mt-2">
+            <LicenseNote />
+          </div>
           {ext.widgets.length > 0 && (
             <ul className="mt-2 grid gap-1 text-xs text-muted-foreground">
               {ext.widgets.map((w) => (
