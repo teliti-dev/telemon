@@ -188,6 +188,9 @@ struct AskReq {
     messages: Vec<AiMessage>,
     #[serde(default)]
     lang: Option<String>,
+    /// Tampilan Ringkasan dari klien, untuk usulan tata letak oleh AI (ADR 0027).
+    #[serde(default)]
+    ui: Option<telemon_ai::UiContext>,
 }
 
 enum Item {
@@ -213,6 +216,9 @@ async fn ask<C: Connector>(State(st): St<C>, c: Caller, Json(req): Json<AskReq>)
     let svc = svc(&st)?;
     if req.messages.is_empty() || req.messages.len() > MAX_MESSAGES || req.messages.iter().map(|m| m.text.chars().count()).sum::<usize>() > MAX_TEXT {
         return Err(ApiError::bad("Pertanyaan kosong atau terlalu panjang"));
+    }
+    if let Some(ui) = &req.ui {
+        ui.validate().map_err(ApiError::bad)?;
     }
     let acc = account(&c);
     if let Err(secs) = st.ai_rate.check(&acc, st.now()) {
@@ -246,7 +252,7 @@ async fn ask<C: Connector>(State(st): St<C>, c: Caller, Json(req): Json<AskReq>)
         let _slot = slot;
         let caller = if desktop { None } else { Some(&session) };
         let tx_emit = tx.clone();
-        let r = svc.ask(caller, &acc, &req.messages, lang, &mut |e| {
+        let r = svc.ask(caller, &acc, &req.messages, lang, req.ui.as_ref(), &mut |e| {
             let _ = tx_emit.send(Item::Event(e));
         })
         .await;

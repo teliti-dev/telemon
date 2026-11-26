@@ -201,6 +201,20 @@ export type AiWidget =
   | { kind: "bars"; title: string; data: { label: string; value: number }[] }
   | { kind: "list"; title?: string; rows: { primary: string; secondary?: string; trailing?: string; tone?: AiTone; to?: AiLink }[] }
   | { kind: "user"; username: string; router: string; status: string; tone: AiTone; fields: { label: string; value: string }[]; to: AiLink }
+  /** Usulan perubahan tata letak Ringkasan (ADR 0027): baru berlaku setelah pengguna menekan Terapkan. */
+  | { kind: "proposal"; ops: LayoutOp[]; state?: "applied" | "dismissed" }
+
+/** Satu perubahan tata letak yang diusulkan AI; `config` memakai id router. */
+export type LayoutOp =
+  | { op: "add"; type: string; config?: Record<string, unknown> }
+  | { op: "remove"; id: string }
+  | { op: "configure"; id: string; config: Record<string, unknown> }
+
+/** Tampilan Ringkasan yang dikirim bersama pertanyaan AI, supaya AI tahu widget dan jenis yang ada. */
+export interface AiUiContext {
+  widgets: { id: string; type: string; config?: Record<string, unknown> }[]
+  catalog: { type: string; title: string; description: string; configurable: boolean }[]
+}
 
 /** Tombol pintasan di bawah jawaban: buka halaman, atau salin teks. */
 export interface AiAction {

@@ -22,7 +22,7 @@ impl Lang {
     pub fn parse(s: Option<&str>) -> Self {
         if s == Some("en") { Self::En } else { Self::Id }
     }
-    fn t(self, id: &'static str, en: &'static str) -> &'static str {
+    pub(crate) fn t(self, id: &'static str, en: &'static str) -> &'static str {
         if self == Self::En { en } else { id }
     }
 }
@@ -35,6 +35,8 @@ pub struct ToolCtx<'a> {
     pub mask: bool,
     pub now_ms: i64,
     pub lang: Lang,
+    /// Tampilan Ringkasan dari klien (untuk usulan tata letak); `None` bila klien tidak mengirimnya.
+    pub ui: Option<&'a crate::types::UiContext>,
 }
 
 pub struct ToolOutput {
@@ -81,14 +83,49 @@ pub fn specs() -> Vec<ToolSpec> {
             description: "Daftar profil PPP beserta jumlah user yang memakainya.",
             parameters: json!({ "type": "object", "properties": { "router": { "type": "string" } } }),
         },
+        ToolSpec {
+            name: "event_stats",
+            description: "Statistik event dalam rentang waktu: jumlah per jenis, grafik per jam (atau per hari bila rentang > 48 jam), jam tersibuk, user paling sering gagal autentikasi dan paling sering terputus, serta jumlah per router. Pakai ini untuk pertanyaan tren, pola, atau 'paling sering'; pakai list_events untuk melihat kejadian satu per satu.",
+            parameters: json!({ "type": "object", "properties": {
+                "hours": { "type": "integer", "minimum": 1, "maximum": 720, "description": "Rentang waktu ke belakang (bawaan 24)" },
+                "router": { "type": "string", "description": "Nama router; kosong = semua" } } }),
+        },
+        ToolSpec {
+            name: "bandwidth_summary",
+            description: "Ringkasan bandwidth: laju sekarang, rata-rata, dan puncak (beserta waktunya), rata-rata per user aktif, perbandingan dengan periode sebelumnya, dan rincian per router. Antarmuka bawaan '@pppoe' = jumlah semua sesi pelanggan (unduh = arah ke pelanggan). Total semua router hanya untuk '@pppoe'.",
+            parameters: json!({ "type": "object", "properties": {
+                "router": { "type": "string", "description": "Nama router, atau 'all' untuk semua (bawaan)" },
+                "iface": { "type": "string", "description": "Nama antarmuka router, atau '@pppoe' (bawaan)" },
+                "range": { "type": "string", "enum": ["1h", "6h", "24h", "7d", "30d"], "description": "Rentang waktu (bawaan 24h)" } } }),
+        },
+        ToolSpec {
+            name: "router_health",
+            description: "Kesehatan router dalam rentang waktu: status sekarang, polling terakhir, berapa kali down, perkiraan lama down, dan ketersediaan dalam persen.",
+            parameters: json!({ "type": "object", "properties": { "hours": { "type": "integer", "minimum": 1, "maximum": 720, "description": "Rentang waktu ke belakang (bawaan 24)" } } }),
+        },
+        ToolSpec {
+            name: "get_layout",
+            description: "Widget yang sedang tampil di halaman Ringkasan (id, jenis, pengaturan) dan daftar jenis widget yang tersedia. Panggil ini sebelum mengusulkan perubahan tata letak.",
+            parameters: json!({ "type": "object", "properties": {} }),
+        },
+        ToolSpec {
+            name: "propose_layout_change",
+            description: "Mengusulkan perubahan widget di Ringkasan. TIDAK mengubah apa pun: pengguna melihat usulan dan harus menekan Terapkan. Perubahan: add (jenis + pengaturan), remove (id widget), configure (id widget + pengaturan baru). Pengaturan per jenis: bandwidth-chart {router: nama router atau 'all', iface: nama antarmuka atau '@pppoe', range: 1h|6h|24h|7d|30d}; bandwidth-total {range}; bandwidth-per-user {router, range}. Jenis lain tidak punya pengaturan. Untuk router 'all', iface harus '@pppoe'.",
+            parameters: json!({ "type": "object", "properties": {
+                "changes": { "type": "array", "minItems": 1, "maxItems": 10, "items": { "type": "object", "properties": {
+                    "op": { "type": "string", "enum": ["add", "remove", "configure"] },
+                    "type": { "type": "string", "description": "Jenis widget (untuk add)" },
+                    "id": { "type": "string", "description": "Id widget dari get_layout (untuk remove dan configure)" },
+                    "config": { "type": "object", "description": "Pengaturan widget" } }, "required": ["op"] } } }, "required": ["changes"] }),
+        },
     ]
 }
 
-fn err(step: String, msg: impl Into<String>) -> ToolOutput {
+pub(crate) fn err(step: String, msg: impl Into<String>) -> ToolOutput {
     ToolOutput { for_model: json!({ "error": msg.into() }).to_string(), widgets: vec![], source: None, step }
 }
 
-fn need(ctx: &ToolCtx, r: Resource, label: &str, step: &str) -> Result<(), ToolOutput> {
+pub(crate) fn need(ctx: &ToolCtx, r: Resource, label: &str, step: &str) -> Result<(), ToolOutput> {
     ctx.auth
         .authorize(ctx.caller, r, Level::Read)
         .map_err(|_| err(format!("{step} — {}", ctx.lang.t("tidak ada izin", "no permission")), format!("peran penanya tidak boleh melihat {label}; jangan jawab dari data itu dan beri tahu pengguna")))
@@ -102,6 +139,11 @@ pub fn execute(ctx: &ToolCtx, name: &str, args: &Value) -> ToolOutput {
         "get_user" => get_user(ctx, args),
         "list_events" => list_events(ctx, args),
         "list_profiles" => profiles(ctx, args),
+        "event_stats" => crate::analytics::event_stats(ctx, args),
+        "bandwidth_summary" => crate::analytics::bandwidth_summary(ctx, args),
+        "router_health" => crate::analytics::router_health(ctx, args),
+        "get_layout" => crate::layout::get_layout(ctx),
+        "propose_layout_change" => crate::layout::propose_layout_change(ctx, args),
         other => err(format!("alat tidak dikenal: {other}"), format!("alat '{other}' tidak ada")),
     };
     cap(out)
@@ -165,7 +207,7 @@ pub fn fmt_utc(ms: i64) -> String {
     format!("{y:04}-{m:02}-{d:02} {:02}:{:02} UTC", rem / 3600, rem % 3600 / 60)
 }
 
-fn ago(ctx: &ToolCtx, at: i64) -> String {
+pub(crate) fn ago(ctx: &ToolCtx, at: i64) -> String {
     let mins = ((ctx.now_ms - at).max(0)) / 60_000;
     match (mins, ctx.lang) {
         (0, Lang::Id) => "baru saja".into(),
@@ -206,32 +248,32 @@ fn tone_of(u: &UserRow) -> AiTone {
     }
 }
 
-fn link(page: &str, params: &[(&str, &str)]) -> AiLink {
+pub(crate) fn link(page: &str, params: &[(&str, &str)]) -> AiLink {
     AiLink { page: page.into(), params: if params.is_empty() { None } else { Some(params.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()) } }
 }
 
-fn s(args: &Value, key: &str) -> Option<String> {
+pub(crate) fn s(args: &Value, key: &str) -> Option<String> {
     args.get(key).and_then(Value::as_str).map(str::trim).filter(|v| !v.is_empty()).map(str::to_string)
 }
 
-fn n(args: &Value, key: &str, default: i64, max: i64) -> i64 {
+pub(crate) fn n(args: &Value, key: &str, default: i64, max: i64) -> i64 {
     args.get(key).and_then(Value::as_i64).unwrap_or(default).clamp(1, max)
 }
 
-struct Names {
-    by_id: Vec<(String, String)>,
+pub(crate) struct Names {
+    pub(crate) by_id: Vec<(String, String)>,
 }
 
 impl Names {
-    fn load(ctx: &ToolCtx) -> Self {
+    pub(crate) fn load(ctx: &ToolCtx) -> Self {
         let routers = ctx.store.lock().map(|g| g.list_routers().unwrap_or_default()).unwrap_or_default();
         Self { by_id: routers.into_iter().map(|r| (r.id, r.name)).collect() }
     }
-    fn name(&self, id: &str) -> String {
+    pub(crate) fn name(&self, id: &str) -> String {
         self.by_id.iter().find(|(i, _)| i == id).map(|(_, n)| n.clone()).unwrap_or_else(|| id.to_string())
     }
     /// Cocokkan nama router (tanpa membedakan huruf) atau id.
-    fn resolve(&self, wanted: &str) -> Option<String> {
+    pub(crate) fn resolve(&self, wanted: &str) -> Option<String> {
         self.by_id.iter().find(|(i, n)| i == wanted || n.eq_ignore_ascii_case(wanted)).map(|(i, _)| i.clone())
     }
 }
@@ -448,7 +490,7 @@ fn list_events(ctx: &ToolCtx, a: &Value) -> ToolOutput {
     }
 }
 
-fn kind_label(ctx: &ToolCtx, k: EventKind) -> &'static str {
+pub(crate) fn kind_label(ctx: &ToolCtx, k: EventKind) -> &'static str {
     match k {
         EventKind::AuthFailed => ctx.lang.t("gagal autentikasi", "auth failed"),
         EventKind::Authenticated => ctx.lang.t("terautentikasi", "authenticated"),

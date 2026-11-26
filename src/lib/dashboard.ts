@@ -47,3 +47,27 @@ export function nextY(widgets: DashboardWidget[]) {
 export function readingOrder<T extends { x: number; y: number }>(items: T[]) {
   return [...items].sort((a, b) => a.y - b.y || a.x - b.x)
 }
+
+/** Dua tata letak sama bila setiap widget punya jenis dan kotak yang sama (urutan dan pengaturan tidak dihitung). */
+export function sameLayout(a: DashboardWidget[], b: DashboardWidget[]) {
+  const key = (w: DashboardWidget) => `${w.id}|${w.type}|${w.x}|${w.y}|${w.w}|${w.h}`
+  const ka = a.map(key).sort()
+  const kb = b.map(key).sort()
+  return ka.length === kb.length && ka.every((k, i) => k === kb[i])
+}
+
+const CHANGED = "telemon:dashboard-changed"
+
+/** Beritahu halaman Ringkasan yang terbuka bahwa tata letak berubah dari tempat lain (mis. usulan AI diterapkan). */
+export function notifyDashboardChanged() {
+  try {
+    window.dispatchEvent(new Event(CHANGED))
+  } catch {
+    /* bukan di browser */
+  }
+}
+
+export function onDashboardChanged(cb: () => void) {
+  window.addEventListener(CHANGED, cb)
+  return () => window.removeEventListener(CHANGED, cb)
+}

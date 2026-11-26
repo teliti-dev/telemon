@@ -1,11 +1,12 @@
 import * as React from "react"
 
+import { currentUiContext } from "@/components/dashboard/ops"
 import { useIsDesktop } from "@/hooks/use-media-query"
 import { useAuth } from "@/lib/auth-context"
 import { t } from "@/lib/i18n"
 import { navigate, useRoute } from "@/lib/route"
 import { useStore } from "@/lib/store-context"
-import type { AiChat, AiChatSummary, AiMessage, AiStreamEvent } from "@/lib/types"
+import type { AiChat, AiChatSummary, AiMessage, AiStreamEvent, AiWidget } from "@/lib/types"
 
 import { AiChatContext, type AiView } from "./ai-context"
 
@@ -127,7 +128,9 @@ export function AiChatProvider({ children }: { children: React.ReactNode }) {
         commit(messagesRef.current.map((x) => (x.id === reply.id ? next : x)))
       }
       try {
-        for await (const ev of api.askAi(history_, { signal: ctrl.signal })) patch(apply(local, ev))
+        // Tampilan Ringkasan dikirim supaya AI bisa mengusulkan perubahan widget (hanya usulan; ADR 0027).
+        const ui = await currentUiContext(api)
+        for await (const ev of api.askAi(history_, { signal: ctrl.signal, ui })) patch(apply(local, ev))
       } catch (e) {
         if (!ctrl.signal.aborted) {
           const error = e instanceof Error ? e.message : String(e)
@@ -154,6 +157,16 @@ export function AiChatProvider({ children }: { children: React.ReactNode }) {
   )
 
   const stop = React.useCallback(() => abortRef.current?.abort(), [])
+
+  /** Ubah satu widget di jawaban (mis. usulan jadi `applied`) dan simpan ke riwayat. */
+  const patchWidget = React.useCallback(
+    (messageId: string, index: number, patch: Partial<AiWidget>) => {
+      const next = messagesRef.current.map((x) => (x.id === messageId ? { ...x, widgets: (x.widgets ?? []).map((w, i) => (i === index ? ({ ...w, ...patch } as AiWidget) : w)) } : x))
+      commit(next)
+      persist(next)
+    },
+    [commit, persist]
+  )
 
   const newChat = React.useCallback(() => {
     abortRef.current?.abort()
@@ -270,6 +283,7 @@ export function AiChatProvider({ children }: { children: React.ReactNode }) {
       busy,
       send,
       stop,
+      patchWidget,
       newChat,
       ask,
       regenerate,
@@ -284,7 +298,7 @@ export function AiChatProvider({ children }: { children: React.ReactNode }) {
       deleteChat,
       currentId: meta.id,
     }),
-    [available, unavailableReason, share?.features.aiMask, open, setOpen, isDesktop, view, meta, messages, busy, send, stop, newChat, ask, regenerate, setFeedback, exportMarkdown, history, historyLoading, loadHistory, openChat, renameChat, togglePin, deleteChat]
+    [available, unavailableReason, share?.features.aiMask, open, setOpen, isDesktop, view, meta, messages, busy, send, stop, patchWidget, newChat, ask, regenerate, setFeedback, exportMarkdown, history, historyLoading, loadHistory, openChat, renameChat, togglePin, deleteChat]
   )
 
   return <AiChatContext.Provider value={value}>{children}</AiChatContext.Provider>

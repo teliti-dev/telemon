@@ -43,6 +43,9 @@ const COMMANDS: Command[] = [
   { cmd: "/inactive", label: tk("User tidak aktif"), question: tk("Tampilkan user tidak aktif") },
   { cmd: "/profiles", label: tk("Pemakaian profil PPP"), question: tk("Profil PPP mana yang paling banyak dipakai?") },
   { cmd: "/events", label: tk("Event terbaru"), question: tk("Tampilkan event terbaru") },
+  { cmd: "/stats", label: tk("Statistik event"), question: tk("Statistik event 24 jam terakhir") },
+  { cmd: "/bandwidth", label: tk("Bandwidth pelanggan"), question: tk("Berapa bandwidth pelanggan sekarang?") },
+  { cmd: "/health", label: tk("Kesehatan router"), question: tk("Bagaimana kesehatan router?") },
   { cmd: "/help", label: tk("Bantuan"), question: tk("Bantuan") },
   { cmd: "/new", label: tk("Percakapan baru"), action: "new" },
   { cmd: "/history", label: tk("Riwayat percakapan"), action: "history" },
@@ -362,7 +365,7 @@ function MessageItem({ m, isLast, onNavigate }: { m: AiMessage; isLast: boolean;
       {m.widgets && m.widgets.length > 0 && (
         <div className="grid max-w-[94%] gap-2">
           {m.widgets.map((w, i) => (
-            <AiWidgetView key={i} widget={w} onNavigate={onNavigate} />
+            <AiWidgetView key={i} widget={w} onNavigate={onNavigate} onPatch={(p) => ai.patchWidget(m.id, i, p)} />
           ))}
         </div>
       )}

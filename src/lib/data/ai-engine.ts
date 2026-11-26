@@ -6,10 +6,13 @@
  */
 import { formatDuration, formatRelative } from "../format"
 import { t, tk } from "../i18n"
+import { formatBps } from "../format"
 import type {
   AiAction,
   AiTone,
+  AiUiContext,
   AiWidget,
+  LayoutOp,
   PppEvent,
   PppEventType,
   PppProfile,
@@ -30,7 +33,16 @@ export interface AiContext {
   /** Samarkan IP dan MAC dalam jawaban. */
   mask: boolean
   can: (r: Resource) => boolean
+  /** Tampilan Ringkasan dari klien (untuk usulan tata letak). */
+  ui?: AiUiContext
+  /** Peran penanya boleh mengubah tata letak Ringkasan. */
+  canEditLayout?: boolean
+  /** Deret bandwidth total pelanggan (24 jam) bila penanya boleh melihat Router; unduh = txBps. */
+  series?: { at: number; rxBps: number; txBps: number; sessions?: number }[]
 }
+
+/** Pertanyaan yang butuh deret bandwidth; dipakai pemanggil untuk menyiapkannya. */
+export const wantsBandwidth = (q: string) => /bandwidth|trafik|traffic|kecepatan|speed|unduh|unggah|download|upload|pemakaian internet/i.test(q)
 
 export interface AiAnswer {
   /** Markdown sederhana: paragraf, daftar "- ", **tebal**, `kode`. */
@@ -51,6 +63,9 @@ export const AI_SUGGESTIONS = [
   tk("Profil PPP mana yang paling banyak dipakai?"),
   tk("Siapa yang sering putus?"),
   tk("Tampilkan event terbaru"),
+  tk("Statistik event 24 jam terakhir"),
+  tk("Berapa bandwidth pelanggan sekarang?"),
+  tk("Bagaimana kesehatan router?"),
 ]
 
 const STOP = new Set([
@@ -104,6 +119,7 @@ function help(): AiAnswer {
   return {
     text: [
       t("Saya bisa membantu membaca data Telemon. Saya hanya membaca; tidak mengubah apa pun."),
+      t("Untuk widget di Ringkasan, saya hanya mengusulkan perubahan (mis. \"tambahkan widget total bandwidth\"); baru berlaku setelah Anda menekan Terapkan."),
       t("Coba tanyakan:"),
       ...AI_SUGGESTIONS.map((s) => `- ${t(s /* i18n-ignore: kunci tk */)}`),
       t("Atau sebut username untuk melihat detailnya, misalnya {example}.", { example: "`budi.rt01`" }),
@@ -422,11 +438,152 @@ function userDetail(u: PppUser, c: AiContext): AiAnswer {
   }
 }
 
+// ---- analitik dan usulan tata letak (ADR 0027) ----
+
+function eventStats(c: AiContext): AiAnswer {
+  if (!c.can("event")) return noAccess("event")
+  const day = c.events.filter((e) => c.now - e.at < 86400_000)
+  const n = (type: PppEventType) => day.filter((e) => e.type === type).length
+  const auth = top(c, "auth_failed")
+  const drops = top(c, "disconnected")
+  const hours = Array.from({ length: 24 }, () => 0)
+  for (const e of day) hours[23 - Math.floor((c.now - e.at) / 3600_000)]++
+  const bars = hours.map((value, i) => ({ label: `${String(new Date(c.now - (23 - i) * 3600_000).getHours()).padStart(2, "0")}:00`, value }))
+  const peak = bars.reduce((m, b) => (b.value > m.value ? b : m), bars[0])
+  return {
+    text: [
+      t("Dalam 24 jam terakhir ada **{n}** event: {a} gagal auth, {d} terputus, {r} router down.", { n: day.length, a: n("auth_failed"), d: n("disconnected"), r: n("router_down") }),
+      day.length ? t("Jam tersibuk: **{label}** dengan {value} event.", { label: peak.label, value: peak.value }) : "",
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    widgets: [
+      {
+        kind: "stats",
+        items: [
+          { label: t("Event"), value: String(day.length) },
+          { label: t("Gagal auth"), value: String(n("auth_failed")), tone: n("auth_failed") ? "bad" : "good" },
+          { label: t("Terputus"), value: String(n("disconnected")), tone: n("disconnected") ? "warn" : "good" },
+          { label: t("Router down"), value: String(n("router_down")), tone: n("router_down") ? "bad" : "good" },
+        ],
+      },
+      { kind: "bars", title: t("Event per jam"), data: bars },
+      ...(auth.length ? [{ kind: "list" as const, title: t("Paling sering gagal auth"), rows: auth.map((x) => ({ primary: x.username, secondary: routerName(c, x.routerId), trailing: `${x.n}×`, tone: "bad" as const, to: { page: "event", params: { type: "auth_failed" } } })) }] : []),
+      ...(drops.length ? [{ kind: "list" as const, title: t("Paling sering terputus"), rows: drops.map((x) => ({ primary: x.username, secondary: routerName(c, x.routerId), trailing: `${x.n}×`, tone: "warn" as const, to: { page: "event", params: { type: "disconnected" } } })) }] : []),
+    ],
+    followUps: [t("Bagaimana kesehatan router?"), t("Berapa bandwidth pelanggan sekarang?")],
+    sources: [t("Event")],
+    steps: [t("Memahami pertanyaan"), t("Menghitung statistik event"), t("Menyusun hasil")],
+  }
+}
+
+function bandwidth(c: AiContext): AiAnswer {
+  if (!c.can("router")) return noAccess("router")
+  const s = c.series ?? []
+  if (s.length === 0) return { text: t("Belum ada data bandwidth. Nyalakan pengumpulan di Pengaturan > Bandwidth."), sources: [t("Router")] }
+  const down = s.map((p) => p.txBps)
+  const avg = (a: number[]) => a.reduce((x, y) => x + y, 0) / Math.max(1, a.length)
+  const last = s[s.length - 1]
+  const sessions = s.filter((p) => (p.sessions ?? 0) > 0)
+  const perUser = sessions.length ? avg(sessions.map((p) => p.txBps / (p.sessions as number))) : null
+  const peak = s.reduce((m, p) => (p.txBps > m.txBps ? p : m), s[0])
+  return {
+    text: [
+      t("Bandwidth pelanggan (24 jam): unduh sekarang **{now}**, rata-rata **{avg}**, puncak **{peak}** pada {when}.", { now: formatBps(last.txBps), avg: formatBps(avg(down)), peak: formatBps(peak.txBps), when: new Date(peak.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) }),
+      perUser !== null ? t("Rata-rata per user aktif: **{v}** unduh.", { v: formatBps(perUser) }) : "",
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    widgets: [
+      {
+        kind: "stats",
+        items: [
+          { label: t("Unduh sekarang"), value: formatBps(last.txBps) },
+          { label: t("Rata-rata"), value: formatBps(avg(down)) },
+          { label: t("Puncak"), value: formatBps(peak.txBps) },
+          { label: t("Unggah sekarang"), value: formatBps(last.rxBps) },
+          ...(last.sessions !== undefined ? [{ label: t("Sesi"), value: String(Math.round(last.sessions)) }] : []),
+          ...(perUser !== null ? [{ label: t("Per user (unduh)"), value: formatBps(perUser) }] : []),
+        ],
+      },
+    ],
+    followUps: [t("Tambahkan widget bandwidth total ke Ringkasan"), t("Statistik event 24 jam terakhir")],
+    sources: [t("Bandwidth (24 jam)")],
+    steps: [t("Memahami pertanyaan"), t("Menghitung ringkasan bandwidth"), t("Menyusun hasil")],
+  }
+}
+
+function routerHealth(c: AiContext): AiAnswer {
+  if (!c.can("router")) return noAccess("router")
+  const day = c.events.filter((e) => c.now - e.at < 86400_000 && (e.type === "router_down" || e.type === "router_up"))
+  const rows = c.routers.map((r) => {
+    const downs = c.can("event") ? day.filter((e) => e.routerId === r.id && e.type === "router_down").length : null
+    return { name: r.name, status: r.status, downs }
+  })
+  return {
+    text: [t("Kesehatan router (24 jam):"), ...rows.map((r) => `- **${r.name}**: ${r.status}${r.downs === null ? "" : `, ${t("{n}× down", { n: r.downs })}`}`)].join("\n"),
+    widgets: [
+      {
+        kind: "list",
+        title: t("Kesehatan router"),
+        rows: rows.map((r) => ({ primary: r.name, secondary: r.downs === null ? undefined : t("{n}× down", { n: r.downs }), trailing: r.status, tone: r.status === "online" ? ("good" as const) : ("bad" as const), to: { page: "router" } })),
+      },
+    ],
+    sources: [t("Router")],
+    steps: [t("Memahami pertanyaan"), t("Memeriksa kesehatan router"), t("Menyusun hasil")],
+  }
+}
+
+/** Jenis widget yang disebut di kalimat (kata kunci), untuk usulan tata letak. */
+function widgetTypeIn(q: string): string | null {
+  const has = (...w: string[]) => w.some((x) => q.includes(x))
+  if (has("event per jam", "events per hour")) return "events-per-hour"
+  if (has("per user", "per pelanggan")) return "bandwidth-per-user"
+  if (has("total bandwidth", "bandwidth total", "total pelanggan", "total customer")) return "bandwidth-total"
+  if (has("bandwidth", "grafik", "chart", "trafik")) return "bandwidth-chart"
+  if (has("komposisi", "user mix")) return "user-status-mix"
+  if (has("profil per", "user per profil", "users per profile")) return "users-per-profile"
+  return null
+}
+
+export const isLayoutRequest = (q: string) => {
+  const has = (...w: string[]) => w.some((x) => q.includes(x))
+  return has("tambah", "hapus", "buang", "ubah", "ganti", "add ", "remove", "delete", "change ") && (has("widget", "grafik", "chart") || widgetTypeIn(q) !== null)
+}
+
+function layoutProposal(q: string, c: AiContext): AiAnswer {
+  if (!c.canEditLayout) return { text: t("Peran Anda tidak boleh mengubah tata letak Ringkasan, jadi saya tidak bisa mengusulkan perubahan widget.") }
+  if (!c.ui) return { text: t("Saya belum bisa melihat tampilan Ringkasan. Buka halaman Ringkasan lalu coba lagi.") }
+  const kind = widgetTypeIn(q)
+  const range = (["1 jam", "6 jam", "24 jam", "7 hari", "30 hari"] as const).map((w, i) => ({ w, r: (["1h", "6h", "24h", "7d", "30d"] as const)[i] })).find((x) => q.includes(x.w) || q.includes(x.r))?.r
+  const existing = c.ui.widgets.find((w) => w.type === kind)
+  let op: LayoutOp
+  if (/hapus|buang|remove|delete/.test(q)) {
+    if (!existing) return { text: t("Tidak ada widget itu di Ringkasan, jadi tidak ada yang bisa dihapus."), steps: [t("Membaca tata letak Ringkasan")] }
+    op = { op: "remove", id: existing.id }
+  } else if (/ubah|ganti|change/.test(q)) {
+    if (!existing) return { text: t("Tidak ada widget itu di Ringkasan, jadi tidak ada yang bisa diubah."), steps: [t("Membaca tata letak Ringkasan")] }
+    op = { op: "configure", id: existing.id, config: { range: range ?? "24h" } }
+  } else {
+    op = { op: "add", type: kind ?? "bandwidth-chart", ...(range ? { config: { range } } : {}) }
+  }
+  return {
+    text: t("Saya usulkan satu perubahan tata letak. Belum ada yang berubah: periksa kartu di bawah lalu tekan Terapkan bila setuju."),
+    widgets: [{ kind: "proposal", ops: [op] }],
+    sources: [t("Tata letak Ringkasan")],
+    steps: [t("Membaca tata letak Ringkasan"), t("Menyusun usulan perubahan widget")],
+  }
+}
+
 export function answerQuestion(question: string, c: AiContext): AiAnswer {
   const q = question.toLowerCase()
   const has = (...w: string[]) => w.some((x) => q.includes(x))
 
   if (has("bantuan", "help", "bisa apa", "what can you", "bisa apa saja")) return help()
+  if (isLayoutRequest(q)) return layoutProposal(q, c)
+  if (has("statistik event", "analisis event", "tren event", "event stats", "event statistics", "event per jam", "pola event")) return eventStats(c)
+  if (has("kesehatan router", "router health", "downtime", "ketersediaan", "uptime")) return routerHealth(c)
+  if (wantsBandwidth(q)) return bandwidth(c)
 
   if (!has("router bermasalah", "problem router", "router problem")) {
     if (c.can("user")) {
