@@ -33,4 +33,5 @@ export default {
   "Hapus widget": "Remove widget",
   "Semua router": "All routers",
   "sekarang": "now",
+  "Belum ada router.": "No routers yet.",
 } satisfies Record<string, string>
