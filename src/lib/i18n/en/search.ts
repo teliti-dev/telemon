@@ -24,4 +24,6 @@ export default {
   "Galat": "Error",
   "Atur berbagi (LAN dan Publik)": "Manage sharing (LAN and Public)",
   "Menu kelola": "Management menu",
+  "Menu pengaturan": "Settings menu",
+  "Kelola": "Manage",
 } as Record<string, string>
