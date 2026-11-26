@@ -1,4 +1,6 @@
-import { BugIcon, CopyIcon, ExternalLinkIcon, CodeIcon, GlobeIcon, PackageIcon, ZapIcon } from "lucide-react"
+import { BugIcon, CopyIcon, ExternalLinkIcon, CodeIcon, GlobeIcon, PackageIcon } from "lucide-react"
+
+import { TelemonLogo } from "@/components/telemon-logo"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -39,9 +41,7 @@ export function AboutPage() {
       <Card>
         <CardHeader>
           <div className="flex items-center gap-3">
-            <div className="flex size-12 items-center justify-center rounded-xl bg-foreground text-background">
-              <ZapIcon className="size-6" />
-            </div>
+            <TelemonLogo className="size-14 drop-shadow-sm" />
             <div className="min-w-0">
               <CardTitle className="flex items-center gap-2 text-xl">
                 Telemon

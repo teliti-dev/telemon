@@ -18,6 +18,7 @@ import { getScale, SCALES, setScale, type Scale } from "@/lib/ui-scale"
 import { navigate } from "@/lib/route"
 import { cn } from "@/lib/utils"
 import * as React from "react"
+import { SearchSourceToggles } from "@/components/command-palette"
 
 type Theme = "light" | "dark" | "system"
 
@@ -118,6 +119,12 @@ export function AppearanceBody() {
           columns={2}
         />
         <p className="mt-2 text-xs text-muted-foreground">{t("Menskalakan seluruh tampilan, bukan hanya teks.")}</p>
+      </section>
+
+      <section>
+        <h3 className="mb-2 text-sm font-medium">{t("Pencarian (Ctrl+K)")}</h3>
+        <SearchSourceToggles />
+        <p className="mt-2 text-xs text-muted-foreground">{t("Pilih apa saja yang dicari. Bawaan: hanya menu. Pilihan ini hanya berlaku di browser atau aplikasi ini.")}</p>
       </section>
 
       {api.kind === "mock" && (

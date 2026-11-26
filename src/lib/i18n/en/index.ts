@@ -13,6 +13,7 @@ import extensions from "./extensions"
 import lists from "./lists"
 import profiles from "./profiles"
 import routers from "./routers"
+import search from "./search"
 import settings from "./settings"
 import shell from "./shell"
 import update from "./update"
@@ -35,6 +36,7 @@ export const EN: Record<string, string> = {
   ...lists,
   ...profiles,
   ...routers,
+  ...search,
   ...admin,
   ...ai,
   ...update,

@@ -60,7 +60,7 @@ export function OverviewPage({ onOpenUser }: { onOpenUser: (id: string) => void 
     <div className="flex flex-col gap-3">
       {canEdit &&
         (editing ? (
-          <div className="sticky top-12 z-20 flex flex-wrap items-center gap-2 rounded-xl border bg-background/95 p-2 shadow-sm backdrop-blur md:top-9">
+          <div className="sticky top-12 z-20 flex flex-wrap items-center gap-2 rounded-xl border bg-background/95 p-2 shadow-sm backdrop-blur md:top-14">
             <p className="min-w-0 flex-1 text-sm text-muted-foreground">
               {t("Mode ubah: geser widget, tarik sudut kanan bawah untuk mengubah ukuran. Berlaku untuk semua akun.")}
             </p>
