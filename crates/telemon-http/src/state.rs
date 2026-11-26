@@ -47,10 +47,27 @@ pub struct ExtConfig {
 /// Katalog toko official bawaan: aset rilis terbaru repo extensions (alamat berkas dan tanda tangan di sebelahnya).
 pub const DEFAULT_STORE_URL: &str = "https://github.com/teliti-dev/telemon-extensions/releases/latest/download/catalog.json";
 
-/// Kunci penanda tangan official (heksa Ed25519). **Kosong sampai kunci Teliti dibuat** (disimpan
-/// seperti kunci updater, ADR 0023); sebelum itu extension official hanya bisa dipakai lewat
-/// `TELEMON_EXTENSIONS_OFFICIAL_KEYS` oleh pemilik server.
-pub const OFFICIAL_KEYS: &[&str] = &[];
+/// Kunci penanda tangan official (heksa Ed25519, pisah koma) yang **ditanam saat build** dari variabel lingkungan
+/// `TELEMON_OFFICIAL_EXT_KEYS` (di rilis: variabel repositori GitHub Actions dengan nama yang sama; kunci publik, bukan rahasia).
+/// Tanpa nilai itu build tidak mempercayai kunci official mana pun, dan extension official belum bisa dipasang;
+/// pemilik server masih bisa menambah kunci lewat `TELEMON_EXTENSIONS_OFFICIAL_KEYS` saat berjalan.
+pub const OFFICIAL_KEYS_BUILD: Option<&str> = option_env!("TELEMON_OFFICIAL_EXT_KEYS");
+
+/// Urai daftar kunci heksa pisah koma: hanya yang 64 karakter heksa, huruf kecil, tanpa duplikat.
+pub fn parse_official_keys(list: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for k in list.split([',', ';', ' ', '\n']).map(|k| k.trim().to_ascii_lowercase()) {
+        if k.len() == 64 && k.chars().all(|c| c.is_ascii_hexdigit()) && !out.contains(&k) {
+            out.push(k);
+        }
+    }
+    out
+}
+
+/// Kunci official yang ditanam di build ini (kosong bila tidak ada).
+pub fn official_keys() -> Vec<String> {
+    parse_official_keys(OFFICIAL_KEYS_BUILD.unwrap_or(""))
+}
 
 impl ExtConfig {
     /// Baca saklar dari lingkungan. `TELEMON_EXTENSIONS` = `1`/`true` menyalakan, `0`/`false` mematikan;
@@ -71,7 +88,7 @@ impl ExtConfig {
         if !on {
             return None;
         }
-        let mut official: Vec<String> = OFFICIAL_KEYS.iter().map(|k| k.to_string()).collect();
+        let mut official: Vec<String> = official_keys();
         if let Some(extra) = var("TELEMON_EXTENSIONS_OFFICIAL_KEYS") {
             official.extend(extra.split(',').map(|k| k.trim().to_ascii_lowercase()).filter(|k| k.len() == 64));
         }
@@ -288,6 +305,26 @@ mod ext_env_tests {
         assert!(cfg(false, &[("TELEMON_EXTENSIONS", "1")]).is_some());
         assert!(cfg(true, &[("TELEMON_EXTENSIONS", "0")]).is_none());
         assert!(cfg(false, &[("TELEMON_EXTENSIONS", "ya")]).is_none(), "nilai aneh = bawaan");
+    }
+
+    #[test]
+    fn build_time_key_list_is_parsed_strictly() {
+        let a = "ab".repeat(32);
+        let b = "CD".repeat(32);
+        assert!(parse_official_keys("").is_empty() && parse_official_keys("   ").is_empty(), "kosong = tidak ada kunci");
+        assert_eq!(parse_official_keys(&format!("{a},{b}")), vec![a.clone(), "cd".repeat(32)], "huruf besar dinormalkan");
+        assert_eq!(parse_official_keys(&format!(" {a} ; {a}\n{b} ")), vec![a.clone(), "cd".repeat(32)], "pemisah lain dan duplikat");
+        assert_eq!(parse_official_keys(&format!("pendek,{a},{}zz", "g".repeat(62))), vec![a], "yang rusak dibuang");
+    }
+
+    /// Dijalankan di CI/manual dengan `TELEMON_OFFICIAL_EXT_KEYS` dan `EXPECT_OFFICIAL_KEYS` sama: membuktikan kunci benar-benar
+    /// ditanam saat build dan build ulang mengikuti perubahan nilainya. Tanpa `EXPECT_OFFICIAL_KEYS` dilewati.
+    #[test]
+    fn embedded_keys_follow_the_build_env() {
+        if let Ok(expect) = std::env::var("EXPECT_OFFICIAL_KEYS") {
+            assert_eq!(official_keys(), parse_official_keys(&expect));
+            assert!(cfg(true, &[]).unwrap().keys.official.starts_with(&parse_official_keys(&expect)));
+        }
     }
 
     #[test]

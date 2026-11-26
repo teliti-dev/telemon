@@ -1845,6 +1845,25 @@ mod extensions {
     }
 
     #[tokio::test]
+    async fn daftar_melaporkan_jumlah_kunci_official_yang_dipercaya() {
+        let d = dir();
+        let t = harness_with(on(&d));
+        t.account("admin", "role-admin");
+        let a = t.login("admin").await;
+        assert_eq!(t.get("/api/extensions", Some(&a)).await.body["officialKeys"], 1);
+        let _ = std::fs::remove_dir_all(&d);
+        // Tanpa kunci official: angka 0 (UI menjelaskan mengapa extension belum bisa dipasang).
+        let mut cfg = on(&dir());
+        if let Some(e) = cfg.extensions.as_mut() {
+            e.keys.official.clear();
+        }
+        let t = harness_with(cfg);
+        t.account("admin", "role-admin");
+        let a = t.login("admin").await;
+        assert_eq!(t.get("/api/extensions", Some(&a)).await.body["officialKeys"], 0);
+    }
+
+    #[tokio::test]
     async fn mati_secara_bawaan() {
         let t = harness();
         t.account("admin", "role-admin");

@@ -480,9 +480,10 @@ fn view<C: Connector>(st: &St<C>, id: &str) -> ApiResult<Value> {
 
 async fn list<C: Connector>(State(st): State<St<C>>, c: Caller) -> ApiResult<Json<Value>> {
     manage(&st, &c, Level::Read)?;
-    let Some(_) = st.cfg.extensions.as_ref() else {
+    let Some(cfg) = st.cfg.extensions.as_ref() else {
         return Ok(Json(json!({ "available": false, "extensions": [] })));
     };
+    let official_keys = cfg.keys.official.len();
     let rows = st
         .telemon
         .with_store(|s| -> Result<_, String> {
@@ -502,7 +503,7 @@ async fn list<C: Connector>(State(st): State<St<C>>, c: Caller) -> ApiResult<Jso
             item(&st, e, p, &all, &st.cfg.host_version, migrated)
         })
         .collect();
-    Ok(Json(json!({ "available": true, "extensions": extensions })))
+    Ok(Json(json!({ "available": true, "officialKeys": official_keys, "extensions": extensions })))
 }
 
 /// Untuk pemuat UI: hanya yang aktif dan official, dengan izin yang diberikan.

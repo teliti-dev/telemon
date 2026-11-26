@@ -35,6 +35,9 @@ env:
   RUST_TOOLCHAIN: "1.100.0"
   BUN_VERSION: "1.4.4"
   CARGO_XWIN_VERSION: "0.23.1"
+  # Kunci publik penanda tangan extension official (ditanam di build; ADR 0028). Variabel repositori, bukan rahasia:
+  # diisi otomatis oleh workflow "Setup signing key" di repo telemon-extensions.
+  TELEMON_OFFICIAL_EXT_KEYS: ${{ vars.TELEMON_OFFICIAL_EXT_KEYS }}
   # Simpan cache hanya dari run branch (lihat catatan di atas).
   SAVE_CACHE: ${{ github.ref_type == 'branch' }}
 

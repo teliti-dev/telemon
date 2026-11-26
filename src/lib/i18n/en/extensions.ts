@@ -154,4 +154,6 @@ export default {
   "Buka panel": "Open panel",
   "Lipat panel": "Collapse panel",
   "Tutup panel": "Close panel",
+  "Kunci official belum disematkan": "No official key pinned",
+  "Build ini belum mempercayai kunci penanda tangan official mana pun, jadi extension belum bisa dipasang dari toko maupun berkas. Pemilik server bisa menambah kunci dengan TELEMON_EXTENSIONS_OFFICIAL_KEYS.": "This build does not trust any official signing key yet, so extensions cannot be installed from the store or from a file. A server owner can add a key with TELEMON_EXTENSIONS_OFFICIAL_KEYS.",
 } as Record<string, string>
