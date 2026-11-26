@@ -68,19 +68,25 @@ export function SiteHeader({ title }: { title: string }) {
         <div className="flex h-12 items-stretch md:h-14">
           {mac && <div aria-hidden className="shrink-0" style={{ width: MAC_TRAFFIC_LIGHTS }} />}
           <div className={cn(PAGE_CONTAINER, "flex h-full min-w-0 items-center gap-2")}>
-            <a
-              href={href("ringkasan")}
-              aria-label={t("Telemon, ke Ringkasan")}
-              className="flex shrink-0 items-center gap-2 rounded-md font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-            >
-              <TelemonLogo />
-              <span className="hidden sm:inline">Telemon</span>
-            </a>
-            {isDesktop ? <LiveIndicator /> : <LivePill />}
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <a
+                href={href("ringkasan")}
+                aria-label={t("Telemon, ke Ringkasan")}
+                className="flex shrink-0 items-center gap-2 rounded-md font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+              >
+                <TelemonLogo />
+                <span className="hidden sm:inline">Telemon</span>
+              </a>
+              {isDesktop ? <LiveIndicator /> : <LivePill />}
 
-            <h1 className="ml-1 truncate text-sm font-medium md:hidden">{title}</h1>
-
-            <div className="ml-auto flex shrink-0 items-center gap-1">
+              <h1 className="ml-1 truncate text-sm font-medium md:hidden">{title}</h1>
+            </div>
+            {!isDesktop && (
+              <div className="hidden md:block">
+                <SearchTrigger className="md:w-72 lg:w-96" />
+              </div>
+            )}
+            <div className="flex flex-1 shrink-0 items-center justify-end gap-1">
               {isDesktop && share?.lan.enabled && (
                 <Badge variant="outline" asChild className="gap-1.5">
                   <a href={href("berbagi")} title={t("Serve ke browser aktif")}>
@@ -97,7 +103,11 @@ export function SiteHeader({ title }: { title: string }) {
                   </a>
                 </Badge>
               )}
-              {!isDesktop && <SearchTrigger />}
+              {!isDesktop && (
+                <span className="md:hidden">
+                  <SearchTrigger />
+                </span>
+              )}
               <AppearanceDrawer iconOnly={isDesktop} />
               <AccountMenu />
             </div>

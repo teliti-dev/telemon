@@ -65,7 +65,7 @@ export function SearchSourceToggles({ className }: { className?: string }) {
 }
 
 /** Tombol pencarian di header: kolom tampilan dengan petunjuk pintasan; di HP hanya ikon. */
-export function SearchTrigger() {
+export function SearchTrigger({ className }: { className?: string }) {
   const t = useT()
   return (
     <button
@@ -73,7 +73,7 @@ export function SearchTrigger() {
       onClick={openPalette}
       aria-label={t("Cari (Ctrl+K)")}
       aria-keyshortcuts="Control+K Meta+K"
-      className="inline-flex h-8 shrink-0 items-center gap-2 rounded-md border bg-background px-2 text-sm text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 md:w-44 lg:w-56"
+      className={cn("inline-flex h-8 shrink-0 items-center gap-2 rounded-md border bg-background px-2 text-sm text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 md:w-44 lg:w-56", className)}
     >
       <SearchIcon className="size-4 shrink-0" />
       <span className="hidden flex-1 truncate text-left md:inline">{t("Cari…")}</span>
