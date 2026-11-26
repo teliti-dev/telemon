@@ -33,6 +33,10 @@ Pre-release (`v0.1.0-rc.x`). The core, server and UI are tested against a simula
 |---|---|
 | ![Events](docs/screenshots/events.png) | ![Settings](docs/screenshots/settings.png) |
 
+**AI dashboard** (Settings): providers, tokens per day, balance and monthly budget.
+
+![AI dashboard](docs/screenshots/ai-dashboard.png)
+
 | Dark theme | Phone | Phone | Sign in |
 |---|---|---|---|
 | ![Dark](docs/screenshots/overview-dark.png) | ![Phone overview](docs/screenshots/mobile-overview.png) | ![Phone users](docs/screenshots/mobile-users.png) | ![Sign in](docs/screenshots/login.png) |
