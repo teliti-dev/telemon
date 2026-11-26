@@ -1,9 +1,12 @@
+import * as React from "react"
 import ReactGridLayout, { useContainerWidth, type LayoutItem } from "react-grid-layout"
 import "react-grid-layout/css/styles.css"
 import "react-resizable/css/styles.css"
-import { XIcon } from "lucide-react"
+import { SettingsIcon, XIcon } from "lucide-react"
 
+import { WidgetConfigDialog } from "@/components/dashboard/config-dialog"
 import { WIDGET_BY_TYPE, type WidgetDef } from "@/components/dashboard/registry"
+import type { WidgetConfig } from "@/components/dashboard/widget-types"
 import { GRID_COLS, GRID_MARGIN, ROW_HEIGHT, readingOrder } from "@/lib/dashboard"
 import { useT } from "@/lib/i18n"
 import type { DashboardWidget } from "@/lib/types"
@@ -14,6 +17,7 @@ interface Props {
   editing: boolean
   onChange: (widgets: DashboardWidget[]) => void
   onRemove: (id: string) => void
+  onConfigure: (id: string, config: WidgetConfig) => void
   onOpenUser: (id: string) => void
 }
 
@@ -35,8 +39,9 @@ function layoutItem(w: DashboardWidget, def: WidgetDef): LayoutItem {
 }
 
 /** Desktop dan tablet: grid yang bisa digeser dan diubah ukurannya saat mode ubah. */
-export function DashboardGrid({ widgets, editing, onChange, onRemove, onOpenUser }: Props) {
+export function DashboardGrid({ widgets, editing, onChange, onRemove, onConfigure, onOpenUser }: Props) {
   const t = useT()
+  const [configuring, setConfiguring] = React.useState<string | null>(null)
   const { width, containerRef, mounted } = useContainerWidth()
   const known = widgets.filter((w) => WIDGET_BY_TYPE.has(w.type))
   const layout = known.map((w) => layoutItem(w, WIDGET_BY_TYPE.get(w.type)!))
@@ -72,23 +77,44 @@ export function DashboardGrid({ widgets, editing, onChange, onRemove, onOpenUser
                   <def.Component widget={w} onOpenUser={onOpenUser} />
                 </div>
                 {editing && (
-                  <button
-                    type="button"
-                    aria-label={t("Hapus widget {name}", { name: t(def.title) /* i18n-ignore: kunci tk */ })}
-                    title={t("Hapus widget")}
-                    onClick={() => onRemove(w.id)}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onTouchStart={(e) => e.stopPropagation()}
-                    className="widget-nodrag absolute top-1 right-1 z-10 flex size-6 items-center justify-center rounded-full border bg-background text-muted-foreground shadow-sm hover:bg-destructive hover:text-white focus-visible:ring-3 focus-visible:ring-ring/50"
-                  >
-                    <XIcon className="size-3.5" />
-                  </button>
+                  <div className="absolute top-1 right-1 z-10 flex gap-1">
+                    {def.Config && (
+                      <button
+                        type="button"
+                        aria-label={t("Pengaturan widget {name}", { name: t(def.title) /* i18n-ignore: kunci tk */ })}
+                        title={t("Pengaturan widget")}
+                        onClick={() => setConfiguring(w.id)}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onTouchStart={(e) => e.stopPropagation()}
+                        className="widget-nodrag flex size-6 items-center justify-center rounded-full border bg-background text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+                      >
+                        <SettingsIcon className="size-3.5" />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      aria-label={t("Hapus widget {name}", { name: t(def.title) /* i18n-ignore: kunci tk */ })}
+                      title={t("Hapus widget")}
+                      onClick={() => onRemove(w.id)}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onTouchStart={(e) => e.stopPropagation()}
+                      className="widget-nodrag flex size-6 items-center justify-center rounded-full border bg-background text-muted-foreground shadow-sm hover:bg-destructive hover:text-white focus-visible:ring-3 focus-visible:ring-ring/50"
+                    >
+                      <XIcon className="size-3.5" />
+                    </button>
+                  </div>
                 )}
               </div>
             )
           })}
         </ReactGridLayout>
       )}
+      <WidgetConfigDialog
+        widget={known.find((w) => w.id === configuring) ?? null}
+        def={WIDGET_BY_TYPE.get(known.find((w) => w.id === configuring)?.type ?? "") ?? null}
+        onClose={() => setConfiguring(null)}
+        onApply={onConfigure}
+      />
     </div>
   )
 }

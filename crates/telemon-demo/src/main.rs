@@ -310,6 +310,7 @@ async fn main() -> std::io::Result<()> {
     let mut store = Store::open_in_memory().expect("sqlite");
     store.unlock(&telemon_core::generate_key().expect("acak")).expect("unlock");
     let telemon = Arc::new(Telemon::new(store, Arc::new(MemorySecrets::default()), DemoConnector(worlds), RuntimeConfig { poll_every: Duration::from_secs(3), sync_every: Some(Duration::from_secs(30)), traffic: Some(TrafficConfig { every: Duration::from_secs(5), retention: Duration::from_secs(2 * 86_400) }) }));
+    let mut router_ids: Vec<String> = Vec::new();
     for (name, host, can_write) in [("RB-Utara", "demo-utara", true), ("RB-Selatan", "demo-selatan", false)] {
         let r = telemon.add_router(&NewRouter { name: name.into(), host: host.into(), port: 8728, tls_pin: None, username: "api".into(), can_write }, "demo").expect("router");
         eprintln!("[demo] impor awal {name}");
@@ -322,6 +323,30 @@ async fn main() -> std::io::Result<()> {
             }
         });
         telemon.start_monitor(&r.id).expect("pemantau");
+        router_ids.push(r.id.clone());
+    }
+    // Tata letak Ringkasan demo: susunan bawaan ditambah widget bandwidth supaya langsung terlihat saat dicoba.
+    {
+        let w = |id: &str, ty: &str, x: u32, y: u32, w: u32, h: u32, config: serde_json::Value| serde_json::json!({ "id": id, "type": ty, "x": x, "y": y, "w": w, "h": h, "config": config });
+        let mut widgets = vec![
+            w("default-routers-online", "stat-routers-online", 0, 0, 4, 2, serde_json::json!({})),
+            w("default-users-active", "stat-users-active", 4, 0, 4, 2, serde_json::json!({})),
+            w("default-users-inactive", "stat-users-inactive", 8, 0, 4, 2, serde_json::json!({})),
+            w("default-users-disabled", "stat-users-disabled", 12, 0, 4, 2, serde_json::json!({})),
+            w("default-auth-fails", "stat-auth-fails", 16, 0, 4, 2, serde_json::json!({})),
+            w("bw-chart-pppoe", "bandwidth-chart", 0, 2, 12, 7, serde_json::json!({ "router": "all", "iface": "@pppoe", "range": "24h" })),
+            w("bw-total", "bandwidth-total", 12, 2, 8, 4, serde_json::json!({ "range": "6h" })),
+            w("bw-per-user", "bandwidth-per-user", 12, 6, 8, 3, serde_json::json!({ "router": "all", "range": "6h" })),
+            w("bw-chart-uplink", "bandwidth-chart", 0, 9, 10, 7, serde_json::json!({ "router": router_ids[0], "iface": "ether1", "range": "6h" })),
+            w("default-recent-events", "recent-events", 10, 9, 10, 7, serde_json::json!({})),
+            w("default-router-cards", "router-cards", 0, 16, 20, 4, serde_json::json!({})),
+            w("default-top-auth-fails", "top-auth-fails", 0, 20, 7, 8, serde_json::json!({})),
+            w("users-per-profile", "users-per-profile", 7, 20, 7, 8, serde_json::json!({})),
+            w("user-status-mix", "user-status-mix", 14, 20, 6, 4, serde_json::json!({})),
+        ];
+        widgets.shrink_to_fit();
+        let layout = serde_json::json!({ "version": 1, "widgets": widgets });
+        telemon.with_store(|s| s.kv_set("dashboard.layout", &layout.to_string())).expect("tata letak demo");
     }
     telemon.start_purge_from_settings(Duration::from_secs(3600));
 

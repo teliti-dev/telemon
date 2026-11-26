@@ -30,6 +30,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
     enabled: true,
     maskSensitive: true,
   },
+  bandwidth: {
+    enabled: true,
+    intervalSeconds: 60,
+    retentionDays: 7,
+  },
 }
 
 export interface DefaultRole {

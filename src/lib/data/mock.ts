@@ -7,6 +7,10 @@ import type {
   AiBudgetInput,
   AiDashboard,
   DashboardLayout,
+  TrafficInterfaces,
+  TrafficPoint,
+  TrafficQuery,
+  TrafficSeries,
   AiProvider,
   AiProviderInput,
   AiUsageDay,
@@ -1144,6 +1148,63 @@ export class MockApi implements TelemonApi {
 
   private dashboard: DashboardLayout | null = null
 
+  // ---- Bandwidth tiruan: bergantung jumlah user aktif dan jam (puncak malam), tanpa penyimpanan ----
+
+  private trafficAt(routerId: string, iface: string, at: number) {
+    const active = this.users.filter((u) => u.routerId === routerId && u.status === "active").length
+    const hash = (s: string) => {
+      let h = 2166136261
+      for (const c of s) h = Math.imul(h ^ c.charCodeAt(0), 16777619)
+      return ((h >>> 0) % 1000) / 1000
+    }
+    const hour = (((at / 3_600_000) % 24) + 7) % 24
+    const wave = 0.35 + 0.65 * (0.5 + 0.5 * Math.cos((2 * Math.PI * (hour - 20.5)) / 24))
+    const noise = 0.75 + 0.5 * hash(`${routerId}:${Math.floor(at / 60_000)}`)
+    const down = active * 1_400_000 * wave * noise
+    const up = down * 0.12
+    if (iface === "@pppoe") return { rxBps: Math.round(up), txBps: Math.round(down), sessions: active }
+    if (iface === "ether1") return { rxBps: Math.round(down * 1.03), txBps: Math.round(up * 1.03) }
+    return { rxBps: Math.round(up * 0.9), txBps: Math.round(down * 0.9) }
+  }
+
+  async getTrafficInterfaces(routerId: string): Promise<TrafficInterfaces> {
+    this.authorize("router", "read")
+    await delay(150)
+    if (!this.routers.some((r) => r.id === routerId)) throw new Error(t("Router tidak ditemukan"))
+    const now = Date.now()
+    const mk = (name: string, kind: string) => ({ name, kind, running: true, lastSeen: now })
+    return {
+      interfaces: [mk("@pppoe", "pppoe-aggregate"), mk("bridge-lan", "bridge"), mk("ether1", "ether"), mk("ether2", "ether")],
+      enabled: this.settings.bandwidth.enabled,
+      intervalSeconds: this.settings.bandwidth.intervalSeconds,
+    }
+  }
+
+  async getTrafficSeries(q: TrafficQuery): Promise<TrafficSeries> {
+    this.authorize("router", "read")
+    await delay(200)
+    const spans: Record<string, number> = { "1h": 3_600_000, "6h": 21_600_000, "24h": 86_400_000, "7d": 604_800_000, "30d": 2_592_000_000 }
+    const span = spans[q.range]
+    if (!span) throw new Error(t("Rentang tidak valid"))
+    if (q.router === "all" && q.iface !== "@pppoe") throw new Error(t("Total semua router hanya untuk antarmuka @pppoe"))
+    const ids = q.router === "all" ? this.routers.map((r) => r.id) : [q.router]
+    if (q.router !== "all" && !this.routers.some((r) => r.id === q.router)) throw new Error(t("Router tidak ditemukan"))
+    const { enabled, intervalSeconds } = this.settings.bandwidth
+    const bucket = Math.max(intervalSeconds * 1000, Math.ceil(span / 240))
+    const to = Date.now()
+    const from = to - span
+    const points: TrafficPoint[] = []
+    if (enabled) {
+      for (let at = Math.ceil(from / bucket) * bucket; at <= to; at += bucket) {
+        const rows = ids.map((id) => this.trafficAt(id, q.iface, at))
+        const p: TrafficPoint = { at, rxBps: rows.reduce((s, r) => s + r.rxBps, 0), txBps: rows.reduce((s, r) => s + r.txBps, 0) }
+        if (q.iface === "@pppoe") p.sessions = rows.reduce((s, r) => s + (r.sessions ?? 0), 0)
+        points.push(p)
+      }
+    }
+    return { points, from, to, bucketSeconds: Math.round(bucket / 1000), intervalSeconds, enabled }
+  }
+
   async getDashboard(): Promise<DashboardLayout | null> {
     this.authorize("ringkasan", "read")
     await delay(120)
@@ -1184,6 +1245,8 @@ export class MockApi implements TelemonApi {
     this.checkRange(tk("Masa sesi login (jam)"), m.sessionHours, 1, 720)
     this.checkRange(tk("Batas gagal login"), m.maxFailures, 3, 20)
     this.checkRange(tk("Lama penguncian (menit)"), m.lockMinutes, 1, 1440)
+    this.checkRange(tk("Interval bandwidth (detik)"), next.bandwidth.intervalSeconds, 10, 3600)
+    this.checkRange(tk("Simpan data bandwidth (hari)"), next.bandwidth.retentionDays, 1, 365)
     this.settings = structuredClone(next)
     this.share.auth.allowPublicWrite = m.allowPublicWrite
     this.share.features.ai = next.ai.enabled

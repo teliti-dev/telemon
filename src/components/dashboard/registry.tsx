@@ -1,4 +1,3 @@
-import * as React from "react"
 import {
   ActivityIcon,
   ArrowRightIcon,
@@ -9,6 +8,7 @@ import {
   UserMinusIcon,
   UsersIcon,
   UserXIcon,
+  GaugeIcon,
   type LucideIcon,
 } from "lucide-react"
 
@@ -20,31 +20,11 @@ import { formatNumber, formatRelative } from "@/lib/format"
 import { tk, useT } from "@/lib/i18n"
 import { href } from "@/lib/route"
 import { useStore } from "@/lib/store-context"
-import type { DashboardWidget, PppUser } from "@/lib/types"
+import type { PppUser } from "@/lib/types"
+import { AvgPerUserWidget, BANDWIDTH_CHART_DEFAULT, BandwidthChartConfig, BandwidthChartWidget, PER_USER_DEFAULT, PerUserConfig, TOTAL_DEFAULT, TotalBandwidthConfig, TotalBandwidthWidget } from "@/components/dashboard/bandwidth-widgets"
+import type { WidgetDef, WidgetProps } from "@/components/dashboard/widget-types"
 
-export interface WidgetProps {
-  widget: DashboardWidget
-  onOpenUser: (id: string) => void
-}
-
-export interface WidgetDef {
-  type: string
-  title: string
-  description: string
-  icon: LucideIcon
-  /** Ukuran awal saat ditambahkan (kolom x baris). */
-  w: number
-  h: number
-  minW?: number
-  minH?: number
-  /** false = ukuran tetap (kartu angka); true = bisa ditarik lebih besar atau kecil. */
-  resizable: boolean
-  /** Kartu angka kecil: di HP dua per baris. */
-  tile?: boolean
-  /** Di HP tinggi mengikuti isi (bukan tinggi grid). */
-  stackAuto?: boolean
-  Component: React.ComponentType<WidgetProps>
-}
+export type { WidgetDef, WidgetProps }
 
 function countByStatus(users: PppUser[]) {
   const c = { active: 0, inactive: 0, disabled: 0 }
@@ -389,6 +369,9 @@ export const WIDGETS: WidgetDef[] = [
   { type: "top-auth-fails", title: tk("Sering gagal auth"), description: tk("User yang paling sering gagal auth dalam 24 jam."), icon: ShieldXIcon, w: 7, h: 9, minW: 5, minH: 4, resizable: true, Component: TopAuthFails },
   { type: "user-status-mix", title: tk("Komposisi user"), description: tk("Perbandingan user aktif, tidak aktif, dan dinonaktifkan."), icon: UsersIcon, w: 7, h: 4, minW: 5, minH: 3, resizable: true, Component: UserStatusMix },
   { type: "events-per-hour", title: tk("Event per jam"), description: tk("Grafik batang jumlah event dalam 24 jam terakhir."), icon: ActivityIcon, w: 10, h: 5, minW: 6, minH: 4, resizable: true, Component: EventsPerHour },
+  { type: "bandwidth-chart", title: tk("Bandwidth"), description: tk("Grafik laju unduh dan unggah satu antarmuka atau seluruh sesi PPPoE; router dan antarmuka dipilih di pengaturan widget."), icon: ActivityIcon, w: 12, h: 7, minW: 6, minH: 5, resizable: true, defaultConfig: BANDWIDTH_CHART_DEFAULT, Config: BandwidthChartConfig, Component: BandwidthChartWidget },
+  { type: "bandwidth-total", title: tk("Total bandwidth pelanggan"), description: tk("Jumlah laju seluruh sesi PPPoE dari semua router, dengan jumlah sesi."), icon: GaugeIcon, w: 8, h: 5, minW: 5, minH: 4, resizable: true, defaultConfig: TOTAL_DEFAULT, Config: TotalBandwidthConfig, Component: TotalBandwidthWidget },
+  { type: "bandwidth-per-user", title: tk("Rata-rata per user"), description: tk("Rata-rata unduh dan unggah per user aktif, untuk satu router atau semuanya."), icon: UsersIcon, w: 8, h: 5, minW: 5, minH: 4, resizable: true, defaultConfig: PER_USER_DEFAULT, Config: PerUserConfig, Component: AvgPerUserWidget },
   { type: "users-per-profile", title: tk("User per profil"), description: tk("Profil PPP yang paling banyak dipakai."), icon: TagsIcon, w: 7, h: 6, minW: 5, minH: 4, resizable: true, Component: UsersPerProfile },
 ]
 

@@ -5,6 +5,9 @@ import type {
   AiChatSummary,
   AiDashboard,
   DashboardLayout,
+  TrafficInterfaces,
+  TrafficQuery,
+  TrafficSeries,
   AiMessage,
   AiProvider,
   AiProviderInput,
@@ -526,6 +529,13 @@ export class HttpApi implements TelemonApi {
 
   // ---------------- pengaturan dan penyimpanan ----------------
 
+  getTrafficInterfaces(routerId: string) {
+    return this.req<TrafficInterfaces>("GET", `/api/traffic/interfaces?router=${encodeURIComponent(routerId)}`)
+  }
+  getTrafficSeries(q: TrafficQuery) {
+    const qs = new URLSearchParams({ router: q.router, iface: q.iface, range: q.range })
+    return this.req<TrafficSeries>("GET", `/api/traffic/series?${qs}`)
+  }
   async getDashboard() {
     const r = await this.req<{ layout?: DashboardLayout | null }>("GET", "/api/dashboard", undefined, { keepNulls: true })
     return r.layout ?? null

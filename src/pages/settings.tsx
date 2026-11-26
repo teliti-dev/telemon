@@ -1,5 +1,5 @@
 import * as React from "react"
-import { DatabaseIcon, RadioTowerIcon, RotateCcwIcon, ShieldIcon, SparklesIcon, TimerResetIcon } from "lucide-react"
+import { ActivityIcon, DatabaseIcon, RadioTowerIcon, RotateCcwIcon, ShieldIcon, SparklesIcon, TimerResetIcon } from "lucide-react"
 import { toast } from "sonner"
 
 import { UpdateCard } from "@/components/update-card"
@@ -128,12 +128,13 @@ const OPT_SESSION: Opt[] = [1, 4, 12, 24, 72, 168].map((h) => ({ value: h, label
 function problems(s: AppSettings) {
   const bad = (v: number | null, min: number, max: number, nullable = false) =>
     v === null ? !nullable : !Number.isInteger(v) || v < min || v > max
-  const { retention: r, polling: p, remote: m } = s
+  const { retention: r, polling: p, remote: m, bandwidth: b } = s
   return [
     bad(r.eventDays, 1, 3650, true), bad(r.maxEvents, 1000, 5_000_000), bad(r.deletedDays, 1, 3650, true),
     bad(r.auditDays, 30, 3650, true), bad(p.sessionSeconds, 10, 600), bad(p.logSeconds, 10, 600),
     bad(p.autoImportHours, 1, 168, true), bad(p.timeoutSeconds, 3, 60), bad(p.retries, 0, 5),
     bad(m.sessionHours, 1, 720), bad(m.maxFailures, 3, 20), bad(m.lockMinutes, 1, 1440),
+    bad(b.intervalSeconds, 10, 3600), bad(b.retentionDays, 1, 365),
   ].filter(Boolean).length
 }
 
@@ -190,7 +191,7 @@ function SettingsForm() {
     }
   }
 
-  const { retention: r, polling: p, remote: m } = draft
+  const { retention: r, polling: p, remote: m, bandwidth: bw } = draft
   const resetButton = (group: keyof AppSettings) => (
     <Button variant="ghost" size="sm" onClick={() => resetGroup(group)} title={t("Kembalikan bagian ini ke nilai bawaan")}>
       <RotateCcwIcon /> {t("Bawaan")}
@@ -262,6 +263,25 @@ function SettingsForm() {
               <NumberField id="pol-to" label={t("Timeout koneksi")} value={p.timeoutSeconds} min={3} max={60} unit="detik" onChange={(v) => set("polling", { timeoutSeconds: v })} />
               <NumberField id="pol-retry" label={t("Percobaan ulang")} value={p.retries} min={0} max={5} unit="kali" onChange={(v) => set("polling", { retries: v })} />
             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><ActivityIcon className="size-4" /> {t("Bandwidth")}</CardTitle>
+            <CardDescription>{t("Pembacaan counter antarmuka router untuk widget grafik di Ringkasan. Satu pembacaan ringan per router per interval.")}</CardDescription>
+            <CardAction>{resetButton("bandwidth")}</CardAction>
+          </CardHeader>
+          <CardContent className="grid gap-4">
+            <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
+              <div className="grid gap-0.5">
+                <Label htmlFor="bw-on">{t("Kumpulkan bandwidth")}</Label>
+                <p className="text-xs text-muted-foreground">{t("Bila mati, widget bandwidth tidak mendapat data baru.")}</p>
+              </div>
+              <Switch id="bw-on" checked={bw.enabled} onCheckedChange={(v) => set("bandwidth", { enabled: v })} />
+            </div>
+            <NumberField id="bw-int" label={t("Interval pembacaan")} value={bw.intervalSeconds} min={10} max={3600} unit="detik" hint={t("Makin pendek makin halus, tetapi data dan beban router bertambah.")} onChange={(v) => set("bandwidth", { intervalSeconds: v })} />
+            <NumberField id="bw-ret" label={t("Simpan data bandwidth")} value={bw.retentionDays} min={1} max={365} unit="hari" hint={t("Data yang lebih lama dihapus otomatis.")} onChange={(v) => set("bandwidth", { retentionDays: v })} />
           </CardContent>
         </Card>
 

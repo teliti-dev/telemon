@@ -76,6 +76,18 @@ export function formatBytes(n: number) {
   return `${nf(i === 0 ? "bytes0" : "bytes1", { maximumFractionDigits: i === 0 ? 0 : 1 }).format(v)} ${units[i]}`
 }
 
+/** Laju bit per detik: "850 Kbps", "12,3 Mbps" (basis 1000, seperti ukuran jaringan). */
+export function formatBps(bps: number) {
+  const units = ["bps", "Kbps", "Mbps", "Gbps", "Tbps"]
+  let v = Math.max(0, bps)
+  let i = 0
+  while (v >= 1000 && i < units.length - 1) {
+    v /= 1000
+    i++
+  }
+  return `${nf(i === 0 ? "bps0" : v < 100 ? "bps1" : "bps0", { maximumFractionDigits: i === 0 || v >= 100 ? 0 : 1 }).format(v)} ${units[i]}`
+}
+
 /** "1,2 jt", "38 rb": ringkas untuk jumlah token. */
 export function formatCompact(n: number) {
   return nf("compact", { notation: "compact", maximumFractionDigits: 1 }).format(n)
