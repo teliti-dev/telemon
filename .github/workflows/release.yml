@@ -287,11 +287,24 @@ jobs:
       - name: Teks lisensi installer
         run: python3 scripts/make-installer-license.py --check
 
+      # Templat NSIS = templat resmi dari @tauri-apps/cli yang terkunci + perubahan kecil kita (scripts/make-nsis-template.py).
+      # Gagal bila CLI dinaikkan dan templatnya berubah: jalankan skripnya tanpa --check lalu tinjau diff-nya.
+      - name: Templat NSIS
+        run: python3 scripts/make-nsis-template.py --check
+
       - name: Build
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: bun run tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --bundles nsis
+
+      # Memeriksa hasil build tanpa Windows: nama perusahaan, deskripsi, komentar, dan ikon 256 px harus ada di installer.
+      - name: Metadata installer
+        run: |
+          set -euo pipefail
+          B=src-tauri/target/x86_64-pc-windows-msvc/release
+          python3 scripts/pe-info.py "$B"/bundle/nsis/*-setup.exe --require CompanyName,FileDescription,Comments,LegalCopyright --icon-size 256
+          python3 scripts/pe-info.py "$B"/telemon.exe || true
 
       - name: Simpan cache Windows SDK
         if: env.SAVE_CACHE == 'true' && steps.xwin-cache.outputs.cache-hit != 'true'

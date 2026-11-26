@@ -45,7 +45,8 @@
     "shortDescription": "Monitor PPPoE users and events across MikroTik routers",
     "windows": {
       "nsis": {
-        "installerIcon": "icons/icon.ico"
+        "installerIcon": "icons/icon.ico",
+        "template": "installer/installer.nsi"
       }
     },
     "longDescription": "Telemon reads each MikroTik router over the RouterOS API and shows who is connected, who is inactive or disabled, and what just happened (auth failed, authenticated, connected, disconnected). The router stays the source of truth. Share the dashboard to browsers on your network, and add features with extensions. Free software under the AGPL-3.0, provided without warranty."
