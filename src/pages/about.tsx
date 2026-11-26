@@ -35,7 +35,7 @@ export function AboutPage() {
   const diagnostic = [`Telemon ${APP_VERSION}`, ...rows.slice(1).map(([k, v]) => `${k}: ${v}`)].join("\n")
 
   return (
-    <div className="grid max-w-3xl gap-4">
+    <div className="mx-auto grid w-full max-w-3xl gap-4">
       <Card>
         <CardHeader>
           <div className="flex items-center gap-3">
