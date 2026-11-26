@@ -30,6 +30,16 @@ const MODEL_HINT: Record<AiProviderKind, string> = {
   gemini: "gemini-2.5-flash",
 }
 
+/** Model yang umum dipakai per jenis. Daftar bisa usang: pilihan "Lainnya" tetap menerima nama model apa pun. 9Router memakai nama combo sendiri, jadi hanya input manual. */
+const MODEL_PRESETS: Record<AiProviderKind, string[]> = {
+  ninerouter: [],
+  anthropic: ["claude-fable-5-2", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"],
+  openai: ["gpt-4.1", "gpt-4.1-mini", "gpt-4o", "gpt-4o-mini"],
+  deepseek: ["deepseek-chat", "deepseek-reasoner"],
+  gemini: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"],
+}
+const CUSTOM_MODEL = "__custom__"
+
 interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -55,6 +65,8 @@ export function AiProviderForm({ provider, onSaved, onClose }: { provider?: AiPr
   const [kind, setKind] = React.useState<AiProviderKind>(provider?.kind ?? "anthropic")
   const [name, setName] = React.useState(provider?.name ?? "")
   const [model, setModel] = React.useState(provider?.model ?? "")
+  // Model di luar daftar bawaan (atau pilihan "Lainnya") ditulis manual.
+  const [customModel, setCustomModel] = React.useState(() => !!provider?.model && !MODEL_PRESETS[provider.kind].includes(provider.model))
   const [baseUrl, setBaseUrl] = React.useState(provider?.baseUrl ?? "")
   const [apiKey, setApiKey] = React.useState("")
   const [priceIn, setPriceIn] = React.useState(provider?.priceInPerMtok === undefined ? "" : String(provider.priceInPerMtok))
@@ -109,6 +121,8 @@ export function AiProviderForm({ provider, onSaved, onClose }: { provider?: AiPr
           value={kind}
           onValueChange={(v) => {
             setKind(v as AiProviderKind)
+            setModel("")
+            setCustomModel(false)
             if (!editing && !name.trim()) setName("")
           }}
           disabled={editing}
@@ -131,7 +145,44 @@ export function AiProviderForm({ provider, onSaved, onClose }: { provider?: AiPr
       </div>
       <div className="grid gap-1.5">
         <Label htmlFor="pv-model">{t("Model")}</Label>
-        <Input id="pv-model" className="font-mono" value={model} onChange={(e) => setModel(e.target.value)} placeholder={MODEL_HINT[kind]} autoCapitalize="off" spellCheck={false} />
+        {MODEL_PRESETS[kind].length > 0 && (
+          <Select
+            value={customModel ? CUSTOM_MODEL : MODEL_PRESETS[kind].includes(model) ? model : ""}
+            onValueChange={(v) => {
+              if (v === CUSTOM_MODEL) {
+                setCustomModel(true)
+                setModel((m) => (MODEL_PRESETS[kind].includes(m) ? "" : m))
+              } else {
+                setCustomModel(false)
+                setModel(v)
+              }
+            }}
+          >
+            <SelectTrigger id="pv-model" className="w-full font-mono">
+              <SelectValue placeholder={t("Pilih model")} />
+            </SelectTrigger>
+            <SelectContent>
+              {MODEL_PRESETS[kind].map((m) => (
+                <SelectItem key={m} value={m} className="font-mono">
+                  {m}
+                </SelectItem>
+              ))}
+              <SelectItem value={CUSTOM_MODEL}>{t("Lainnya (ketik manual)")}</SelectItem>
+            </SelectContent>
+          </Select>
+        )}
+        {(MODEL_PRESETS[kind].length === 0 || customModel) && (
+          <Input
+            id={MODEL_PRESETS[kind].length === 0 ? "pv-model" : "pv-model-custom"}
+            aria-label={t("Nama model")}
+            className="font-mono"
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            placeholder={MODEL_HINT[kind]}
+            autoCapitalize="off"
+            spellCheck={false}
+          />
+        )}
       </div>
       {needsUrl && (
         <div className="grid gap-1.5">
