@@ -3,7 +3,7 @@ import { LayoutGridIcon, ListIcon, Loader2Icon, PlusIcon, PuzzleIcon, SearchIcon
 import { toast } from "sonner"
 
 import { InstallChooserDialog } from "@/components/extensions/install-chooser"
-import { LicenseInfo, LicenseNote, Permissions, Requires, StatusBadge, TierBadge, ToggleExtensionDialog, errMsg, useExtensionPatch } from "@/components/extensions/parts"
+import { LicenseInfo, LicenseKindBadge, LicenseNote, Permissions, Requires, StatusBadge, TierBadge, ToggleExtensionDialog, errMsg, useExtensionPatch } from "@/components/extensions/parts"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -281,6 +281,7 @@ export function SettingsExtensionsPage() {
                 <div className="mt-auto flex flex-wrap items-center gap-1.5 border-t pt-1.5">
                   <TierBadge ext={e} />
                   <StatusBadge ext={e} />
+                  <LicenseKindBadge license={e.license} />
                   <span className="ml-auto min-w-0">
                     <Contributes ext={e} />
                   </span>

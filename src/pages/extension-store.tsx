@@ -2,7 +2,7 @@ import * as React from "react"
 import { ArrowLeftIcon, Loader2Icon, PuzzleIcon, SearchIcon, ShieldAlertIcon } from "lucide-react"
 import { toast } from "sonner"
 
-import { errMsg, LicenseInfo, LicenseNote, TierBadge } from "@/components/extensions/parts"
+import { errMsg, LICENSE_KIND, LicenseInfo, LicenseKindBadge, LicenseNote, TierBadge } from "@/components/extensions/parts"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -76,6 +76,7 @@ function StoreDetailDialog({ item, locked, onClose, onInstalled }: { item: Exten
                 <PuzzleIcon className="size-5" /> {item.name}
                 <span className="text-xs font-normal text-muted-foreground">v{item.version}</span>
                 <TierBadge ext={{ tier: "official" }} />
+                <LicenseKindBadge license={item.license} />
               </DialogTitle>
               <DialogDescription>
                 {item.publisher}
@@ -230,6 +231,7 @@ export function ExtensionStorePage() {
   const [error, setError] = React.useState<{ code?: string; message: string } | null>(null)
   const [query, setQuery] = React.useState("")
   const [filter, setFilter] = React.useState<Filter>("all")
+  const [licFilter, setLicFilter] = React.useState<string>("all")
   const [open, setOpen] = React.useState<string | null>(null)
   const [tick, setTick] = React.useState(0)
 
@@ -250,10 +252,13 @@ export function ExtensionStorePage() {
       if (q && !`${e.name} ${e.id} ${e.publisher} ${e.description}`.toLowerCase().includes(q)) return false
       if (filter === "new") return !e.installedVersion
       if (filter === "installed") return !!e.installedVersion
+      if (licFilter !== "all" && (e.license?.kind ?? "none") !== licFilter) return false
       if (filter === "update") return !!e.installedVersion && !e.upToDate
       return true
     })
-  }, [store, query, filter])
+  }, [store, query, filter, licFilter])
+  // Filter lisensi hanya menawarkan jenis yang memang ada di katalog.
+  const licKinds = React.useMemo(() => [...new Set((store?.extensions ?? []).map((e) => e.license?.kind ?? "none"))], [store])
   const item = store?.extensions.find((e) => e.id === open) ?? null
 
   const filters: { value: Filter; label: string }[] = [
@@ -285,6 +290,17 @@ export function ExtensionStorePage() {
           </Button>
         ))}
       </div>
+      {licKinds.length > 1 && (
+        <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label={t("Lisensi")}>
+          <span className="text-xs text-muted-foreground">{t("Lisensi")}:</span>
+          {["all", ...licKinds].map((k) => (
+            <Button key={k} size="sm" variant="outline" aria-pressed={licFilter === k} className={cn(licFilter === k && "border-brand text-brand")} onClick={() => setLicFilter(k)}>
+              {/* i18n-ignore: kunci ada di LICENSE_KIND (tk) */}
+              {k === "all" ? t("Semua") : k === "none" ? t("Lisensi tidak dinyatakan") : t(LICENSE_KIND[k as keyof typeof LICENSE_KIND])}
+            </Button>
+          ))}
+        </div>
+      )}
       {reason && (
         <Alert>
           <AlertDescription>{t("{reason}. Anda hanya bisa melihat extension.", { reason })}</AlertDescription>
@@ -337,6 +353,7 @@ export function ExtensionStorePage() {
                   {e.installedVersion ? <Badge variant="secondary">{e.upToDate ? t("Terpasang") : t("Terpasang v{v}", { v: e.installedVersion })}</Badge> : <Badge variant="outline">{t("Belum terpasang")}</Badge>}
                   {e.installedVersion && !e.upToDate && <Badge>{t("Ada pembaruan")}</Badge>}
                   {e.problem && <Badge variant="destructive">{t("Tidak cocok")}</Badge>}
+                  <LicenseKindBadge license={e.license} />
                   <span className="ml-auto truncate text-muted-foreground">{features(e, t).slice(0, 2).join(" · ") || t("Hanya tampilan")}</span>
                 </div>
               </button>

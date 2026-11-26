@@ -40,6 +40,14 @@ export const LICENSE_KIND = {
   proprietary: tk("Syarat khusus"),
 } as const
 
+/** Lencana jenis lisensi untuk kartu dan daftar; tanpa lisensi tertulis = lencana redup "Lisensi tidak dinyatakan". */
+export function LicenseKindBadge({ license }: { license?: ExtensionLicense | null }) {
+  const t = useT()
+  if (!license) return <Badge variant="outline" className="text-muted-foreground">{t("Lisensi tidak dinyatakan")}</Badge>
+  // i18n-ignore: kunci ada di LICENSE_KIND (tk)
+  return <Badge variant="outline" title={license.summary || undefined}>{t(LICENSE_KIND[license.kind])}{license.spdx ? ` · ${license.spdx}` : ""}</Badge>
+}
+
 /**
  * Lisensi extension apa adanya dari penerbit: jenis (+ pengenal SPDX), ringkasan, dan tautan syarat lengkap.
  * Tanpa lisensi tertulis = "Tidak dinyatakan". Telemon tidak menilai atau menegakkan isinya (ADR 0030).

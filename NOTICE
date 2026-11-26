@@ -9,6 +9,9 @@ Redistributions and modified versions must keep this notice.
 Telemon is provided without warranty and without liability, see DISCLAIMER.md.
 Extensions have their own publishers and their own licenses; this license does not cover them.
 
+Additional permission (AGPL-3.0 section 7): extension developers may license their own extensions under terms of their
+choice when the extension only uses the documented Extension Interface. See EXTENSION-EXCEPTION.md for the exact terms.
+
 The Telemon icon (public/telemon.svg and the generated icons in src-tauri/icons) is derived from "Pet Supplies"
 on SVG Repo (https://www.svgrepo.com/svg/547758/pet-supplies/, SVG Repo License, no attribution required): recoloured to
 the Telemon brand blue, with a pulse line and a Live dot added.

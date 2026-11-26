@@ -270,7 +270,7 @@ Telemon can change your routers, so **read the review dialog, keep your own back
 
 **[AGPL-3.0](LICENSE).** Telemon uses the AGPL-licensed `mikrotik-rs` client.
 
-Extensions are add-ons made by their publishers, and **each extension has its own license** (free, open source, freemium, paid or other) that its page shows; Telemon does not sell, verify or enforce it.
+Extensions are add-ons made by their publishers, and **each extension has its own license** (free, open source, freemium, paid or other) that its page shows; Telemon does not sell, verify or enforce it. The [Extension Exception](EXTENSION-EXCEPTION.md) (an additional permission under AGPL section 7) lets developers license their own extensions as they like, as long as the extension only uses the documented extension interface.
 
 ---
 
