@@ -183,3 +183,42 @@ fn router_actions_and_panels_are_validated() {
     assert!(t(&good.replace(r#"{"id":"term","title":"Terminal"}"#, r#"{"id":"term","title":"A"},{"id":"term","title":"B"}"#)).is_err(), "panel ganda");
     assert!(t(r#","contributes":{"panels":[{"id":"a","title":"A"}]}"#).is_ok());
 }
+
+/// Lisensi extension (ADR 0030): opsional, ditentukan penerbit, divalidasi ketat karena ditampilkan ke pemakai.
+#[test]
+fn manifest_license_is_validated() {
+    let open = |extra: &str| {
+        let m = format!(r#"{{"id":"net.teliti.demo","name":"D","version":"1.0.0","apiVersion":1,"publisher":"T"{extra}}}"#);
+        let f = vec![("manifest.json".into(), m.as_bytes().to_vec()), ("ui/index.js".into(), b"x".to_vec())];
+        let mut k = keys();
+        k.allow_unsigned = true;
+        Package::open(&pack(&f, None).unwrap(), &k, &Limits::default())
+    };
+    // Tanpa lisensi tetap sah (extension lama).
+    assert!(open("").unwrap().manifest.license.is_none());
+    for ok in [
+        r#","license":{"kind":"open-source","spdx":"MIT"}"#,
+        r#","license":{"kind":"open-source","spdx":"AGPL-3.0-only","url":"https://example.com/LICENSE","summary":"Open source"}"#,
+        r#","license":{"kind":"freemium","summary":"Free up to 5 routers; Pro is paid","url":"https://example.com/pricing"}"#,
+        r#","license":{"kind":"free"}"#,
+        r#","license":{"kind":"paid"}"#,
+        r#","license":{"kind":"trial"}"#,
+        r#","license":{"kind":"proprietary","url":"https://example.com/terms"}"#,
+    ] {
+        let p = open(ok).unwrap_or_else(|e| panic!("harus sah: {ok}: {e}"));
+        assert!(p.manifest.license.is_some());
+    }
+    for bad in [
+        r#","license":{"kind":"gratis"}"#,                                         // jenis tak dikenal
+        r#","license":{"kind":"open-source"}"#,                                    // open source tanpa SPDX
+        r#","license":{"kind":"open-source","spdx":"MIT; rm -rf /"}"#,             // karakter tak boleh
+        r#","license":{"kind":"free","url":"http://example.com/x"}"#,              // bukan https
+        r#","license":{"kind":"free","url":"https://example.com/a b"}"#,           // spasi di tautan
+        r#","license":{"kind":"free","url":"javascript:alert(1)"}"#,               // skema berbahaya
+        r#","license":{"kind":"free","extra":1}"#,                                 // kolom tak dikenal
+    ] {
+        assert!(matches!(open(bad).unwrap_err(), PackageError::Manifest(_)), "harus ditolak: {bad}");
+    }
+    let long = format!(r#","license":{{"kind":"free","summary":"{}"}}"#, "x".repeat(201));
+    assert!(matches!(open(&long).unwrap_err(), PackageError::Manifest(_)), "ringkasan kepanjangan");
+}

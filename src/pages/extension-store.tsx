@@ -2,7 +2,7 @@ import * as React from "react"
 import { ArrowLeftIcon, Loader2Icon, PuzzleIcon, SearchIcon, ShieldAlertIcon } from "lucide-react"
 import { toast } from "sonner"
 
-import { errMsg, TierBadge } from "@/components/extensions/parts"
+import { errMsg, LicenseInfo, LicenseNote, TierBadge } from "@/components/extensions/parts"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -170,19 +170,21 @@ function StoreDetailDialog({ item, locked, onClose, onInstalled }: { item: Exten
                   <ShieldAlertIcon />
                   <AlertTitle>{t("Verifikasi sebelum memasang")}</AlertTitle>
                   <AlertDescription>
-                    <p>{t("Tanda tangan katalog dan paket diperiksa otomatis; ukuran dan SHA-256 dicocokkan. Yang perlu Anda periksa: apakah penerbit dan izinnya masuk akal.")}</p>
+                    <p>{t("Tanda tangan katalog dan paket diperiksa otomatis; ukuran dan SHA-256 dicocokkan. Yang perlu Anda periksa: apakah penerbit, lisensi, dan izinnya masuk akal.")}</p>
                   </AlertDescription>
                 </Alert>
                 <dl className="grid gap-1">
                   <div><dt className="inline text-muted-foreground">{t("Penerbit")}: </dt><dd className="inline">{item.publisher}</dd></div>
+                  <div><dt className="text-muted-foreground">{t("Lisensi")}</dt><dd><LicenseInfo license={item.license} /></dd></div>
                   <div><dt className="inline text-muted-foreground">{t("Izin yang diminta")}: </dt><dd className="inline">{item.permissions.map((p) => p.id).join(", ") || t("Tidak ada")}</dd></div>
                   {item.alsoInstalls.length > 0 && <div><dt className="inline text-muted-foreground">{t("Ikut dipasang")}: </dt><dd className="inline">{item.alsoInstalls.join(", ")}</dd></div>}
                 </dl>
+                <LicenseNote />
                 {sensitive.length > 0 && <p className="font-medium">{t("Termasuk izin sensitif: {list}.", { list: sensitive.map((p) => p.id).join(", ") })}</p>}
                 <div className="flex items-start gap-2">
                   <Checkbox id="store-verify" checked={checked} onCheckedChange={(v) => setChecked(v === true)} />
                   <Label htmlFor="store-verify" className="text-sm font-normal">
-                    {t("Saya sudah memeriksa penerbit dan izin yang diminta, dan ingin memasang extension ini.")}
+                    {t("Saya sudah memeriksa penerbit, lisensi, dan izin yang diminta, dan ingin memasang extension ini.")}
                   </Label>
                 </div>
               </div>

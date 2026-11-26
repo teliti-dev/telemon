@@ -574,12 +574,22 @@ export interface ExtensionWorker {
   state: { nextRun: number; lastRun?: number; lastOk?: boolean; lastError?: string; failures: number; paused: boolean }
 }
 
+/** Lisensi extension, ditentukan penerbitnya (ADR 0030). Telemon hanya menampilkan; tidak menjual atau menegakkan. */
+export interface ExtensionLicense {
+  kind: "open-source" | "free" | "freemium" | "paid" | "trial" | "proprietary"
+  spdx?: string | null
+  url?: string | null
+  summary: string
+}
+
 export interface ExtensionInfo {
   id: string
   name: string
   version: string
   publisher: string
   description: string
+  /** Tidak dinyatakan penerbit = null. */
+  license?: ExtensionLicense | null
   tier: "official" | "public"
   signed: boolean
   enabled: boolean
@@ -623,6 +633,8 @@ export interface ExtensionPackageSummary {
   version: string
   publisher: string
   description: string
+  /** Tidak dinyatakan penerbit = null. */
+  license?: ExtensionLicense | null
   tier: "official" | "public"
   signed: boolean
   widgets: ExtensionWidgetDecl[]
@@ -705,6 +717,8 @@ export interface ExtensionStoreItem {
   version: string
   publisher: string
   description: string
+  /** Tidak dinyatakan penerbit = null. */
+  license?: ExtensionLicense | null
   telemon?: string
   requires: { id: string; version: string; optional: boolean }[]
   size: number
