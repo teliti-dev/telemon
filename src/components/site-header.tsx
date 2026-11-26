@@ -1,5 +1,5 @@
 import * as React from "react"
-import { ChevronDownIcon, GlobeIcon, PuzzleIcon, SettingsIcon, SparklesIcon } from "lucide-react"
+import { ChevronDownIcon, GlobeIcon, PuzzleIcon, SettingsIcon, SparklesIcon, WifiIcon } from "lucide-react"
 
 import { AccountMenu } from "@/components/account-menu"
 import { AppearanceDrawer } from "@/components/appearance-drawer"
@@ -92,7 +92,11 @@ export function SiteHeader({ title }: { title: string }) {
             <TelemonLogo />
             <span className="hidden sm:inline">Telemon</span>
           </a>
-          <LiveIndicator />
+          {/* Desktop: titik Live yang bisa diklik (popup status). HP: lencana Live seperti semula. */}
+          <div className="hidden md:block">
+            <LiveIndicator />
+          </div>
+          <MobileLiveBadge />
 
           <h1 className="ml-1 truncate text-sm font-medium md:hidden">{title}</h1>
 
@@ -109,6 +113,15 @@ export function SiteHeader({ title }: { title: string }) {
               </nav>
             )}
             {end.length > 0 && <span aria-hidden className="mx-1 hidden h-5 w-px bg-border md:block" />}
+            {/* HP: lencana LAN seperti semula; di desktop info LAN ada di popup titik Live. */}
+            {access === "desktop" && share?.lan.enabled && (
+              <Badge variant="outline" asChild className="gap-1.5 md:hidden">
+                <a href={href("berbagi")} title={t("Serve ke browser aktif")}>
+                  <WifiIcon className="size-3.5" />
+                  <span className="hidden sm:inline">LAN</span>
+                </a>
+              </Badge>
+            )}
             {access === "desktop" && share?.publik.status === "on" && (
               <Badge variant="outline" asChild className="gap-1.5 border-warning/70">
                 <a href={href("berbagi")} title={t("Akses publik aktif")}>
@@ -126,6 +139,21 @@ export function SiteHeader({ title }: { title: string }) {
         {frameless && <WindowControls />}
       </div>
     </div>
+  )
+}
+
+/** Lencana Live untuk HP (tampilan lama): titik berdenyut dalam pil, teks "Live" dari lebar sm. */
+function MobileLiveBadge() {
+  const t = useT()
+  const { status } = useStore()
+  return (
+    <span className="flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs text-muted-foreground md:hidden" title={status === "ready" ? t("Menerima event live") : t("Memuat")}>
+      <span className="relative flex size-2">
+        {status === "ready" && <span className="absolute inline-flex size-full animate-ping rounded-full bg-good opacity-60 motion-reduce:hidden" />}
+        <span className={cn("relative inline-flex size-2 rounded-full", status === "ready" ? "bg-good" : "bg-muted-foreground/50")} />
+      </span>
+      <span className="hidden sm:inline">Live</span>
+    </span>
   )
 }
 

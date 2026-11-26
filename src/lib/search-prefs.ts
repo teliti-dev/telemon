@@ -2,7 +2,7 @@ import * as React from "react"
 
 /** Sumber hasil pencarian (palet perintah, Ctrl+K). Bawaan: hanya menu. */
 export type SearchSource = "menu" | "user" | "router" | "other"
-export const SEARCH_SOURCES: SearchSource[] = ["menu", "user", "router", "other"]
+export const SEARCH_SOURCES: SearchSource[] = ["menu", "router", "user", "other"]
 
 export type SearchPrefs = Record<SearchSource, boolean>
 const KEY = "telemon.search.sources"

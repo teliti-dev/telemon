@@ -17,4 +17,11 @@ export default {
   "pilih": "select",
   "buka": "open",
   "tutup": "close",
+  "Status koneksi": "Connection status",
+  "Belum ada": "None yet",
+  "Browser (jarak jauh)": "Browser (remote)",
+  "Menyambung": "Connecting",
+  "Galat": "Error",
+  "Atur berbagi (LAN dan Publik)": "Manage sharing (LAN and Public)",
+  "Menu kelola": "Management menu",
 } as Record<string, string>
