@@ -116,6 +116,23 @@ function RouterCards({ widget }: WidgetProps) {
   const measure = useAutoHeight(widget.id)
   const { routers, liveUsers: users } = useStore()
   const now = useNow(10_000)
+  // Belum ada router: satu kartu ringkas dengan ajakan, bukan kotak kosong setinggi widget.
+  if (routers.length === 0) {
+    return (
+      <div className="h-full overflow-auto">
+        <section ref={measure} aria-label={t("Router")} className="p-px">
+          <Card className="gap-1 py-3">
+            <CardContent className="flex flex-wrap items-center justify-between gap-2 px-3 text-sm">
+              <span className="text-muted-foreground">{t("Belum ada router.")}</span>
+              <Button variant="outline" size="sm" asChild>
+                <a href={href("router")}>{t("Tambah router")}</a>
+              </Button>
+            </CardContent>
+          </Card>
+        </section>
+      </div>
+    )
+  }
   return (
     <div className="h-full overflow-auto">
     <section ref={measure} aria-label={t("Router")} className="grid content-start gap-2 p-px sm:grid-cols-2 md:gap-3 xl:grid-cols-4">
@@ -368,7 +385,7 @@ export const WIDGETS: WidgetDef[] = [
   { type: "stat-users-inactive", title: tk("Tidak aktif"), description: tk("Secret ada tetapi tidak terhubung."), icon: UserMinusIcon, ...TILE, Component: UsersInactive },
   { type: "stat-users-disabled", title: tk("Dinonaktifkan"), description: tk("Secret yang dinonaktifkan."), icon: UserXIcon, ...TILE, Component: UsersDisabled },
   { type: "stat-auth-fails", title: tk("Gagal auth (1 jam)"), description: tk("Percobaan masuk yang gagal dalam satu jam terakhir."), icon: ShieldXIcon, ...TILE, Component: AuthFails },
-  { type: "router-cards", title: tk("Kartu router"), description: tk("Status dan komposisi user per router."), icon: RadioTowerIcon, w: 20, h: 48, minW: 6, minH: 24, resizable: true, stackAuto: true, autoHeight: true, Component: RouterCards },
+  { type: "router-cards", title: tk("Kartu router"), description: tk("Status dan komposisi user per router."), icon: RadioTowerIcon, w: 20, h: 48, minW: 6, minH: 8, resizable: true, stackAuto: true, autoHeight: true, Component: RouterCards },
   { type: "recent-events", title: tk("Event terbaru"), description: tk("Daftar event PPPoE terbaru; klik untuk membuka user."), icon: ActivityIcon, w: 13, h: 108, minW: 6, minH: 60, resizable: true, Component: RecentEvents },
   { type: "top-auth-fails", title: tk("Sering gagal auth"), description: tk("User yang paling sering gagal auth dalam 24 jam."), icon: ShieldXIcon, w: 7, h: 108, minW: 5, minH: 48, resizable: true, Component: TopAuthFails },
   { type: "user-status-mix", title: tk("Komposisi user"), description: tk("Perbandingan user aktif, tidak aktif, dan dinonaktifkan."), icon: UsersIcon, w: 7, h: 48, minW: 5, minH: 36, resizable: true, Component: UserStatusMix },
