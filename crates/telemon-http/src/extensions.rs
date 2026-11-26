@@ -99,7 +99,7 @@ pub(crate) fn audit<C: Connector>(st: &St<C>, c: &Caller, action: &str, id: &str
 fn summary(p: &Package) -> Value {
     json!({
         "id": p.manifest.id, "name": p.manifest.name, "version": p.manifest.version, "publisher": p.manifest.publisher,
-        "description": p.manifest.description, "tier": p.tier, "signed": p.signed,
+        "description": p.manifest.description, "license": p.manifest.license, "tier": p.tier, "signed": p.signed,
         "widgets": p.manifest.contributes.widgets, "permissions": p.manifest.permissions,
     })
 }
@@ -239,7 +239,7 @@ async fn store_list<C: Connector>(State(st): State<St<C>>, c: Caller) -> ApiResu
                 Err(p) => (vec![], Some(problem_text(&p))),
             };
             json!({
-                "id": m.id, "name": m.name, "version": m.version, "publisher": m.publisher, "description": m.description,
+                "id": m.id, "name": m.name, "version": m.version, "publisher": m.publisher, "description": m.description, "license": m.license,
                 "telemon": m.telemon, "requires": m.requires, "size": e.size, "installedVersion": have,
                 "widgets": m.contributes.widgets, "pages": m.contributes.pages, "permissions": m.permissions, "actions": m.actions,
                 "hasBackend": m.backend.is_some(), "routes": m.contributes.routes.len(), "workers": m.contributes.workers.len(), "sessions": m.contributes.sessions,
@@ -460,7 +460,7 @@ fn item<C: Connector>(st: &St<C>, e: &StoredExtension, perms: &[(String, bool)],
     let others: Vec<StoredExtension> = all.iter().filter(|r| r.id != e.id).cloned().collect();
     let dependents: Vec<String> = dependents_of(&e.id, &manifests(all)).iter().map(|d| d.id.clone()).collect();
     json!({
-        "id": e.id, "name": m.name, "version": e.version, "publisher": m.publisher, "description": m.description,
+        "id": e.id, "name": m.name, "version": e.version, "publisher": m.publisher, "description": m.description, "license": m.license,
         "tier": e.tier, "signed": e.signed, "enabled": e.enabled, "status": status(e, &m, perms, &blocked, host),
         "hasData": migrated > 0, "telemon": m.telemon, "requires": dep_status(&m, &versions(&others)), "blockedBy": blocked, "dependents": dependents,
         "widgets": m.contributes.widgets, "pages": m.contributes.pages, "actions": m.actions, "routes": m.contributes.routes, "sessions": m.contributes.sessions, "routerActions": m.contributes.router_actions, "panels": m.contributes.panels, "hasBackend": m.backend.is_some(), "workers": crate::extbackend::worker_view(st, &m), "permissions": permissions, "installedAt": e.installed_at, "updatedAt": e.updated_at,

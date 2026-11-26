@@ -129,6 +129,16 @@ Code comments refer to architecture decisions by number (for example "ADR 0021")
 
 [AGPL-3.0](LICENSE). Telemon uses the AGPL-licensed `mikrotik-rs` client.
 
+Extensions are add-ons made by their publishers, and **each extension has its own license** (free, open source, freemium, paid or
+other) that its page shows; Telemon does not sell, verify or enforce it.
+
+## Disclaimer
+
+Telemon is provided **as is, without warranty**. To the extent the law allows, Teliti, the authors and the contributors are not
+liable for any damage from using it, such as lost, deleted or exposed data, a security breach, a router misconfiguration or
+downtime. Telemon can change your routers, so read the review dialog, keep your own backups and secure access. Read the
+[full disclaimer](DISCLAIMER.md).
+
 ---
 
 Copyright © 2026 [Teliti](https://teliti.net/). See [NOTICE](NOTICE).

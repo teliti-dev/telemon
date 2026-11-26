@@ -35,6 +35,54 @@ pub struct Manifest {
     /// Extension lain yang dibutuhkan (dengan rentang versinya).
     #[serde(default)]
     pub requires: Vec<Requirement>,
+    /// Lisensi extension ini, ditentukan penerbitnya (bebas: gratis, open source, freemium, berbayar, ...). Telemon hanya
+    /// menampilkannya; Telemon tidak menjual, memverifikasi, atau menegakkan lisensi extension (ADR 0030).
+    #[serde(default)]
+    pub license: Option<LicenseDecl>,
+}
+
+/// Jenis lisensi extension yang boleh dideklarasikan.
+pub const LICENSE_KINDS: &[&str] = &["open-source", "free", "freemium", "paid", "trial", "proprietary"];
+
+/// Lisensi sebuah extension, ditulis penerbitnya di manifest.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LicenseDecl {
+    /// `open-source`, `free` (gratis, kode tertutup), `freemium`, `paid`, `trial` atau `proprietary` (syarat khusus).
+    pub kind: String,
+    /// Pengenal SPDX bila open source, mis. `MIT` atau `AGPL-3.0-only`. Wajib untuk `open-source`.
+    #[serde(default)]
+    pub spdx: Option<String>,
+    /// Tautan https ke syarat lengkap (lisensi, harga, atau halaman penerbit).
+    #[serde(default)]
+    pub url: Option<String>,
+    /// Ringkasan satu-dua kalimat untuk pemakai, mis. "Gratis sampai 5 router; Pro berbayar".
+    #[serde(default)]
+    pub summary: String,
+}
+
+impl LicenseDecl {
+    fn validate(&self) -> Result<(), String> {
+        if !LICENSE_KINDS.contains(&self.kind.as_str()) {
+            return Err(format!("Jenis lisensi tidak dikenal: pilih salah satu dari {}", LICENSE_KINDS.join(", ")));
+        }
+        match self.spdx.as_deref() {
+            None if self.kind == "open-source" => return Err("Lisensi open-source wajib memuat pengenal SPDX (mis. MIT)".into()),
+            Some(x) if x.is_empty() || x.len() > 100 || !x.chars().all(|c| c.is_ascii_alphanumeric() || ".+-() ".contains(c)) => {
+                return Err("Pengenal SPDX tidak valid".into());
+            }
+            _ => {}
+        }
+        if let Some(u) = self.url.as_deref() {
+            if !u.starts_with("https://") || u.len() > 300 || u.chars().any(|c| c.is_whitespace() || c.is_control()) {
+                return Err("Tautan lisensi harus https:// tanpa spasi (maks. 300 karakter)".into());
+            }
+        }
+        if self.summary.chars().count() > 200 {
+            return Err("Ringkasan lisensi terlalu panjang (maks. 200 karakter)".into());
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -223,6 +271,9 @@ impl Manifest {
         }
         if self.description.len() > 500 {
             return Err("Deskripsi terlalu panjang".into());
+        }
+        if let Some(l) = &self.license {
+            l.validate()?;
         }
         if !valid_semver(&self.version) {
             return Err("Versi harus X.Y.Z".into());

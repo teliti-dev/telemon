@@ -6,6 +6,7 @@ export const COPYRIGHT = `© 2026 ${ORG_NAME}`
 export const REPO_URL = "https://github.com/teliti-dev/telemon"
 export const ISSUES_URL = `${REPO_URL}/issues`
 export const RELEASES_PAGE_URL = `${REPO_URL}/releases`
+export const DISCLAIMER_URL = `${REPO_URL}/blob/master/DISCLAIMER.md`
 export const LICENSE_URL = `${REPO_URL}/blob/master/LICENSE`
 
 /** Komponen pihak ketiga utama dan lisensinya. */

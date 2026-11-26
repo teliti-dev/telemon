@@ -19,5 +19,7 @@ export default {
   "Lisensi": "License",
   "Telemon adalah perangkat lunak bebas berlisensi GNU AGPL-3.0. Kamu boleh memakai, mempelajari, mengubah, dan membagikannya; versi yang dimodifikasi dan disediakan lewat jaringan harus menyertakan kode sumbernya.": "Telemon is free software licensed under the GNU AGPL-3.0. You may use, study, modify, and share it; a modified version offered over a network must make its source code available.",
   "Baca teks lisensi": "Read the license text",
+  "Baca penafian lengkap": "Read the full disclaimer",
+  "Telemon disediakan apa adanya, tanpa jaminan. Sejauh diizinkan hukum, Teliti, penulis, dan kontributor tidak bertanggung jawab atas kerugian akibat pemakaiannya, misalnya data hilang, terhapus, atau bocor, pembobolan keamanan, salah konfigurasi router, atau gangguan layanan. Telemon bisa mengubah router, jadi baca dialog tinjauan, simpan cadanganmu sendiri, dan amankan aksesnya. Setiap extension punya lisensinya sendiri dari penerbitnya.": "Telemon is provided as is, without warranty. To the extent the law allows, Teliti, the authors and the contributors are not liable for any damage from using it, such as lost, deleted or exposed data, a security breach, a router misconfiguration or downtime. Telemon can change your routers, so read the review dialog, keep your own backups and secure access. Each extension has its own license from its publisher.",
   "Komponen pihak ketiga": "Third-party components",
 } as Record<string, string>

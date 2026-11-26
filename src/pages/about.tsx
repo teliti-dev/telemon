@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { copyText } from "@/hooks/use-copy"
-import { APP_VERSION, COPYRIGHT, ISSUES_URL, LICENSE_URL, ORG_NAME, ORG_URL, RELEASES_PAGE_URL, REPO_URL, THIRD_PARTY } from "@/lib/app-info"
+import { APP_VERSION, COPYRIGHT, DISCLAIMER_URL, ISSUES_URL, LICENSE_URL, ORG_NAME, ORG_URL, RELEASES_PAGE_URL, REPO_URL, THIRD_PARTY } from "@/lib/app-info"
 import { useLang, useT } from "@/lib/i18n"
 import { useStore } from "@/lib/store-context"
 
@@ -94,8 +94,12 @@ export function AboutPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
-          <div>
+          <p className="text-sm text-muted-foreground">
+            {t("Telemon disediakan apa adanya, tanpa jaminan. Sejauh diizinkan hukum, Teliti, penulis, dan kontributor tidak bertanggung jawab atas kerugian akibat pemakaiannya, misalnya data hilang, terhapus, atau bocor, pembobolan keamanan, salah konfigurasi router, atau gangguan layanan. Telemon bisa mengubah router, jadi baca dialog tinjauan, simpan cadanganmu sendiri, dan amankan aksesnya. Setiap extension punya lisensinya sendiri dari penerbitnya.")}
+          </p>
+          <div className="flex flex-wrap gap-2">
             <LinkButton href={LICENSE_URL} icon={null}>{t("Baca teks lisensi")}</LinkButton>
+            <LinkButton href={DISCLAIMER_URL} icon={null}>{t("Baca penafian lengkap")}</LinkButton>
           </div>
           <div>
             <h3 className="mb-2 text-sm font-medium">{t("Komponen pihak ketiga")}</h3>
