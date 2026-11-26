@@ -133,8 +133,8 @@ function TokenChart({ usage }: { usage: AiUsageDay[] }) {
             <thead className="sticky top-0 bg-muted text-xs text-muted-foreground">
               <tr>
                 <th className="px-2 py-1 text-left font-medium">{t("Tanggal")}</th>
-                <th className="px-2 py-1 text-right font-medium">{t("Masuk")}</th>
-                <th className="px-2 py-1 text-right font-medium">{t("Keluar")}</th>
+                <th className="px-2 py-1 text-right font-medium">{t("Token masuk")}</th>
+                <th className="px-2 py-1 text-right font-medium">{t("Token keluar")}</th>
                 <th className="px-2 py-1 text-right font-medium">{t("Permintaan")}</th>
                 <th className="px-2 py-1 text-right font-medium">{t("Biaya")}</th>
               </tr>
