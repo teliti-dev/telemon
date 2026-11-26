@@ -1,3 +1,5 @@
+[← Telemon documentation](Home.md)
+
 # Development
 
 Telemon is a **Tauri v2** desktop app with a Rust core and a React UI.
@@ -77,6 +79,6 @@ cd crates/telemon-demo && cargo build --release
 
 Create a GitHub Release with a tag `vX.Y.Z`. The release workflow builds Linux (`.deb`, `.AppImage`) and Windows (NSIS `.exe`, cross-compiled on Linux), signs the update files and uploads them with `SHA256SUMS.txt` and `latest.json`. Pre-releases go to the test channel.
 
-## Wiki
+## These docs
 
-These pages live in `docs/wiki/` in the main repository and are copied to the GitHub wiki with `scripts/sync-wiki.sh`. Edit them there, in a pull request.
+These pages live in `docs/wiki/` in the main repository and are read right on GitHub. Edit them in a pull request, and keep every link relative (for example `Home.md`) so it works when browsing the repository.

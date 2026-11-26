@@ -1,3 +1,5 @@
+[← Telemon documentation](Home.md)
+
 # Extensions
 
 Extensions add features to Telemon: Overview widgets, pages, router actions, bottom-panel tabs, scheduled jobs and more. Open them from **Settings > Extensions**.

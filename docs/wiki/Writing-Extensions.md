@@ -1,6 +1,8 @@
+[← Telemon documentation](Home.md)
+
 # Writing extensions
 
-This page is for developers who want to build an extension. Read [Extensions](Extensions) first for how users see them.
+This page is for developers who want to build an extension. Read [Extensions](Extensions.md) first for how users see them.
 
 > [!NOTE]
 > Right now Telemon installs only **official** packages, meaning packages signed with the Teliti key. You can build and test your own package, but the app will not install an unsigned or third-party-signed package yet.

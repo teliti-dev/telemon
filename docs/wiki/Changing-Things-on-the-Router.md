@@ -1,3 +1,5 @@
+[← Telemon documentation](Home.md)
+
 # Changing things on the router
 
 Telemon can write **PPP secrets** and **PPP profiles** back to a router. This is **off by default**.

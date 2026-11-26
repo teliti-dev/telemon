@@ -1,3 +1,5 @@
+[← Telemon documentation](Home.md)
+
 # Sharing and public access
 
 The desktop app is one program, but its dashboard can be opened from other devices.
@@ -14,7 +16,7 @@ Both are **off by default** and are controlled from the **Sharing** page, which 
 
 1. Open **Sharing** and turn on the LAN server.
 2. Open the address it shows (the default port is **7878**) from a laptop or phone on the same network.
-3. Sign in with an account. See [Accounts and roles](Accounts-and-Roles).
+3. Sign in with an account. See [Accounts and roles](Accounts-and-Roles.md).
 
 Browsers always need an account. There is no anonymous access.
 
@@ -37,4 +39,4 @@ Public access opens Telemon to the **internet** through a **Cloudflare Quick Tun
 
 ## What the browser can do
 
-A browser sees the same dashboard, limited by the account's **role**. See [Accounts and roles](Accounts-and-Roles). Live events arrive over a WebSocket, with polling as a fallback.
+A browser sees the same dashboard, limited by the account's **role**. See [Accounts and roles](Accounts-and-Roles.md). Live events arrive over a WebSocket, with polling as a fallback.

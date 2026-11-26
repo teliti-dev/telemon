@@ -1,3 +1,5 @@
+[← Telemon documentation](Home.md)
+
 # Adding a router
 
 Telemon reads each MikroTik router over the **RouterOS API**.
@@ -6,7 +8,7 @@ Telemon reads each MikroTik router over the **RouterOS API**.
 
 1. **Create a dedicated API account.** Do not reuse your admin account.
 2. Put it in a group that has the **`read`** policy (and `api`). That is enough to monitor.
-3. Add the **`write`** policy only if you want to edit users and PPP profiles from Telemon. See [Changing things on the router](Changing-Things-on-the-Router).
+3. Add the **`write`** policy only if you want to edit users and PPP profiles from Telemon. See [Changing things on the router](Changing-Things-on-the-Router.md).
 4. Make sure the **API service** is enabled and reachable from the computer that runs Telemon:
 
 | Service | Default port | Use |

@@ -1,3 +1,5 @@
+[← Telemon documentation](Home.md)
+
 # Troubleshooting and FAQ
 
 ## Install and start
@@ -23,7 +25,7 @@ Telemon pins the fingerprint. Open the router, choose **Check certificate**, com
 Events come from the router's session list and log. Wait a polling interval (30 seconds by default). Check that PPPoE logging is on at the router.
 
 **I cannot add or edit a user.**
-Writing is off by default. It needs the router's **Allow editing users and PPP profiles** switch, an API account with `write`, an online router and the Edit permission. See [Changing things on the router](Changing-Things-on-the-Router).
+Writing is off by default. It needs the router's **Allow editing users and PPP profiles** switch, an API account with `write`, an online router and the Edit permission. See [Changing things on the router](Changing-Things-on-the-Router.md).
 
 ## Sharing and accounts
 
@@ -42,7 +44,7 @@ After too many failed sign-ins an account is locked for a few minutes (5 by defa
 ## Data
 
 **Where is my data?**
-In your user data folder. See [Settings, updates and backups](Settings-Updates-and-Backups#where-your-data-lives).
+In your user data folder. See [Settings, updates and backups](Settings-Updates-and-Backups.md#where-your-data-lives).
 
 **Will I lose data if I update or reinstall?**
 No. The data folder is separate from the program. Back it up anyway before testing a pre-release.

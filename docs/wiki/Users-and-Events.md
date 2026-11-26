@@ -1,3 +1,5 @@
+[← Telemon documentation](Home.md)
+
 # Users and events
 
 ## User status
@@ -41,4 +43,4 @@ The PPPoE password is shown in a user's detail **only to people with the Edit pe
 
 ## Data retention
 
-Old events are removed after a while to keep the database small. The defaults are in [Settings, updates and backups](Settings-Updates-and-Backups#defaults).
+Old events are removed after a while to keep the database small. The defaults are in [Settings, updates and backups](Settings-Updates-and-Backups.md#defaults).

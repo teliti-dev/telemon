@@ -1,3 +1,5 @@
+[← Telemon documentation](Home.md)
+
 # Accounts and roles
 
 The **desktop app needs no login**. Anyone using a **browser** (LAN or public) signs in with an account, and what they can see and do depends on their **role**.
@@ -41,4 +43,4 @@ When an account manages other accounts through a browser, the server enforces th
 
 ## Extension access
 
-Each [extension](Extensions) also has its own **Access** page, where you decide per role what the extension may do.
+Each [extension](Extensions.md) also has its own **Access** page, where you decide per role what the extension may do.
