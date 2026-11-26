@@ -463,7 +463,7 @@ fn item<C: Connector>(st: &St<C>, e: &StoredExtension, perms: &[(String, bool)],
         "id": e.id, "name": m.name, "version": e.version, "publisher": m.publisher, "description": m.description,
         "tier": e.tier, "signed": e.signed, "enabled": e.enabled, "status": status(e, &m, perms, &blocked, host),
         "hasData": migrated > 0, "telemon": m.telemon, "requires": dep_status(&m, &versions(&others)), "blockedBy": blocked, "dependents": dependents,
-        "widgets": m.contributes.widgets, "pages": m.contributes.pages, "actions": m.actions, "routes": m.contributes.routes, "sessions": m.contributes.sessions, "hasBackend": m.backend.is_some(), "workers": crate::extbackend::worker_view(st, &m), "permissions": permissions, "installedAt": e.installed_at, "updatedAt": e.updated_at,
+        "widgets": m.contributes.widgets, "pages": m.contributes.pages, "actions": m.actions, "routes": m.contributes.routes, "sessions": m.contributes.sessions, "routerActions": m.contributes.router_actions, "panels": m.contributes.panels, "hasBackend": m.backend.is_some(), "workers": crate::extbackend::worker_view(st, &m), "permissions": permissions, "installedAt": e.installed_at, "updatedAt": e.updated_at,
     })
 }
 
@@ -534,7 +534,7 @@ async fn active<C: Connector>(State(st): State<St<C>>, c: Caller) -> ApiResult<J
             continue;
         }
         let granted: Vec<&str> = perms.iter().filter(|(_, g)| *g).map(|(k, _)| k.as_str()).collect();
-        out.push(json!({ "id": ex.id, "name": m.name, "version": ex.version, "entry": format!("/ext/{}/{}?v={}", ex.id, ui.entry, ex.version), "widgets": m.contributes.widgets, "pages": m.contributes.pages, "permissions": granted, "access": { "level": lvl_name(level), "actions": actions } }));
+        out.push(json!({ "id": ex.id, "name": m.name, "version": ex.version, "entry": format!("/ext/{}/{}?v={}", ex.id, ui.entry, ex.version), "widgets": m.contributes.widgets, "pages": m.contributes.pages, "routerActions": m.contributes.router_actions, "panels": m.contributes.panels, "permissions": granted, "access": { "level": lvl_name(level), "actions": actions } }));
     }
     Ok(Json(json!({ "extensions": out })))
 }

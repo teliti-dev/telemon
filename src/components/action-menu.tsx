@@ -65,16 +65,19 @@ export function ActionMenuItem({
   disabled,
   variant,
   onSelect,
+  title,
 }: {
   children: React.ReactNode
   disabled?: boolean
   variant?: "default" | "destructive"
   onSelect?: () => void
+  /** Keterangan (mis. alasan nonaktif) sebagai tooltip. */
+  title?: string
 }) {
   const ctx = React.useContext(Ctx)
   if (!ctx) {
     return (
-      <DropdownMenuItem disabled={disabled} variant={variant} onSelect={onSelect}>
+      <DropdownMenuItem disabled={disabled} variant={variant} onSelect={onSelect} title={title}>
         {children}
       </DropdownMenuItem>
     )
@@ -83,6 +86,7 @@ export function ActionMenuItem({
     <button
       type="button"
       disabled={disabled}
+      title={title}
       onClick={() => {
         ctx.setOpen(false)
         onSelect?.()

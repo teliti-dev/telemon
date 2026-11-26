@@ -9,6 +9,7 @@ import {
   Trash2Icon,
   DownloadIcon,
   PencilIcon,
+  PuzzleIcon,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -40,11 +41,15 @@ import { formatRelative } from "@/lib/format"
 import { useUpdateGate } from "@/hooks/use-write-gate"
 import { useT } from "@/lib/i18n"
 import { useIsDesktop } from "@/hooks/use-media-query"
+import { routerActionList, useExtensionState } from "@/lib/extensions/registry"
 import { navigate, navigatePath } from "@/lib/route"
 import { useStore } from "@/lib/store-context"
 import type { RouterInfo } from "@/lib/types"
 
 export function RoutersPage() {
+  // Aksi dari extension (mis. Terminal SSH): hanya yang boleh dipakai peran ini; diperbarui saat extension dimuat ulang.
+  useExtensionState()
+  const extActions = routerActionList().filter((a) => !a.action || a.can(a.action))
   const { routers, liveUsers: users, api } = useStore()
   const t = useT()
   const isDesktop = useIsDesktop()
@@ -117,6 +122,16 @@ export function RoutersPage() {
                       >
                         <DownloadIcon /> {t("Import dari Mikrotik")}
                       </ActionMenuItem>
+                      {extActions.length > 0 && <ActionMenuSeparator />}
+                      {extActions.map((a) => {
+                        const ref = { id: r.id, name: r.name, canWrite: r.canWrite, status: r.status }
+                        const why = a.disabled?.(ref) ?? null
+                        return (
+                          <ActionMenuItem key={`${a.extId}/${a.id}`} disabled={!!why} title={why ?? undefined} onSelect={() => a.run(ref)}>
+                            <PuzzleIcon /> {a.title}
+                          </ActionMenuItem>
+                        )
+                      })}
                       <ActionMenuSeparator />
                       <ActionMenuItem variant="destructive" disabled={!!importReason} onSelect={() => setRemoving(r)}>
                         <Trash2Icon /> {t("Hapus dari Telemon")}

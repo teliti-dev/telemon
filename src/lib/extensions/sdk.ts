@@ -37,6 +37,36 @@ export interface ExtPageDef {
   Component: React.ComponentType<ExtPageProps>
 }
 
+/** Router yang dipilih pengguna saat menjalankan aksi router. */
+export interface ExtRouterRef {
+  id: string
+  name: string
+  /** Router boleh ditulis dari Telemon (hak write dan diizinkan pemilik). */
+  canWrite: boolean
+  status: string
+}
+
+export interface ExtRouterActionDef {
+  /** Harus cocok dengan salah satu `contributes.routerActions[].id` di manifest (judulnya dari manifest). */
+  id: string
+  run(router: ExtRouterRef): void
+  /** Alasan entri dinonaktifkan untuk router ini (teks untuk pengguna), atau `null` bila bisa dijalankan. */
+  disabled?(router: ExtRouterRef): string | null
+}
+
+export interface ExtPanelProps {
+  /** Parameter yang diberikan saat panel dibuka (`sdk.panel.open`), mis. `{ router, name }`. */
+  params: Record<string, unknown>
+  /** Tutup tab ini. */
+  close(): void
+}
+
+export interface ExtPanelDef {
+  /** Harus cocok dengan salah satu `contributes.panels[].id` di manifest. */
+  id: string
+  Component: React.ComponentType<ExtPanelProps>
+}
+
 export interface ExtensionSdk {
   apiVersion: typeof EXTENSION_API_VERSION
   extension: { id: string; version: string }
@@ -68,6 +98,16 @@ export interface ExtensionSdk {
    * `new WebSocket(sdk.sessionUrl("ssh", { router, cols, rows }))`. Core menegakkan izin, pin kunci host, dan batas.
    */
   sessionUrl(sessionId: string, params?: Record<string, string | number>): string
+  /**
+   * Panel bawah bertab seperti VS Code. `open` membuka satu tab (atau memfokuskan tab dengan `key` yang sama); komponen
+   * panel tetap hidup selama tab terbuka (mis. sesi terminal tidak putus saat pindah tab).
+   */
+  panel: {
+    open(panelId: string, opts: { key: string; title: string; params?: Record<string, unknown> }): void
+    close(key: string): void
+  }
+  registerRouterAction(def: ExtRouterActionDef): void
+  registerPanel(def: ExtPanelDef): void
   registerWidget(def: ExtWidgetDef): void
   registerPage(def: ExtPageDef): void
 }

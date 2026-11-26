@@ -30,7 +30,32 @@ export interface ExtPageEntry {
   Component: React.ComponentType<{ pageId: string }>
 }
 
+export interface RouterActionEntry {
+  extId: string
+  extName: string
+  id: string
+  title: string
+  /** Aksi yang harus dimiliki peran (kosong = semua). */
+  action?: string
+  can: (action: string) => boolean
+  run: (router: { id: string; name: string; canWrite: boolean; status: string }) => void
+  disabled?: (router: { id: string; name: string; canWrite: boolean; status: string }) => string | null
+}
+
+export interface PanelEntry {
+  extId: string
+  extName: string
+  id: string
+  title: string
+  Component: React.ComponentType<{ params: Record<string, unknown>; close: () => void }>
+}
+
 let pages: ExtPageEntry[] = []
+let routerActions: RouterActionEntry[] = []
+let panels: PanelEntry[] = []
+
+export const routerActionList = () => routerActions
+export const findPanel = (extId: string, panelId: string) => panels.find((p) => p.extId === extId && p.id === panelId) ?? null
 
 export const extensionPages = () => pages
 export function findExtensionPage(extId: string, pageId?: string) {
@@ -39,8 +64,10 @@ export function findExtensionPage(extId: string, pageId?: string) {
 }
 
 /** Ganti semua widget extension di registri Ringkasan dengan `defs`, lalu beri tahu pendengar. */
-export function setExtensionWidgets(defs: WidgetDef[], nextPages: ExtPageEntry[] = []) {
+export function setExtensionWidgets(defs: WidgetDef[], nextPages: ExtPageEntry[] = [], nextActions: RouterActionEntry[] = [], nextPanels: PanelEntry[] = []) {
   pages = nextPages
+  routerActions = nextActions
+  panels = nextPanels
   for (let i = WIDGETS.length - 1; i >= 0; i--) {
     if (isExtWidget(WIDGETS[i].type)) {
       WIDGET_BY_TYPE.delete(WIDGETS[i].type)

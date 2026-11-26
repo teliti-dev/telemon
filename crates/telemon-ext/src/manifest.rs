@@ -131,9 +131,32 @@ pub struct SessionDecl {
     pub action: String,
 }
 
+/// Aksi pada satu router (menu aksi di halaman Router). UI extension mendaftarkan penanganannya dengan `registerRouterAction`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RouterActionDecl {
+    pub id: String,
+    pub title: String,
+    /// Aksi (di `actions[]`) yang harus dimiliki peran agar entri ini tampil; kosong = semua yang punya akses ke extension.
+    #[serde(default)]
+    pub action: Option<String>,
+}
+
+/// Panel di bawah aplikasi (bertab seperti VS Code). UI extension mendaftarkan komponennya dengan `registerPanel`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PanelDecl {
+    pub id: String,
+    pub title: String,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Contributes {
+    #[serde(default)]
+    pub router_actions: Vec<RouterActionDecl>,
+    #[serde(default)]
+    pub panels: Vec<PanelDecl>,
     #[serde(default)]
     pub sessions: Vec<SessionDecl>,
     #[serde(default)]
@@ -230,6 +253,31 @@ impl Manifest {
         if let Some(b) = &self.backend {
             if b.entry != "backend.wasm" {
                 return Err("backend.entry harus backend.wasm di akar paket".into());
+            }
+        }
+        if !self.contributes.router_actions.is_empty() || !self.contributes.panels.is_empty() {
+            if self.ui.is_none() {
+                return Err("Aksi router dan panel butuh ui.entry".into());
+            }
+        }
+        if self.contributes.router_actions.len() > 10 || self.contributes.panels.len() > 5 {
+            return Err("Terlalu banyak aksi router atau panel".into());
+        }
+        let mut seen = std::collections::HashSet::new();
+        for a in &self.contributes.router_actions {
+            if !valid_id(&a.id) || a.id.contains('.') || a.title.trim().is_empty() || a.title.len() > 60 || !seen.insert(a.id.clone()) {
+                return Err(format!("Aksi router tidak valid: {}", a.id));
+            }
+            if let Some(x) = &a.action {
+                if !self.actions.iter().any(|d| d.id == *x) {
+                    return Err(format!("Aksi router {}: aksi {x} tidak dideklarasikan", a.id));
+                }
+            }
+        }
+        let mut seen = std::collections::HashSet::new();
+        for p in &self.contributes.panels {
+            if !valid_id(&p.id) || p.id.contains('.') || p.title.trim().is_empty() || p.title.len() > 60 || !seen.insert(p.id.clone()) {
+                return Err(format!("Panel tidak valid: {}", p.id));
             }
         }
         if self.contributes.sessions.len() > 5 {

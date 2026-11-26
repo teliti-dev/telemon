@@ -6,8 +6,9 @@ import type { WidgetDef } from "@/components/dashboard/widget-types"
 import { useStore } from "@/lib/store-context"
 import { useT } from "@/lib/i18n"
 import type { ActiveExtension } from "@/lib/types"
-import { EXTENSION_API_VERSION, type ExtPageDef, type ExtWidgetDef, type ExtensionModule } from "./sdk"
-import { PuzzleIcon, extWidgetType, markExtensionsReady, setExtensionWidgets, type ExtPageEntry } from "./registry"
+import { closePanelTab, openPanelTab, pruneTabs } from "./panel"
+import { EXTENSION_API_VERSION, type ExtPageDef, type ExtPanelDef, type ExtRouterActionDef, type ExtWidgetDef, type ExtensionModule } from "./sdk"
+import { PuzzleIcon, extWidgetType, markExtensionsReady, setExtensionWidgets, type ExtPageEntry, type PanelEntry, type RouterActionEntry } from "./registry"
 
 const DEFAULT_SIZE = { w: 8, h: 60, minW: 4, minH: 24 }
 
@@ -37,12 +38,14 @@ function extApi(extId: string) {
 }
 
 /** Aktifkan satu extension: impor modulnya dan kumpulkan widget yang didaftarkannya. */
-async function activateOne(ext: ActiveExtension): Promise<{ defs: WidgetDef[]; pages: ExtPageEntry[] }> {
+async function activateOne(ext: ActiveExtension): Promise<{ defs: WidgetDef[]; pages: ExtPageEntry[]; actions: RouterActionEntry[]; panels: PanelEntry[] }> {
   const mod = (await import(/* @vite-ignore */ ext.entry)) as { default?: ExtensionModule } & Partial<ExtensionModule>
   const activate = mod.default?.activate ?? mod.activate
   if (typeof activate !== "function") throw new Error("no activate()") // i18n-ignore: galat pengembang, hanya di konsol
   const registered: ExtWidgetDef[] = []
   const registeredPages: ExtPageDef[] = []
+  const registeredActions: ExtRouterActionDef[] = []
+  const registeredPanels: ExtPanelDef[] = []
   await activate({
     apiVersion: EXTENSION_API_VERSION,
     extension: { id: ext.id, version: ext.version },
@@ -59,6 +62,12 @@ async function activateOne(ext: ActiveExtension): Promise<{ defs: WidgetDef[]; p
     },
     registerWidget: (d) => registered.push(d),
     registerPage: (d) => registeredPages.push(d),
+    registerRouterAction: (d) => registeredActions.push(d),
+    registerPanel: (d) => registeredPanels.push(d),
+    panel: {
+      open: (panelId, o) => openPanelTab({ key: `${ext.id}:${o.key}`, extId: ext.id, panelId, title: o.title, params: o.params ?? {} }),
+      close: (key) => closePanelTab(`${ext.id}:${key}`),
+    },
   })
   const defs: WidgetDef[] = []
   for (const decl of ext.widgets) {
@@ -88,7 +97,17 @@ async function activateOne(ext: ActiveExtension): Promise<{ defs: WidgetDef[]; p
     const r = registeredPages.find((x) => x.id === decl.id)
     if (r) pages.push({ extId: ext.id, extName: ext.name, id: decl.id, title: decl.title, kind: decl.kind, Component: r.Component })
   }
-  return { defs, pages }
+  const actions: RouterActionEntry[] = []
+  for (const decl of ext.routerActions ?? []) {
+    const r = registeredActions.find((x) => x.id === decl.id)
+    if (r) actions.push({ extId: ext.id, extName: ext.name, id: decl.id, title: decl.title, action: decl.action, can: (a) => ext.access.actions.includes(a), run: r.run, disabled: r.disabled })
+  }
+  const panels: PanelEntry[] = []
+  for (const decl of ext.panels ?? []) {
+    const r = registeredPanels.find((x) => x.id === decl.id)
+    if (r) panels.push({ extId: ext.id, extName: ext.name, id: decl.id, title: decl.title, Component: r.Component })
+  }
+  return { defs, pages, actions, panels }
 }
 
 let loading: Promise<void> | null = null
@@ -106,16 +125,22 @@ export function reloadExtensions(load: () => Promise<ActiveExtension[]>): Promis
       const list = await load().catch(() => [] as ActiveExtension[])
       const defs: WidgetDef[] = []
       const pages: ExtPageEntry[] = []
+      const actions: RouterActionEntry[] = []
+      const panels: PanelEntry[] = []
       for (const ext of list) {
         try {
           const r = await activateOne(ext)
           defs.push(...r.defs)
           pages.push(...r.pages)
+          actions.push(...r.actions)
+          panels.push(...r.panels)
         } catch (e) {
           console.error(`Extension ${ext.id} gagal dimuat`, e)
         }
       }
-      setExtensionWidgets(defs, pages)
+      setExtensionWidgets(defs, pages, actions, panels)
+      // Tab panel milik extension yang dimatikan, dihapus, atau tak lagi punya panelnya ikut ditutup.
+      pruneTabs((extId, panelId) => panels.some((p) => p.extId === extId && p.id === panelId))
     } while (reloadRequested)
   })().finally(() => {
     loading = null
