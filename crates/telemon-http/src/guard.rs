@@ -116,8 +116,15 @@ pub async fn security_headers<C: Connector>(State(st): State<Arc<AppState<C>>>, 
     h.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
     if is_api {
         h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-    } else if let Some(csp) = st.cfg.csp.as_deref().and_then(|c| HeaderValue::from_str(c).ok()) {
-        h.insert(header::CONTENT_SECURITY_POLICY, csp);
+    } else {
+        if h.get(header::CONTENT_TYPE).is_some_and(|v| v.as_bytes().starts_with(b"text/html")) {
+            // Halaman UI selalu divalidasi ulang: tanpa ini browser menahan index.html lama (heuristik Last-Modified) dan
+            // terus menampilkan UI versi sebelumnya setelah pembaruan. Berkas aset bernama hash, jadi tetap aman di-cache.
+            h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+        }
+        if let Some(csp) = st.cfg.csp.as_deref().and_then(|c| HeaderValue::from_str(c).ok()) {
+            h.insert(header::CONTENT_SECURITY_POLICY, csp);
+        }
     }
     res
 }
