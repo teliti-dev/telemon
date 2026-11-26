@@ -611,6 +611,8 @@ export interface ExtensionInfo {
 export interface ExtensionList {
   /** false = extension mati di server ini (belum dinyalakan lewat TELEMON_EXTENSIONS). */
   available: boolean
+  /** Jumlah kunci penanda tangan official yang dipercaya build ini; 0 = extension official belum bisa dipasang. */
+  officialKeys?: number
   extensions: ExtensionInfo[]
 }
 

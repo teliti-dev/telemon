@@ -245,6 +245,13 @@ export function SettingsExtensionsPage() {
           <AlertDescription>{t("{reason}. Anda hanya bisa melihat extension.", { reason })}</AlertDescription>
         </Alert>
       )}
+      {list.officialKeys === 0 && (
+        <Alert>
+          <PuzzleIcon />
+          <AlertTitle>{t("Kunci official belum disematkan")}</AlertTitle>
+          <AlertDescription>{t("Build ini belum mempercayai kunci penanda tangan official mana pun, jadi extension belum bisa dipasang dari toko maupun berkas. Pemilik server bisa menambah kunci dengan TELEMON_EXTENSIONS_OFFICIAL_KEYS.")}</AlertDescription>
+        </Alert>
+      )}
 
       {list.extensions.length === 0 ? (
         <Card className="items-center py-12 text-sm text-muted-foreground">{t("Belum ada extension terpasang.")}</Card>
