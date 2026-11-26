@@ -6,9 +6,9 @@ import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import { winClose, winIsMaximized, winMinimize, winStartResize, winToggleMaximize, type ResizeDir } from "@/lib/window"
 
-function Btn({ label, onClick, className, children, compact }: { label: string; onClick: () => void; className?: string; children: React.ReactNode; compact?: boolean }) {
+function Btn({ label, onClick, className, children, compact, flush }: { label: string; onClick: () => void; className?: string; children: React.ReactNode; compact?: boolean; flush?: boolean }) {
   return (
-    <Button type="button" variant="ghost" size="icon" aria-label={label} title={label} onClick={onClick} className={cn(compact && "size-6 md:size-6 [&_svg]:size-3.5", className)}>
+    <Button type="button" variant="ghost" size="icon" aria-label={label} title={label} onClick={onClick} className={cn(compact && !flush && "size-6 md:size-6 [&_svg]:size-3.5", flush && "h-full w-11 rounded-none md:size-auto md:h-full md:w-11 [&_svg]:size-3.5", className)}>
       {children}
     </Button>
   )
@@ -38,8 +38,10 @@ export function WindowControls({ side = "right", compact }: { side?: "left" | "r
     }
   }, [])
 
+  // Gaya Windows ringkas: tombol selebar 44 px setinggi bilah judul, rapat ke tepi kanan.
+  const flush = compact && side === "right"
   const min = (
-    <Btn key="min" compact={compact} label={t("Perkecil jendela")} onClick={winMinimize}>
+    <Btn key="min" compact={compact} flush={flush} label={t("Perkecil jendela")} onClick={winMinimize}>
       <MinusIcon />
     </Btn>
   )
@@ -47,6 +49,7 @@ export function WindowControls({ side = "right", compact }: { side?: "left" | "r
     <Btn
       key="max"
       compact={compact}
+      flush={flush}
       label={maximized ? t("Pulihkan jendela") : t("Perbesar jendela")}
       onClick={() => {
         winToggleMaximize()
@@ -58,13 +61,19 @@ export function WindowControls({ side = "right", compact }: { side?: "left" | "r
     </Btn>
   )
   const close = (
-    <Btn key="close" compact={compact} label={t("Tutup jendela")} onClick={winClose} className="hover:bg-destructive/10 hover:text-destructive">
+    <Btn key="close" compact={compact} flush={flush} label={t("Tutup jendela")} onClick={winClose} className={flush ? "hover:bg-destructive hover:text-white" : "hover:bg-destructive/10 hover:text-destructive"}>
       <XIcon />
     </Btn>
   )
 
   return (
-    <div className={cn("flex shrink-0 items-center gap-0.5", compact ? "py-1" : "py-2", side === "left" ? (compact ? "pr-2 pl-2" : "border-r pr-2 pl-2") : "border-l pr-2 pl-2")} data-window-controls>
+    <div
+      className={cn(
+        "flex shrink-0 items-center",
+        flush ? "self-stretch" : cn("gap-0.5", compact ? "py-1" : "py-2", side === "left" ? (compact ? "pr-2 pl-2" : "border-r pr-2 pl-2") : "border-l pr-2 pl-2")
+      )}
+      data-window-controls
+    >
       {side === "left" ? [close, min, max] : [min, max, close]}
     </div>
   )

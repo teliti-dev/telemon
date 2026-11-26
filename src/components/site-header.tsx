@@ -41,8 +41,8 @@ export function SiteHeader({ title }: { title: string }) {
   // Header menjadi bilah judul (Windows tanpa bilah bawaan, atau macOS Overlay): bisa diseret dan harus tetap terlihat.
   const titlebar = frameless || mac
   React.useEffect(initFrameless, [])
-  // Linux tanpa bilah bawaan: bilah judul dibuat ringkas (setinggi bilah judul bawaan) dengan ikon kecil.
-  const compact = frameless && WINDOW_CONTROLS_SIDE === "left"
+  // Windows, Linux dan macOS: bilah judul sama ringkasnya di semua platform (setinggi bilah judul bawaan), tanpa logo, ikon kecil.
+  const compact = titlebar
 
   const dragProps = titlebar
     ? {
@@ -70,7 +70,7 @@ export function SiteHeader({ title }: { title: string }) {
         )}
       >
         <div className={cn("flex items-stretch", compact ? "h-9" : "h-12 md:h-14")}>
-          {compact && <WindowControls side="left" compact />}
+          {compact && WINDOW_CONTROLS_SIDE === "left" && <WindowControls side="left" compact />}
           {mac && <div aria-hidden className="shrink-0" style={{ width: MAC_TRAFFIC_LIGHTS }} />}
           <div className={cn(PAGE_CONTAINER, "flex h-full min-w-0 items-center gap-2")}>
             <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -118,7 +118,7 @@ export function SiteHeader({ title }: { title: string }) {
             </div>
           </div>
           {mac && <div aria-hidden className="shrink-0" style={{ width: MAC_TRAFFIC_LIGHTS }} />}
-          {frameless && WINDOW_CONTROLS_SIDE === "right" && <WindowControls />}
+          {frameless && WINDOW_CONTROLS_SIDE === "right" && <WindowControls compact />}
           {frameless && NEEDS_RESIZE_HANDLES && <ResizeHandles />}
         </div>
       </div>

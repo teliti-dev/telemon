@@ -8,7 +8,7 @@ Telemon reads each router over the RouterOS API and shows who is connected, who 
 
 ![Overview](docs/screenshots/overview.png)
 
-> Screenshots come from the bundled demo server with simulated routers and made-up users. No real data.
+> Screenshots come from the bundled demo server with simulated routers and made-up users. No real data. The desktop-app image is the demo in desktop mode with simulated window buttons, not a capture of the packaged app.
 
 ## Status
 
@@ -29,7 +29,7 @@ Pre-release (`v0.1.0-rc.x`). The core, server and UI are tested against a simula
 - **AI assistant** (read-only, off until you add a provider): ask questions about your users and events in plain language. It uses OpenAI-compatible APIs (OpenAI, DeepSeek, Gemini, 9Router) or Anthropic, only reads data the asker's role may see, masks IPs and MACs by default, never sees passwords, and has a monthly budget with a usage dashboard. Besides lookups it can compute **event statistics** (per hour or day, most auth failures and disconnects), a **bandwidth summary** (now, average, peak, per user, change versus the previous period, per router) and **router health** (downtime and availability). It can also **propose Overview widget changes** (add, remove, change a widget's router, interface or range): a proposal appears as a card and nothing changes until you press Apply, which uses your own permission. Customer data is sent to the provider you choose.
 - **Extensions (official only for now).** Signed `.tmx` packages (Ed25519) add features to the app: Overview widgets, pages, router actions, bottom-panel tabs, scheduled workers, API routes and a sandboxed WASM backend, with their own database tables through declarative migrations. Install from the built-in store (a signed catalogue), or from a file or link; dependencies and Telemon version ranges are checked before install. Every permission has a toggle the core enforces, each extension has its own Access page per role (none, view, edit plus declared actions), and changes are audited. The first extensions are **Router health** and **Router terminal (SSH)**; the terminal opens from a router's action menu in a bottom panel, pins the router's SSH host key and needs the Router *Edit* permission. On by default in the desktop app; off on a server until `TELEMON_EXTENSIONS=1`. Extension packages live in [`telemon-extensions`](https://github.com/teliti-dev/telemon-extensions); this repo holds the host and the SDK contract (`src/lib/extensions/sdk.ts`). See ADR 0028 and 0029.
 - **Command palette.** Press Ctrl/Cmd+K (or the Search button) to jump anywhere, Spotlight style: arrow keys move, Enter opens, Esc closes. Menu is searched by default; Routers, Users and Other (PPP profiles, extension pages) are switches under the palette or in Appearance, remembered per browser or app, and only offered when your role may see them.
-- **Compact header and menu.** The header holds the logo and Appearance (plus your account in a browser) with the compact menu underneath: Overview, Users, Events, Routers and one **Settings** dropdown that groups Settings (General, AI, Extensions), Manage (Admin, Sharing) and About. In a browser the Search box sits in the middle of the header; in the desktop app press Ctrl/Cmd+K, and a green Live dot you can click shows status (routers online, active users, last event, sharing, version). On Windows, Linux and macOS the header doubles as the title bar; the desktop window has a minimum and maximum size. Phones keep the bottom menu.
+- **Compact header and menu.** The header holds the logo and Appearance (plus your account in a browser) with the compact menu underneath: Overview, Users, Events, Routers and one **Settings** dropdown that groups Settings (General, AI, Extensions), Manage (Admin, Sharing) and About. In a browser the Search box sits in the middle of the header; in the desktop app press Ctrl/Cmd+K, and a green Live dot you can click shows status (routers online, active users, last event, sharing, version). On Windows, Linux and macOS the header doubles as one compact title bar (same look on all three: 36 px, no logo; window buttons on the right on Windows, on the left on Linux, the system traffic lights on macOS); the desktop window has a minimum and maximum size. Phones keep the bottom menu.
 - **Bilingual UI** (English and Indonesian), light and dark themes, responsive down to phone width.
 
 | Users | User detail |
@@ -43,6 +43,10 @@ Pre-release (`v0.1.0-rc.x`). The core, server and UI are tested against a simula
 | Command palette (Ctrl+K) | Extensions |
 |---|---|
 | ![Command palette](docs/screenshots/command-palette.png) | ![Extensions](docs/screenshots/extensions.png) |
+
+| Settings menu | Desktop app (compact title bar) |
+|---|---|
+| ![Settings menu](docs/screenshots/settings-menu.png) | ![Desktop app](docs/screenshots/desktop-app.png) |
 
 **AI dashboard** (Settings): providers, tokens per day, balance and monthly budget.
 
