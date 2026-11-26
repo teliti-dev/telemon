@@ -8,6 +8,11 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
+
+/// Batas ukuran jendela (piksel logis): tidak lebih kecil dari ini supaya susunan desktop tidak rusak, dan tidak lebih besar
+/// dari ini supaya isi tidak merentang berlebihan di layar sangat lebar.
+const MIN_WINDOW: (f64, f64) = (960.0, 620.0);
+const MAX_WINDOW: (f64, f64) = (2560.0, 1600.0);
 use telemon_desktop::{Desktop, DesktopConfig, TunnelChoice, PREFERRED_PORT};
 
 struct Running(Mutex<Option<Desktop>>);
@@ -63,7 +68,16 @@ pub fn run() {
         log::error!("peluncuran gagal: {e}");
         error_url(&e)
       });
-      WebviewWindowBuilder::new(app, "main", url).title("Telemon").inner_size(1280.0, 800.0).min_inner_size(360.0, 560.0).build()?;
+      let builder = WebviewWindowBuilder::new(app, "main", url)
+        .title("Telemon")
+        .inner_size(1280.0, 800.0)
+        .min_inner_size(MIN_WINDOW.0, MIN_WINDOW.1)
+        .max_inner_size(MAX_WINDOW.0, MAX_WINDOW.1);
+      // macOS: bilah judul menjadi lapisan transparan (Overlay) tanpa teks judul; header UI yang menjadi bilah judulnya
+      // dan tombol lalu lintas bawaan mengambang di kiri atas (lihat `useMacOverlay` di src/lib/window.ts).
+      #[cfg(target_os = "macos")]
+      let builder = builder.title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true).traffic_light_position(tauri::LogicalPosition::new(18.0, 21.0));
+      builder.build()?;
       Ok(())
     })
     .build(tauri::generate_context!())

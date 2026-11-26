@@ -38,6 +38,17 @@ export function initFrameless() {
     })
 }
 
+/**
+ * macOS (hanya aplikasi desktop): jendela dibuat dengan bilah judul Overlay (src-tauri/src/lib.rs), jadi isi web sampai ke tepi
+ * atas dan tombol lalu lintas bawaan mengambang di kiri atas. Header UI lalu menjadi bilah judul: bisa diseret, dan memberi
+ * ruang `MAC_TRAFFIC_LIGHTS` px di kiri supaya tidak tertimpa tombol. Tidak perlu panggilan IPC; ini hanya mendeteksi lingkungan.
+ */
+export const MAC_TRAFFIC_LIGHTS = 84
+const isMacApp = () => Boolean(invokeFn()) && /Macintosh|Mac OS X/i.test(navigator.userAgent)
+export function useMacOverlay() {
+  return React.useSyncExternalStore(() => () => {}, isMacApp, () => false)
+}
+
 export function useFrameless() {
   return React.useSyncExternalStore(
     (cb) => {
