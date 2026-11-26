@@ -1,5 +1,5 @@
 /**
- * Jendela tanpa bilah judul bawaan (hanya Windows, hanya aplikasi desktop).
+ * Jendela tanpa bilah judul bawaan (Windows dan Linux, hanya aplikasi desktop).
  *
  * Aplikasi mulai dengan bilah bawaan. UI menghilangkannya sendiri hanya bila jembatan IPC ke jendela terbukti
  * berfungsi, sehingga bila izin Tauri tidak cocok jendela tetap punya tombol tutup. IPC dibuka sempit: hanya
@@ -19,6 +19,13 @@ const call = (cmd: string, extra: Record<string, unknown> = {}) => {
   return invoke ? invoke(`plugin:window|${cmd}`, { label: LABEL, ...extra }) : Promise.reject(new Error("no IPC")) /* i18n-ignore: galat internal, tidak ditampilkan */
 }
 
+const IS_WINDOWS = /Windows/i.test(navigator.userAgent)
+const IS_LINUX = /Linux/i.test(navigator.userAgent) && !/Android/i.test(navigator.userAgent)
+/** Tombol jendela: kiri di Linux (gaya Cutefish/macOS: tutup, perkecil, perbesar), kanan di Windows. */
+export const WINDOW_CONTROLS_SIDE: "left" | "right" = IS_LINUX ? "left" : "right"
+/** Linux tanpa bilah bawaan tidak punya tepi untuk mengubah ukuran; UI menyediakannya sendiri (lihat ResizeHandles). */
+export const NEEDS_RESIZE_HANDLES = IS_LINUX
+
 let frameless = false
 const listeners = new Set<() => void>()
 const emit = () => listeners.forEach((l) => l())
@@ -26,7 +33,7 @@ const emit = () => listeners.forEach((l) => l())
 /** Coba hilangkan bilah judul bawaan; true bila berhasil. Aman dipanggil berulang. */
 let started = false
 export function initFrameless() {
-  if (started || !invokeFn() || !/Windows/i.test(navigator.userAgent)) return
+  if (started || !invokeFn() || !(IS_WINDOWS || IS_LINUX)) return
   started = true
   call("set_decorations", { value: false })
     .then(() => {
@@ -65,3 +72,5 @@ export const winToggleMaximize = () => void call("toggle_maximize").catch(() => 
 export const winClose = () => void call("close").catch(() => {})
 export const winStartDragging = () => void call("start_dragging").catch(() => {})
 export const winIsMaximized = () => call("is_maximized").then((v) => v === true).catch(() => false)
+export type ResizeDir = "East" | "North" | "NorthEast" | "NorthWest" | "South" | "SouthEast" | "SouthWest" | "West"
+export const winStartResize = (dir: ResizeDir) => void call("start_resize_dragging", { value: dir }).catch(() => {})
