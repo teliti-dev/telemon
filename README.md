@@ -12,14 +12,14 @@ Telemon reads each router over the RouterOS API and shows who is connected, who 
 
 ## Status
 
-Pre-release (`v0.1.0-rc.x`). The core, server and UI are tested against a simulated RouterOS. **It has not been run against a real MikroTik router yet.** The Linux `.deb` has been smoke-tested in a clean Ubuntu 24.04 container (installs, starts, serves the UI in the real webview); The Windows build has been tried on a real PC by the maintainer and works; a real desktop keyring on Linux has not been tried. The macOS build crashes at launch on at least one Apple Silicon Mac (under investigation). Treat it as a release candidate and keep write access off until you have tried it on a lab router.
+Pre-release (`v0.1.0-rc.x`). The core, server and UI are tested against a simulated RouterOS. **It has not been run against a real MikroTik router yet (this includes bandwidth charts, Router health and the SSH terminal).** The Linux `.deb` has been smoke-tested in a clean Ubuntu 24.04 container (installs, starts, serves the UI in the real webview); the Windows build has been tried on a real PC by the maintainer and works; a real desktop keyring on Linux has not been tried. The macOS build crashes at launch on at least one Apple Silicon Mac (under investigation). Treat it as a release candidate and keep write access off until you have tried it on a lab router.
 
 ## Features
 
 - **Multi-router monitoring.** Users with status (active, inactive, disabled, auth failed), live events, per-router health, filters and search.
 - **Widget overview.** The Overview page is a grid of widgets (counters, router cards, latest events, events per hour, users per profile and more). Accounts with the Overview *Edit* permission can drag, resize, add and remove widgets; the layout is shared by every account, and an empty layout falls back to the default. Editing is on screens medium and wider; phones show the widgets in one column.
 - **Bandwidth charts.** Telemon reads each router's interface counters on an interval you set (default 60 s, kept 7 days) and turns them into rates. Three widgets use it: a chart per router and interface, the total across all routers' PPPoE sessions, and the average per active user. Pick the router, interface and range in the widget's settings. PPPoE sessions are summed into one `@pppoe` series per router, so totals and per-user averages need no per-session history. The first sample appears one interval after a router is added.
-- **Desktop app** (Windows and Linux, Tauri v2) with a local SQLite database. No server to deploy.
+- **Desktop app** (Windows, Linux and macOS, Tauri v2) with a local SQLite database. No server to deploy.
 - **Share to a browser.** One switch turns the desktop app into a LAN server so you can open the same UI from a laptop or phone.
 - **Public access.** An optional Cloudflare Quick Tunnel exposes the server to the internet. Telemon downloads a pinned, checksum-verified `cloudflared` for you. While public access is on, two-factor authentication is forced and the tunnel turns off by itself after a timer.
 - **Accounts and roles** for browser access: login with TOTP two-factor authentication and recovery codes, custom roles with per-menu permissions (no access, view, edit), and protection against privilege escalation. The desktop app itself needs no login.
@@ -27,7 +27,9 @@ Pre-release (`v0.1.0-rc.x`). The core, server and UI are tested against a simula
 - **Secure storage.** Router credentials and PPPoE passwords are encrypted (ChaCha20-Poly1305). The database key lives in the OS keyring, with a `0600` file fallback when no keyring is available. TLS to the router supports certificate fingerprint pinning.
 - **Signed in-app updates** with a stable and a test channel. The database is backed up before an update installs.
 - **AI assistant** (read-only, off until you add a provider): ask questions about your users and events in plain language. It uses OpenAI-compatible APIs (OpenAI, DeepSeek, Gemini, 9Router) or Anthropic, only reads data the asker's role may see, masks IPs and MACs by default, never sees passwords, and has a monthly budget with a usage dashboard. Besides lookups it can compute **event statistics** (per hour or day, most auth failures and disconnects), a **bandwidth summary** (now, average, peak, per user, change versus the previous period, per router) and **router health** (downtime and availability). It can also **propose Overview widget changes** (add, remove, change a widget's router, interface or range): a proposal appears as a card and nothing changes until you press Apply, which uses your own permission. Customer data is sent to the provider you choose.
-- **Extensions (early, official only).** Signed `.tmx` packages add features to the app; the first contribution type is Overview widgets. Install, turn on and set permissions per extension in Settings > Extensions; every permission has a toggle the core enforces, and changes are audited. On by default in the desktop app; off on a server until `TELEMON_EXTENSIONS=1`. Extension packages live in a separate repository; this repo holds the host and the SDK contract (`src/lib/extensions/sdk.ts`). See ADR 0028.
+- **Extensions (official only for now).** Signed `.tmx` packages (Ed25519) add features to the app: Overview widgets, pages, router actions, bottom-panel tabs, scheduled workers, API routes and a sandboxed WASM backend, with their own database tables through declarative migrations. Install from the built-in store (a signed catalogue), or from a file or link; dependencies and Telemon version ranges are checked before install. Every permission has a toggle the core enforces, each extension has its own Access page per role (none, view, edit plus declared actions), and changes are audited. The first extensions are **Router health** and **Router terminal (SSH)**; the terminal opens from a router's action menu in a bottom panel, pins the router's SSH host key and needs the Router *Edit* permission. On by default in the desktop app; off on a server until `TELEMON_EXTENSIONS=1`. Extension packages live in [`telemon-extensions`](https://github.com/teliti-dev/telemon-extensions); this repo holds the host and the SDK contract (`src/lib/extensions/sdk.ts`). See ADR 0028 and 0029.
+- **Command palette.** Press Ctrl/Cmd+K (or the Search button) to jump anywhere, Spotlight style: arrow keys move, Enter opens, Esc closes. Menu is searched by default; Routers, Users and Other (PPP profiles, extension pages) are switches under the palette or in Appearance, remembered per browser or app, and only offered when your role may see them.
+- **Desktop toolbar.** One compact toolbar with the logo, a green Live dot you can click for a status popup (routers online, active users, last event, sharing, version), the main menu, Search, Appearance and your account. On macOS the toolbar replaces the title bar; on Windows it carries the window buttons. The desktop window has a minimum and maximum size. Phones keep the bottom menu.
 - **Bilingual UI** (English and Indonesian), light and dark themes, responsive down to phone width.
 
 | Users | User detail |
@@ -37,6 +39,10 @@ Pre-release (`v0.1.0-rc.x`). The core, server and UI are tested against a simula
 | Events | Settings |
 |---|---|
 | ![Events](docs/screenshots/events.png) | ![Settings](docs/screenshots/settings.png) |
+
+| Command palette (Ctrl+K) | Extensions |
+|---|---|
+| ![Command palette](docs/screenshots/command-palette.png) | ![Extensions](docs/screenshots/extensions.png) |
 
 **AI dashboard** (Settings): providers, tokens per day, balance and monthly budget.
 
