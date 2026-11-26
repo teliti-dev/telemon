@@ -3,7 +3,8 @@ import { CopyIcon, MinusIcon, SquareIcon, XIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { useT } from "@/lib/i18n"
-import { winClose, winIsMaximized, winMinimize, winToggleMaximize } from "@/lib/window"
+import { cn } from "@/lib/utils"
+import { winClose, winIsMaximized, winMinimize, winStartResize, winToggleMaximize, type ResizeDir } from "@/lib/window"
 
 function Btn({ label, onClick, className, children }: { label: string; onClick: () => void; className?: string; children: React.ReactNode }) {
   return (
@@ -13,8 +14,11 @@ function Btn({ label, onClick, className, children }: { label: string; onClick: 
   )
 }
 
-/** Tombol minimize, maximize/pulihkan, dan tutup gaya Windows di ujung kanan header (hanya mode tanpa bilah bawaan). */
-export function WindowControls() {
+/**
+ * Tombol jendela di header (hanya mode tanpa bilah bawaan). `side="right"` = gaya Windows (perkecil, perbesar, tutup);
+ * `side="left"` = gaya Cutefish/macOS (tutup, perkecil, perbesar) di ujung kiri.
+ */
+export function WindowControls({ side = "right" }: { side?: "left" | "right" }) {
   const t = useT()
   const [maximized, setMaximized] = React.useState(false)
 
@@ -34,24 +38,66 @@ export function WindowControls() {
     }
   }, [])
 
+  const min = (
+    <Btn key="min" label={t("Perkecil jendela")} onClick={winMinimize}>
+      <MinusIcon />
+    </Btn>
+  )
+  const max = (
+    <Btn
+      key="max"
+      label={maximized ? t("Pulihkan jendela") : t("Perbesar jendela")}
+      onClick={() => {
+        winToggleMaximize()
+        // Perbarui ikon segera; event resize dari jendela menyusul bila ukuran benar-benar berubah.
+        window.setTimeout(() => winIsMaximized().then(setMaximized), 250)
+      }}
+    >
+      {maximized ? <CopyIcon className="size-3.5 -scale-x-100" /> : <SquareIcon className="size-3.5" />}
+    </Btn>
+  )
+  const close = (
+    <Btn key="close" label={t("Tutup jendela")} onClick={winClose} className="hover:bg-destructive/10 hover:text-destructive">
+      <XIcon />
+    </Btn>
+  )
+
   return (
-    <div className="flex shrink-0 items-center gap-0.5 border-l py-2 pr-2 pl-2" data-window-controls>
-      <Btn label={t("Perkecil jendela")} onClick={winMinimize}>
-        <MinusIcon />
-      </Btn>
-      <Btn
-        label={maximized ? t("Pulihkan jendela") : t("Perbesar jendela")}
-        onClick={() => {
-          winToggleMaximize()
-          // Perbarui ikon segera; event resize dari jendela menyusul bila ukuran benar-benar berubah.
-          window.setTimeout(() => winIsMaximized().then(setMaximized), 250)
-        }}
-      >
-        {maximized ? <CopyIcon className="size-3.5 -scale-x-100" /> : <SquareIcon className="size-3.5" />}
-      </Btn>
-      <Btn label={t("Tutup jendela")} onClick={winClose} className="hover:bg-destructive/10 hover:text-destructive">
-        <XIcon />
-      </Btn>
+    <div className={cn("flex shrink-0 items-center gap-0.5 py-2", side === "left" ? "border-r pr-2 pl-2" : "border-l pr-2 pl-2")} data-window-controls>
+      {side === "left" ? [close, min, max] : [min, max, close]}
     </div>
+  )
+}
+
+const EDGE = 5
+const HANDLES: { dir: ResizeDir; style: React.CSSProperties; cursor: string }[] = [
+  { dir: "North", style: { top: 0, left: EDGE * 2, right: EDGE * 2, height: EDGE }, cursor: "ns-resize" },
+  { dir: "South", style: { bottom: 0, left: EDGE * 2, right: EDGE * 2, height: EDGE }, cursor: "ns-resize" },
+  { dir: "West", style: { left: 0, top: EDGE * 2, bottom: EDGE * 2, width: EDGE }, cursor: "ew-resize" },
+  { dir: "East", style: { right: 0, top: EDGE * 2, bottom: EDGE * 2, width: EDGE }, cursor: "ew-resize" },
+  { dir: "NorthWest", style: { top: 0, left: 0, width: EDGE * 2, height: EDGE * 2 }, cursor: "nwse-resize" },
+  { dir: "NorthEast", style: { top: 0, right: 0, width: EDGE * 2, height: EDGE * 2 }, cursor: "nesw-resize" },
+  { dir: "SouthWest", style: { bottom: 0, left: 0, width: EDGE * 2, height: EDGE * 2 }, cursor: "nesw-resize" },
+  { dir: "SouthEast", style: { bottom: 0, right: 0, width: EDGE * 2, height: EDGE * 2 }, cursor: "nwse-resize" },
+]
+
+/** Tepi dan sudut tak terlihat untuk mengubah ukuran jendela tanpa bilah bawaan (Linux). */
+export function ResizeHandles() {
+  return (
+    <>
+      {HANDLES.map((h) => (
+        <div
+          key={h.dir}
+          aria-hidden
+          data-window-controls
+          style={{ position: "fixed", zIndex: 100, cursor: h.cursor, ...h.style }}
+          onMouseDown={(e) => {
+            if (e.button !== 0) return
+            e.preventDefault()
+            winStartResize(h.dir)
+          }}
+        />
+      ))}
+    </>
   )
 }

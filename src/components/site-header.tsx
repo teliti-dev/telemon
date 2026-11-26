@@ -6,7 +6,7 @@ import { AppearanceDrawer } from "@/components/appearance-drawer"
 import { SearchTrigger } from "@/components/command-palette"
 import { LiveIndicator } from "@/components/live-indicator"
 import { TelemonLogo } from "@/components/telemon-logo"
-import { WindowControls } from "@/components/window-controls"
+import { ResizeHandles, WindowControls } from "@/components/window-controls"
 import { isNavActive, type NavItem } from "@/components/nav-items"
 import { Badge } from "@/components/ui/badge"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -17,7 +17,7 @@ import { PAGE_CONTAINER } from "@/lib/layout"
 import { href, navigate, navigatePath, useRoute } from "@/lib/route"
 import { useStore } from "@/lib/store-context"
 import { cn } from "@/lib/utils"
-import { initFrameless, MAC_TRAFFIC_LIGHTS, useFrameless, useMacOverlay, winStartDragging, winToggleMaximize } from "@/lib/window"
+import { initFrameless, MAC_TRAFFIC_LIGHTS, NEEDS_RESIZE_HANDLES, useFrameless, useMacOverlay, WINDOW_CONTROLS_SIDE, winStartDragging, winToggleMaximize } from "@/lib/window"
 
 /**
  * Dua baris, menempel di atas:
@@ -66,6 +66,7 @@ export function SiteHeader({ title }: { title: string }) {
         )}
       >
         <div className="flex h-12 items-stretch md:h-14">
+          {frameless && WINDOW_CONTROLS_SIDE === "left" && <WindowControls side="left" />}
           {mac && <div aria-hidden className="shrink-0" style={{ width: MAC_TRAFFIC_LIGHTS }} />}
           <div className={cn(PAGE_CONTAINER, "flex h-full min-w-0 items-center gap-2")}>
             <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -113,7 +114,8 @@ export function SiteHeader({ title }: { title: string }) {
             </div>
           </div>
           {mac && <div aria-hidden className="shrink-0" style={{ width: MAC_TRAFFIC_LIGHTS }} />}
-          {frameless && <WindowControls />}
+          {frameless && WINDOW_CONTROLS_SIDE === "right" && <WindowControls />}
+          {frameless && NEEDS_RESIZE_HANDLES && <ResizeHandles />}
         </div>
       </div>
 
