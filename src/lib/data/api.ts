@@ -6,6 +6,8 @@ import type {
   AiDashboard,
   AiUiContext,
   ActiveExtension,
+  ExtensionAccess,
+  ExtensionLevel,
   ExtensionInfo,
   ExtensionInspect,
   ExtensionList,
@@ -164,6 +166,10 @@ export interface TelemonApi {
   installExtension(file: Blob): Promise<ExtensionInfo>
   /** Nyalakan/matikan dan ubah izin satu extension. */
   updateExtension(id: string, patch: { enabled?: boolean; perms?: Record<string, boolean> }): Promise<ExtensionInfo>
+  /** Akses per peran pada satu extension (izin Admin Lihat). */
+  getExtensionAccess(id: string): Promise<ExtensionAccess>
+  /** Tetapkan level dan aksi satu peran (izin Admin Ubah; aturan anti-kenaikan izin berlaku). */
+  setExtensionAccess(id: string, roleId: string, access: { level: ExtensionLevel; actions: string[] }): Promise<void>
   /** Hapus extension; `deleteData` juga menghapus tabel dan catatan migrasinya (bawaan: data disimpan). */
   removeExtension(id: string, opts?: { deleteData?: boolean }): Promise<void>
   /** Antarmuka yang pernah terbaca pada satu router (termasuk `@pppoe`). */

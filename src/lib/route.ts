@@ -14,6 +14,7 @@ export const PAGES = [
   "import",
   "appearance",
   "ai",
+  "ext",
 ] as const
 export type Page = (typeof PAGES)[number]
 

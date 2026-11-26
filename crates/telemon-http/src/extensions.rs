@@ -36,6 +36,8 @@ pub fn routes<C: Connector>() -> Router<St<C>> {
         .route("/api/extensions/inspect", post(inspect::<C>).layer(DefaultBodyLimit::max(Limits::default().max_package + 4096)))
         .route("/api/extensions/active", get(active::<C>))
         .route("/api/extensions/{id}", axum::routing::patch(patch::<C>).delete(remove::<C>))
+        .route("/api/extensions/{id}/access", get(access_get::<C>))
+        .route("/api/extensions/{id}/access/{role}", axum::routing::put(access_put::<C>))
         .route("/ext/{id}/{*path}", get(file::<C>))
 }
 
@@ -158,9 +160,137 @@ async fn install<C: Connector>(State(st): State<St<C>>, c: Caller, body: Bytes) 
         })
         .map_err(ApiError::internal)?;
     st.ext_cache.lock().expect("lock").remove(&id);
+    // Pasang baru: peran yang boleh mengubah menu Admin mendapat akses penuh; peran lain tanpa akses
+    // sampai admin mengaturnya di halaman Akses.
+    if prev.is_none()
+        && let Ok(roles) = st.auth.list_roles(None)
+    {
+        let all: Vec<String> = p.manifest.actions.iter().map(|a| a.id.clone()).collect();
+        for r in roles.iter().filter(|r| r.permissions.get(Resource::Admin) == Level::Update) {
+            let _ = st.telemon.with_store(|s| s.ext_access_set(&id, &r.id, "update", &all));
+        }
+    }
     let from = prev.as_ref().map(|e| e.version.clone());
     audit(&st, &c, if prev.is_some() { "extension.update" } else { "extension.install" }, &id, format!("Pasang extension {} {}", p.manifest.name, p.manifest.version), vec![Change { field: "versi".into(), from, to: Some(p.manifest.version.clone()) }]);
     Ok(Json(view(&st, &id)?))
+}
+
+// ---------------- akses per peran (ADR 0028) ----------------
+
+fn lvl(s: &str) -> u8 {
+    match s {
+        "update" => 2,
+        "read" => 1,
+        _ => 0,
+    }
+}
+
+fn lvl_name(n: u8) -> &'static str {
+    match n {
+        2 => "update",
+        1 => "read",
+        _ => "none",
+    }
+}
+
+/// Akses efektif pemanggil pada satu extension: pemilik desktop = penuh; akun = baris perannya (tanpa baris =
+/// tanpa akses). Aksi efektif = aksi yang diberikan dan dideklarasikan, yang level minimalnya tidak melebihi level peran.
+fn effective<C: Connector>(st: &St<C>, c: &Caller, id: &str, m: &Manifest) -> (u8, Vec<String>) {
+    if c.desktop {
+        return (2, m.actions.iter().map(|a| a.id.clone()).collect());
+    }
+    let rows = st.telemon.with_store(|s| s.ext_access_list(id)).unwrap_or_default();
+    let Some((_, level, granted)) = rows.into_iter().find(|(r, _, _)| *r == c.session.role_id) else { return (0, vec![]) };
+    let l = lvl(&level);
+    let actions = m.actions.iter().filter(|a| granted.contains(&a.id) && lvl(&a.level) <= l).map(|a| a.id.clone()).collect();
+    (l, actions)
+}
+
+fn manifest_of(row: &StoredExtension) -> ApiResult<Manifest> {
+    serde_json::from_str(&row.manifest).map_err(ApiError::internal)
+}
+
+async fn access_get<C: Connector>(State(st): State<St<C>>, c: Caller, Path(id): Path<String>) -> ApiResult<Json<Value>> {
+    manage(&st, &c, Level::Read)?;
+    cfg(&st)?;
+    let row = st.telemon.with_store(|s| s.ext_get(&id)).map_err(ApiError::internal)?.ok_or_else(ApiError::not_found)?;
+    let m = manifest_of(&row)?;
+    let rows = st.telemon.with_store(|s| s.ext_access_list(&id)).map_err(ApiError::internal)?;
+    let roles = st.auth.list_roles(Some(&c.session)).map_err(ApiError::from)?;
+    let out: Vec<Value> = roles
+        .iter()
+        .map(|r| {
+            let (level, actions) = rows.iter().find(|(rid, _, _)| *rid == r.id).map(|(_, l, a)| (l.clone(), a.clone())).unwrap_or(("none".into(), vec![]));
+            json!({ "id": r.id, "name": r.name, "builtin": r.builtin, "level": level, "actions": actions, "own": r.id == c.session.role_id && !c.desktop })
+        })
+        .collect();
+    let (my_level, my_actions) = effective(&st, &c, &id, &m);
+    Ok(Json(json!({ "actions": m.actions, "roles": out, "me": { "level": lvl_name(my_level), "actions": my_actions } })))
+}
+
+#[derive(Deserialize)]
+struct AccessReq {
+    level: String,
+    #[serde(default)]
+    actions: Vec<String>,
+}
+
+/// Aturan anti-kenaikan izin (ADR 0006) berlaku: tidak mengubah peran sendiri, tidak memberi lebih daripada
+/// yang dimiliki sendiri, tidak mengelola peran yang aksesnya sudah lebih tinggi daripada milik sendiri.
+async fn access_put<C: Connector>(State(st): State<St<C>>, c: Caller, Path((id, role)): Path<(String, String)>, Json(req): Json<AccessReq>) -> ApiResult<Json<Value>> {
+    manage(&st, &c, Level::Update)?;
+    cfg(&st)?;
+    let row = st.telemon.with_store(|s| s.ext_get(&id)).map_err(ApiError::internal)?.ok_or_else(ApiError::not_found)?;
+    let m = manifest_of(&row)?;
+    if !matches!(req.level.as_str(), "none" | "read" | "update") {
+        return Err(ApiError::bad("Level harus none, read, atau update"));
+    }
+    let want = lvl(&req.level);
+    let roles = st.auth.list_roles(Some(&c.session)).map_err(ApiError::from)?;
+    if !roles.iter().any(|r| r.id == role) {
+        return Err(ApiError::not_found());
+    }
+    let mut actions: Vec<String> = Vec::new();
+    for a in &req.actions {
+        let decl = m.actions.iter().find(|d| d.id == *a).ok_or_else(|| ApiError::bad(format!("Aksi tidak dikenal: {a}")))?;
+        if lvl(&decl.level) > want {
+            return Err(ApiError::bad(format!("Aksi {a} butuh level {}", decl.level)));
+        }
+        if !actions.contains(a) {
+            actions.push(a.clone());
+        }
+    }
+    if want == 0 {
+        actions.clear();
+    }
+    let rows = st.telemon.with_store(|s| s.ext_access_list(&id)).map_err(ApiError::internal)?;
+    let (cur_level, cur_actions) = rows.iter().find(|(r, _, _)| *r == role).map(|(_, l, a)| (lvl(l), a.clone())).unwrap_or((0, vec![]));
+    if !c.desktop {
+        let (mine, my_actions) = effective(&st, &c, &id, &m);
+        if role == c.session.role_id {
+            return Err(ApiError::forbidden("Tidak boleh mengubah akses peran Anda sendiri"));
+        }
+        if want > mine || actions.iter().any(|a| !my_actions.contains(a)) {
+            return Err(ApiError::forbidden("Tidak boleh memberi akses yang melebihi akses Anda sendiri"));
+        }
+        if cur_level > mine {
+            return Err(ApiError::forbidden("Tidak boleh mengelola peran yang aksesnya lebih tinggi daripada Anda"));
+        }
+    }
+    st.telemon.with_store(|s| s.ext_access_set(&id, &role, &req.level, &actions)).map_err(ApiError::internal)?;
+    let name = roles.iter().find(|r| r.id == role).map(|r| r.name.clone()).unwrap_or_default();
+    audit(
+        &st,
+        &c,
+        "extension.access",
+        &id,
+        format!("Ubah akses peran {name} pada extension {}", m.name),
+        vec![
+            Change { field: "level".into(), from: Some(lvl_name(cur_level).into()), to: Some(req.level.clone()) },
+            Change { field: "aksi".into(), from: Some(cur_actions.join(",")), to: Some(actions.join(",")) },
+        ],
+    );
+    Ok(Json(json!({ "role": role, "level": req.level, "actions": actions })))
 }
 
 /// Terapkan migrasi database paket yang belum terapan (ADR 0028). Urutan: periksa rencana (migrasi yang sudah
@@ -214,7 +344,7 @@ fn item(e: &StoredExtension, perms: &[(String, bool)], all: &[StoredExtension], 
         "id": e.id, "name": m.name, "version": e.version, "publisher": m.publisher, "description": m.description,
         "tier": e.tier, "signed": e.signed, "enabled": e.enabled, "status": status(e, &m, perms, &blocked, host),
         "hasData": migrated > 0, "telemon": m.telemon, "requires": dep_status(&m, &versions(&others)), "blockedBy": blocked, "dependents": dependents,
-        "widgets": m.contributes.widgets, "permissions": permissions, "installedAt": e.installed_at, "updatedAt": e.updated_at,
+        "widgets": m.contributes.widgets, "pages": m.contributes.pages, "actions": m.actions, "permissions": permissions, "installedAt": e.installed_at, "updatedAt": e.updated_at,
     })
 }
 
@@ -257,7 +387,7 @@ async fn list<C: Connector>(State(st): State<St<C>>, c: Caller) -> ApiResult<Jso
 }
 
 /// Untuk pemuat UI: hanya yang aktif dan official, dengan izin yang diberikan.
-async fn active<C: Connector>(State(st): State<St<C>>, _c: Caller) -> ApiResult<Json<Value>> {
+async fn active<C: Connector>(State(st): State<St<C>>, c: Caller) -> ApiResult<Json<Value>> {
     if st.cfg.extensions.is_none() {
         return Ok(Json(json!({ "extensions": [] })));
     }
@@ -280,8 +410,12 @@ async fn active<C: Connector>(State(st): State<St<C>>, _c: Caller) -> ApiResult<
             continue;
         }
         let Some(ui) = &m.ui else { continue };
+        let (level, actions) = effective(&st, &c, &ex.id, &m);
+        if level == 0 {
+            continue;
+        }
         let granted: Vec<&str> = perms.iter().filter(|(_, g)| *g).map(|(k, _)| k.as_str()).collect();
-        out.push(json!({ "id": ex.id, "name": m.name, "version": ex.version, "entry": format!("/ext/{}/{}?v={}", ex.id, ui.entry, ex.version), "widgets": m.contributes.widgets, "permissions": granted }));
+        out.push(json!({ "id": ex.id, "name": m.name, "version": ex.version, "entry": format!("/ext/{}/{}?v={}", ex.id, ui.entry, ex.version), "widgets": m.contributes.widgets, "pages": m.contributes.pages, "permissions": granted, "access": { "level": lvl_name(level), "actions": actions } }));
     }
     Ok(Json(json!({ "extensions": out })))
 }
@@ -401,12 +535,16 @@ fn mime(path: &str) -> &'static str {
     }
 }
 
-async fn file<C: Connector>(State(st): State<St<C>>, _c: Caller, Path((id, path)): Path<(String, String)>) -> Result<Response, ApiError> {
+async fn file<C: Connector>(State(st): State<St<C>>, c: Caller, Path((id, path)): Path<(String, String)>) -> Result<Response, ApiError> {
     if st.cfg.extensions.is_none() || !valid_id(&id) || !path.starts_with("ui/") {
         return Err(ApiError::not_found());
     }
     let row = st.telemon.with_store(|s| s.ext_get(&id)).map_err(ApiError::internal)?;
     let Some(e) = row.filter(|e| e.enabled && e.tier == "official") else { return Err(ApiError::not_found()) };
+    let m = manifest_of(&e)?;
+    if effective(&st, &c, &id, &m).0 == 0 {
+        return Err(ApiError::not_found());
+    }
     let (st2, id2, v2) = (st.clone(), id.clone(), e.version.clone());
     let pkg = tokio::task::spawn_blocking(move || load(&st2, &id2, &v2)).await.map_err(ApiError::internal)?.ok_or_else(ApiError::not_found)?;
     let bytes = pkg.file(&path).ok_or_else(ApiError::not_found)?.to_vec();

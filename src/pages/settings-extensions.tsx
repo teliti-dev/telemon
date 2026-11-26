@@ -1,5 +1,5 @@
 import * as React from "react"
-import { Loader2Icon, PuzzleIcon, ShieldAlertIcon, Trash2Icon, UploadIcon } from "lucide-react"
+import { ExternalLinkIcon, KeyRoundIcon, Loader2Icon, PuzzleIcon, ShieldAlertIcon, Trash2Icon, UploadIcon } from "lucide-react"
 import { toast } from "sonner"
 
 import { ConfirmDialog } from "@/components/confirm-dialog"
@@ -14,9 +14,10 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
 import { useUpdateGate } from "@/hooks/use-write-gate"
 import { reloadExtensions } from "@/lib/extensions/loader"
-import { useT } from "@/lib/i18n"
+import { tk, useT } from "@/lib/i18n"
 import { useStore } from "@/lib/store-context"
-import type { ExtensionInfo, ExtensionInspect, ExtensionList, ExtensionRequirement } from "@/lib/types"
+import { pathHref } from "@/lib/route"
+import type { ExtensionAccess, ExtensionInfo, ExtensionInspect, ExtensionLevel, ExtensionList, ExtensionRequirement } from "@/lib/types"
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
@@ -77,7 +78,124 @@ function Requires({ list }: { list: ExtensionRequirement[] }) {
   )
 }
 
-function ExtensionCard({ ext, locked, onChanged, onRemove }: { ext: ExtensionInfo; locked: boolean; onChanged: (e: ExtensionInfo) => void; onRemove: () => void }) {
+const LEVELS: ExtensionLevel[] = ["none", "read", "update"]
+const LEVEL_LABEL = { none: tk("Tanpa akses"), read: tk("Lihat"), update: tk("Ubah") } as const
+const rank = (l: ExtensionLevel) => LEVELS.indexOf(l)
+
+/** Matriks akses per peran untuk satu extension: level menu dan aksi yang dideklarasikan manifest (ADR 0028). */
+function AccessDialog({ ext, locked, onClose }: { ext: ExtensionInfo | null; locked: boolean; onClose: () => void }) {
+  const t = useT()
+  const { api } = useStore()
+  const [data, setData] = React.useState<ExtensionAccess | null>(null)
+  const [error, setError] = React.useState<string | null>(null)
+  const [busy, setBusy] = React.useState<string | null>(null)
+  const id = ext?.id
+
+  React.useEffect(() => {
+    if (!id) return
+    let cancelled = false
+    api
+      .getExtensionAccess(id)
+      .then((d) => !cancelled && (setData(d), setError(null)))
+      .catch((e) => !cancelled && setError(errMsg(e)))
+    return () => {
+      cancelled = true
+    }
+  }, [api, id])
+
+  async function save(roleId: string, level: ExtensionLevel, actions: string[]) {
+    if (!id) return
+    setBusy(roleId)
+    try {
+      await api.setExtensionAccess(id, roleId, { level, actions })
+      setData((d) => (d ? { ...d, roles: d.roles.map((r) => (r.id === roleId ? { ...r, level, actions } : r)) } : d))
+      await reloadExtensions(() => api.getActiveExtensions())
+    } catch (e) {
+      toast.error(errMsg(e))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <Dialog open={!!ext} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[88svh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{t("Akses {name}", { name: ext?.name ?? "" })}</DialogTitle>
+          <DialogDescription>{t("Atur peran mana yang boleh membuka extension ini dan aksi apa yang boleh dilakukan. Anda tidak bisa memberi lebih daripada akses Anda sendiri atau mengubah peran Anda sendiri.")}</DialogDescription>
+        </DialogHeader>
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+        {!data && !error && <Skeleton className="h-24" />}
+        {data && (
+          <ul className="grid gap-3">
+            {data.roles.map((r) => {
+              const mine = rank(data.me.level)
+              const off = locked || r.own || busy === r.id || rank(r.level) > mine
+              return (
+                <li key={r.id} className="grid gap-2 rounded-lg border p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium">{r.name}</span>
+                    {r.own && <Badge variant="outline">{t("Peran Anda")}</Badge>}
+                    <select
+                      aria-label={t("Level akses {name}", { name: r.name })}
+                      className="ml-auto h-9 rounded-md border bg-background px-2 text-sm md:h-7"
+                      value={r.level}
+                      disabled={off}
+                      onChange={(e) => {
+                        const level = e.target.value as ExtensionLevel
+                        const keep = r.actions.filter((a) => rank(data.actions.find((d) => d.id === a)?.level ?? "read") <= rank(level))
+                        void save(r.id, level, level === "none" ? [] : keep)
+                      }}
+                    >
+                      {LEVELS.filter((l) => rank(l) <= mine).map((l) => (
+                        <option key={l} value={l}>
+                          {t(LEVEL_LABEL[l] /* i18n-ignore: kunci tk */)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {data.actions.length > 0 && r.level !== "none" && (
+                    <div className="grid gap-1.5">
+                      {data.actions.map((a) => {
+                        const need = rank(a.level) > rank(r.level) || !data.me.actions.includes(a.id)
+                        return (
+                          <div key={a.id} className="flex items-start gap-2">
+                            <Checkbox
+                              id={`${r.id}-${a.id}`}
+                              checked={r.actions.includes(a.id)}
+                              disabled={off || need}
+                              onCheckedChange={(v) => void save(r.id, r.level, v === true ? [...r.actions, a.id] : r.actions.filter((x) => x !== a.id))}
+                            />
+                            <Label htmlFor={`${r.id}-${a.id}`} className="text-sm font-normal">
+                              {a.label}
+                              {a.level === "update" && <span className="ml-2 text-xs text-muted-foreground">({t("butuh Ubah")})</span>}
+                              {a.description && <span className="block text-xs text-muted-foreground">{a.description}</span>}
+                            </Label>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            {t("Tutup")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function ExtensionCard({ ext, locked, onChanged, onRemove, onAccess }: { ext: ExtensionInfo; locked: boolean; onChanged: (e: ExtensionInfo) => void; onRemove: () => void; onAccess: () => void }) {
   const t = useT()
   const { api } = useStore()
   const [busy, setBusy] = React.useState(false)
@@ -158,7 +276,17 @@ function ExtensionCard({ ext, locked, onChanged, onRemove }: { ext: ExtensionInf
             onToggle={(id, on) => patch({ perms: { [id]: on } })}
           />
         </div>
-        <div className="flex justify-end">
+        <div className="flex flex-wrap justify-end gap-2">
+          {ext.enabled && ext.status === "ok" && (ext.pages ?? []).map((pg) => (
+            <Button key={pg.id} variant="outline" size="sm" asChild>
+              <a href={pathHref("ext", [ext.id, pg.id])}>
+                <ExternalLinkIcon /> {pg.title}
+              </a>
+            </Button>
+          ))}
+          <Button variant="outline" size="sm" onClick={onAccess}>
+            <KeyRoundIcon /> {t("Akses")}
+          </Button>
           <Button variant="outline" size="sm" disabled={locked || busy || ext.dependents.length > 0} title={ext.dependents.length > 0 ? t("Masih dibutuhkan extension lain") : undefined} onClick={onRemove}>
             <Trash2Icon /> {t("Hapus")}
           </Button>
@@ -256,6 +384,7 @@ export function SettingsExtensionsPage() {
   const [file, setFile] = React.useState<File | null>(null)
   const [removing, setRemoving] = React.useState<ExtensionInfo | null>(null)
   const [deleteData, setDeleteData] = React.useState(false)
+  const [accessFor, setAccessFor] = React.useState<ExtensionInfo | null>(null)
   const input = React.useRef<HTMLInputElement>(null)
 
   const load = React.useCallback(() => {
@@ -329,7 +458,7 @@ export function SettingsExtensionsPage() {
       {list.extensions.length === 0 ? (
         <p className="text-sm text-muted-foreground">{t("Belum ada extension terpasang.")}</p>
       ) : (
-        list.extensions.map((e) => <ExtensionCard key={e.id} ext={e} locked={locked} onChanged={upsert} onRemove={() => setRemoving(e)} />)
+        list.extensions.map((e) => <ExtensionCard key={e.id} ext={e} locked={locked} onChanged={upsert} onRemove={() => setRemoving(e)} onAccess={() => setAccessFor(e)} />)
       )}
       <InstallDialog
         inspect={inspect}
@@ -343,6 +472,7 @@ export function SettingsExtensionsPage() {
           load()
         }}
       />
+      <AccessDialog ext={accessFor} locked={locked} onClose={() => setAccessFor(null)} />
       <ConfirmDialog
         open={!!removing}
         onOpenChange={(o) => !o && setRemoving(null)}

@@ -243,6 +243,14 @@ CREATE TABLE extension_migrations (
   applied_at INTEGER NOT NULL,
   PRIMARY KEY (ext_id, version)
 );
+", "
+CREATE TABLE extension_access (
+  ext_id TEXT NOT NULL,
+  role_id TEXT NOT NULL,
+  level TEXT NOT NULL,
+  actions TEXT NOT NULL,
+  PRIMARY KEY (ext_id, role_id)
+);
 "];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -1168,7 +1176,31 @@ impl Store {
     /// Hapus extension dan semua izinnya.
     pub fn ext_delete(&mut self, id: &str) -> Result<bool> {
         self.conn.execute("DELETE FROM extension_perms WHERE ext_id=?1", params![id])?;
+        self.conn.execute("DELETE FROM extension_access WHERE ext_id=?1", params![id])?;
         Ok(self.conn.execute("DELETE FROM extensions WHERE id=?1", params![id])? > 0)
+    }
+
+    /// Akses per peran untuk satu extension: (peran, level `none|read|update`, aksi yang diberikan).
+    pub fn ext_access_list(&self, id: &str) -> Result<Vec<(String, String, Vec<String>)>> {
+        let mut st = self.conn.prepare("SELECT role_id, level, actions FROM extension_access WHERE ext_id=?1 ORDER BY role_id")?;
+        let rows = st.query_map(params![id], |r| {
+            let actions: String = r.get(2)?;
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, actions.split(',').filter(|a| !a.is_empty()).map(str::to_string).collect()))
+        })?;
+        rows.collect()
+    }
+
+    /// Tetapkan akses satu peran (`none` menghapus barisnya). Id aksi tidak boleh memuat koma.
+    pub fn ext_access_set(&mut self, id: &str, role_id: &str, level: &str, actions: &[String]) -> Result<()> {
+        if level == "none" {
+            self.conn.execute("DELETE FROM extension_access WHERE ext_id=?1 AND role_id=?2", params![id, role_id])?;
+            return Ok(());
+        }
+        self.conn.execute(
+            "INSERT INTO extension_access (ext_id, role_id, level, actions) VALUES (?1,?2,?3,?4) ON CONFLICT(ext_id, role_id) DO UPDATE SET level=?3, actions=?4",
+            params![id, role_id, level, actions.join(",")],
+        )?;
+        Ok(())
     }
 
     /// Migrasi extension yang sudah terapan: (versi, checksum), urut versi.
@@ -2078,6 +2110,20 @@ mod ext_tests {
         assert_eq!(s.ext_perms("net.t.a").unwrap(), vec![("data.events".to_string(), false)]);
         assert!(s.ext_delete("net.t.a").unwrap());
         assert!(s.ext_list().unwrap().is_empty() && s.ext_perms("net.t.a").unwrap().is_empty());
+    }
+
+    #[test]
+    fn extension_access_per_role() {
+        let mut s = Store::open_in_memory().unwrap();
+        s.ext_access_set("net.t.a", "role-x", "update", &["export".into(), "run".into()]).unwrap();
+        s.ext_access_set("net.t.a", "role-y", "read", &[]).unwrap();
+        assert_eq!(s.ext_access_list("net.t.a").unwrap(), vec![("role-x".into(), "update".into(), vec!["export".to_string(), "run".to_string()]), ("role-y".into(), "read".into(), vec![])]);
+        s.ext_access_set("net.t.a", "role-x", "read", &["run".into()]).unwrap();
+        s.ext_access_set("net.t.a", "role-y", "none", &[]).unwrap();
+        assert_eq!(s.ext_access_list("net.t.a").unwrap(), vec![("role-x".into(), "read".into(), vec!["run".to_string()])]);
+        s.ext_upsert("net.t.a", "1.0.0", "official", None, true, "{}", 1).unwrap();
+        s.ext_delete("net.t.a").unwrap();
+        assert!(s.ext_access_list("net.t.a").unwrap().is_empty(), "hapus extension menghapus aksesnya");
     }
 
     #[test]

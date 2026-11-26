@@ -2093,6 +2093,87 @@ mod extensions {
         let _ = std::fs::remove_dir_all(&d);
     }
 
+    fn pkg_actions(version: &str) -> Vec<u8> {
+        let m = format!(
+            r#"{{"id":"net.teliti.acl","name":"Acl","version":"{version}","apiVersion":1,"publisher":"Teliti","ui":{{"entry":"ui/index.js"}},
+            "contributes":{{"pages":[{{"id":"home","title":"Beranda","kind":"dashboard"}}]}},
+            "actions":[{{"id":"view-report","label":"Lihat laporan"}},{{"id":"run","label":"Jalankan","level":"update"}}]}}"#
+        );
+        pack(&[("manifest.json".into(), m.into_bytes()), ("ui/index.js".into(), b"export default {}".to_vec())], Some(OFFICIAL)).unwrap()
+    }
+
+    #[tokio::test]
+    async fn halaman_akses_per_extension_dan_pengaman_kenaikan() {
+        let d = dir();
+        let t = harness_with(on(&d));
+        let sub = t.auth.create_role(None, &RoleInput { name: "sub-admin".into(), description: String::new(), permissions: Permissions::default().with(Resource::Admin, Level::Update) }).unwrap();
+        t.account("admin", "role-admin");
+        t.account("sub", &sub.id);
+        t.account("pantau", "role-monitor");
+        let (a, s, p) = (t.login("admin").await, t.login("sub").await, t.login("pantau").await);
+        let id = "net.teliti.acl";
+        let access = |role: &str| format!("/api/extensions/{id}/access/{role}");
+        let put = |ck: String, role: String, body: Value| {
+            let t = &t;
+            async move { t.call(Method::PUT, &access(&role), Some(body), Some(&ck), &[], LAN).await }
+        };
+        assert_eq!(install(&t, pkg_actions("1.0.0"), &a).await.status, StatusCode::OK);
+        patch(&t, id, json!({ "enabled": true }), &a).await;
+
+        // Bawaan: peran dengan Admin Ubah mendapat akses penuh; peran lain tidak.
+        let listed = t.get("/api/extensions", Some(&a)).await.body;
+        assert_eq!(listed["extensions"][0]["pages"][0]["id"], "home", "daftar memuat halaman");
+        assert_eq!(listed["extensions"][0]["actions"].as_array().unwrap().len(), 2);
+        let g = t.get(&format!("/api/extensions/{id}/access"), Some(&a)).await;
+        assert_eq!(g.status, StatusCode::OK, "{:?}", g.body);
+        let lvl = |g: &Resp, role: &str| g.body["roles"].as_array().unwrap().iter().find(|r| r["id"] == role).unwrap()["level"].as_str().unwrap().to_string();
+        assert_eq!((lvl(&g, "role-admin"), lvl(&g, &sub.id), lvl(&g, "role-monitor")), ("update".into(), "update".into(), "none".into()));
+        assert_eq!(g.body["actions"].as_array().unwrap().len(), 2);
+        assert_eq!(g.body["me"]["actions"], json!(["view-report", "run"]));
+        assert!(t.get("/api/extensions/active", Some(&p)).await.body["extensions"].as_array().unwrap().is_empty(), "pantau belum punya akses");
+
+        // Beri Lihat + satu aksi: aktif muncul dengan akses efektif; aksi level update tidak berlaku di level Lihat.
+        assert_eq!(put(a.clone(), "role-monitor".into(), json!({ "level": "read", "actions": ["view-report"] })).await.status, StatusCode::OK);
+        let act = t.get("/api/extensions/active", Some(&p)).await.body;
+        assert_eq!(act["extensions"][0]["access"], json!({ "level": "read", "actions": ["view-report"] }));
+        assert_eq!(act["extensions"][0]["pages"][0]["kind"], "dashboard");
+
+        // Validasi: level, aksi tak dikenal, aksi yang butuh level lebih tinggi, peran tak ada.
+        for (why, role, body, code) in [
+            ("level aneh", "role-monitor", json!({ "level": "owner" }), StatusCode::BAD_REQUEST),
+            ("aksi tak dikenal", "role-monitor", json!({ "level": "read", "actions": ["x"] }), StatusCode::BAD_REQUEST),
+            ("aksi butuh update", "role-monitor", json!({ "level": "read", "actions": ["run"] }), StatusCode::BAD_REQUEST),
+            ("peran tak ada", "role-hantu", json!({ "level": "read" }), StatusCode::NOT_FOUND),
+        ] {
+            assert_eq!(put(a.clone(), role.into(), body, ).await.status, code, "{why}");
+        }
+
+        // Pengaman: tidak mengubah peran sendiri; tidak memberi lebih daripada milik sendiri; tidak mengelola peran lebih tinggi.
+        assert_eq!(put(s.clone(), sub.id.clone(), json!({ "level": "none" })).await.status, StatusCode::FORBIDDEN, "peran sendiri");
+        // Turunkan sub-admin ke Lihat (oleh admin), lalu sub-admin mencoba memberi Ubah ke pantau.
+        assert_eq!(put(a.clone(), sub.id.clone(), json!({ "level": "read", "actions": ["view-report"] })).await.status, StatusCode::OK);
+        assert_eq!(put(s.clone(), "role-monitor".into(), json!({ "level": "update" })).await.status, StatusCode::FORBIDDEN, "melebihi akses sendiri");
+        assert_eq!(put(s.clone(), "role-monitor".into(), json!({ "level": "read", "actions": [] })).await.status, StatusCode::OK, "setara atau lebih rendah boleh");
+        assert_eq!(put(a.clone(), "role-monitor".into(), json!({ "level": "update", "actions": ["view-report", "run"] })).await.status, StatusCode::OK);
+        assert_eq!(put(s.clone(), "role-monitor".into(), json!({ "level": "none" })).await.status, StatusCode::FORBIDDEN, "peran yang aksesnya lebih tinggi");
+        // Sub-admin tidak punya aksi `run`: tidak bisa memberikannya.
+        assert_eq!(put(a.clone(), "role-monitor".into(), json!({ "level": "read", "actions": [] })).await.status, StatusCode::OK);
+        assert_eq!(put(s.clone(), "role-monitor".into(), json!({ "level": "read", "actions": ["view-report"] })).await.status, StatusCode::OK);
+
+        // Peran tanpa Admin tidak bisa melihat atau mengubah; lewat Publik pun tidak.
+        assert_eq!(t.get(&format!("/api/extensions/{id}/access"), Some(&p)).await.status, StatusCode::FORBIDDEN);
+        assert_eq!(put(p.clone(), "role-monitor".into(), json!({ "level": "update" })).await.status, StatusCode::FORBIDDEN);
+        let r = t.call(Method::PUT, &access("role-monitor"), Some(json!({ "level": "none" })), Some(&a), &[("cf-connecting-ip", "203.0.113.9")], LOOP).await;
+        assert_eq!(r.status, StatusCode::FORBIDDEN);
+
+        // Perubahan tercatat; menghapus extension menghapus aksesnya.
+        let rows = t.telemon.with_store(|s| s.list_audit(&telemon_core::AuditQuery::default()).unwrap());
+        assert!(rows.iter().filter(|r| r.entry.action == "extension.access").count() >= 4);
+        t.call(Method::DELETE, &format!("/api/extensions/{id}"), None, Some(&a), &[], LAN).await;
+        assert!(t.telemon.with_store(|s| s.ext_access_list(id).unwrap().is_empty()));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
     #[tokio::test]
     async fn izin_akun_dan_akses_publik() {
         let d = dir();
@@ -2102,6 +2183,11 @@ mod extensions {
         let (a, p) = (t.login("admin").await, t.login("pantau").await);
         install(&t, pkg("1.0.0", "", Some(OFFICIAL)), &a).await;
         patch(&t, "net.teliti.demo", json!({ "enabled": true }), &a).await;
+        // Tanpa akses di halaman Akses: extension tidak terlihat dan berkas UI-nya 404. Setelah diberi Lihat: terlihat.
+        assert!(t.get("/api/extensions/active", Some(&p)).await.body["extensions"].as_array().unwrap().is_empty());
+        assert_eq!(t.get("/ext/net.teliti.demo/ui/index.js", Some(&p)).await.status, StatusCode::NOT_FOUND);
+        let g = t.call(Method::PUT, "/api/extensions/net.teliti.demo/access/role-monitor", Some(json!({ "level": "read" })), Some(&a), &[], LAN).await;
+        assert_eq!(g.status, StatusCode::OK, "{:?}", g.body);
         // Peran tanpa izin Admin: tidak bisa mengelola, tetapi UI tetap memuat extension aktif.
         assert_eq!(t.get("/api/extensions", Some(&p)).await.status, StatusCode::FORBIDDEN);
         assert_eq!(install(&t, pkg("1.0.0", "", Some(OFFICIAL)), &p).await.status, StatusCode::FORBIDDEN);

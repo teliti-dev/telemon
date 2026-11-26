@@ -26,6 +26,17 @@ export interface ExtWidgetDef {
   size?: { w: number; h: number; minW?: number; minH?: number }
 }
 
+export interface ExtPageProps {
+  /** Id halaman (`contributes.pages[].id` di manifest). */
+  pageId: string
+}
+
+export interface ExtPageDef {
+  /** Harus cocok dengan salah satu `contributes.pages[].id` di manifest. */
+  id: string
+  Component: React.ComponentType<ExtPageProps>
+}
+
 export interface ExtensionSdk {
   apiVersion: typeof EXTENSION_API_VERSION
   extension: { id: string; version: string }
@@ -40,7 +51,12 @@ export interface ExtensionSdk {
   }
   /** Izin yang sedang diberikan admin (toggle di Pengaturan > Extension). */
   hasPermission(id: string): boolean
+  /** Level akses peran akun ini pada extension (halaman Akses): none, read, atau update. */
+  accessLevel: "none" | "read" | "update"
+  /** Apakah peran akun ini boleh melakukan aksi yang dideklarasikan manifest (`actions[]`). */
+  can(actionId: string): boolean
   registerWidget(def: ExtWidgetDef): void
+  registerPage(def: ExtPageDef): void
 }
 
 export interface ExtensionModule {

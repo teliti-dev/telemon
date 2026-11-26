@@ -8,6 +8,7 @@ import type {
   AiDashboard,
   AiUiContext,
   ActiveExtension,
+  ExtensionAccess,
   ExtensionInfo,
   ExtensionInspect,
   ExtensionList,
@@ -1230,6 +1231,12 @@ export class MockApi implements TelemonApi {
     return this.noExtensions()
   }
   async updateExtension(): Promise<ExtensionInfo> {
+    return this.noExtensions()
+  }
+  async getExtensionAccess(): Promise<ExtensionAccess> {
+    return this.noExtensions()
+  }
+  async setExtensionAccess(): Promise<void> {
     return this.noExtensions()
   }
   async removeExtension(): Promise<void> {

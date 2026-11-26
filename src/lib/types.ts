@@ -580,6 +580,7 @@ export interface ExtensionInfo {
   /** disabled (mati), limited (izin wajib dimatikan), ok, broken (manifest rusak). */
   status: "disabled" | "limited" | "incompatible" | "ok" | "broken"
   widgets: ExtensionWidgetDecl[]
+  pages: ExtensionPageDecl[]
   permissions: ExtensionPermission[]
   /** Rentang versi Telemon yang didukung (kosong = tidak dibatasi). */
   telemon?: string
@@ -621,12 +622,49 @@ export interface ExtensionInspect {
   problemTexts: string[]
 }
 
-/** Extension aktif yang dimuat UI. */
+export interface ExtensionPageDecl {
+  id: string
+  title: string
+  /** dashboard = halaman utama extension; page = halaman biasa. */
+  kind: "dashboard" | "page"
+}
+
+export interface ExtensionActionDecl {
+  id: string
+  label: string
+  /** Level menu minimal peran agar aksi ini bisa diberikan. */
+  level: "read" | "update"
+  description: string
+}
+
+export type ExtensionLevel = "none" | "read" | "update"
+
+/** Extension aktif yang dimuat UI (hanya yang boleh dilihat akun ini). */
 export interface ActiveExtension {
   id: string
   name: string
   version: string
   entry: string
   widgets: ExtensionWidgetDecl[]
+  pages: ExtensionPageDecl[]
+  /** Izin (toggle) yang diberikan admin. */
   permissions: string[]
+  /** Akses efektif akun ini pada extension. */
+  access: { level: ExtensionLevel; actions: string[] }
+}
+
+export interface ExtensionRoleAccess {
+  id: string
+  name: string
+  builtin: boolean
+  level: ExtensionLevel
+  actions: string[]
+  /** Peran akun yang sedang masuk: tidak bisa diubah sendiri. */
+  own: boolean
+}
+
+export interface ExtensionAccess {
+  actions: ExtensionActionDecl[]
+  roles: ExtensionRoleAccess[]
+  me: { level: ExtensionLevel; actions: string[] }
 }

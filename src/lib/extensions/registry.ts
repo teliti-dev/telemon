@@ -21,8 +21,26 @@ function set(next: Partial<State>) {
   listeners.forEach((l) => l())
 }
 
+export interface ExtPageEntry {
+  extId: string
+  extName: string
+  id: string
+  title: string
+  kind: "dashboard" | "page"
+  Component: React.ComponentType<{ pageId: string }>
+}
+
+let pages: ExtPageEntry[] = []
+
+export const extensionPages = () => pages
+export function findExtensionPage(extId: string, pageId?: string) {
+  const mine = pages.filter((p) => p.extId === extId)
+  return (pageId ? mine.find((p) => p.id === pageId) : (mine.find((p) => p.kind === "dashboard") ?? mine[0])) ?? null
+}
+
 /** Ganti semua widget extension di registri Ringkasan dengan `defs`, lalu beri tahu pendengar. */
-export function setExtensionWidgets(defs: WidgetDef[]) {
+export function setExtensionWidgets(defs: WidgetDef[], nextPages: ExtPageEntry[] = []) {
+  pages = nextPages
   for (let i = WIDGETS.length - 1; i >= 0; i--) {
     if (isExtWidget(WIDGETS[i].type)) {
       WIDGET_BY_TYPE.delete(WIDGETS[i].type)

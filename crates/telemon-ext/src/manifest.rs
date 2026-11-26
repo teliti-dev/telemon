@@ -23,12 +23,46 @@ pub struct Manifest {
     pub contributes: Contributes,
     #[serde(default)]
     pub permissions: Vec<PermissionDecl>,
+    /// Aksi halus yang bisa diberikan per peran di halaman Akses (selain level menu).
+    #[serde(default)]
+    pub actions: Vec<ActionDecl>,
     /// Rentang versi Telemon yang didukung, mis. `>=0.2.0 <0.4.0`. Kosong = tidak dibatasi.
     #[serde(default)]
     pub telemon: Option<String>,
     /// Extension lain yang dibutuhkan (dengan rentang versinya).
     #[serde(default)]
     pub requires: Vec<Requirement>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ActionDecl {
+    pub id: String,
+    pub label: String,
+    /// Level menu minimal yang dibutuhkan peran agar aksi ini bisa diberikan: `read` (bawaan) atau `update`.
+    #[serde(default = "read_level")]
+    pub level: String,
+    #[serde(default)]
+    pub description: String,
+}
+
+fn read_level() -> String {
+    "read".into()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PageDecl {
+    /// Id halaman: `#/ext/<id extension>/<id halaman>`.
+    pub id: String,
+    pub title: String,
+    /// `dashboard` (halaman utama extension) atau `page`.
+    #[serde(default = "page_kind")]
+    pub kind: String,
+}
+
+fn page_kind() -> String {
+    "page".into()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -54,6 +88,8 @@ pub struct UiDecl {
 pub struct Contributes {
     #[serde(default)]
     pub widgets: Vec<WidgetDecl>,
+    #[serde(default)]
+    pub pages: Vec<PageDecl>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -134,8 +170,32 @@ impl Manifest {
                 return Err("Jenis widget ganda".into());
             }
         }
-        if !self.contributes.widgets.is_empty() && self.ui.is_none() {
-            return Err("Widget butuh ui.entry".into());
+        if (!self.contributes.widgets.is_empty() || !self.contributes.pages.is_empty()) && self.ui.is_none() {
+            return Err("Widget dan halaman butuh ui.entry".into());
+        }
+        if self.contributes.pages.len() > 20 || self.actions.len() > 40 {
+            return Err("Terlalu banyak halaman atau aksi".into());
+        }
+        let mut seen = std::collections::HashSet::new();
+        for p in &self.contributes.pages {
+            if !valid_id(&p.id) || p.id.contains('.') || p.title.trim().is_empty() || p.title.len() > 60 || !matches!(p.kind.as_str(), "dashboard" | "page") {
+                return Err("Halaman tidak valid".into());
+            }
+            if !seen.insert(p.id.clone()) {
+                return Err("Id halaman ganda".into());
+            }
+        }
+        if self.contributes.pages.iter().filter(|p| p.kind == "dashboard").count() > 1 {
+            return Err("Hanya satu halaman dashboard".into());
+        }
+        let mut seen = std::collections::HashSet::new();
+        for a in &self.actions {
+            if !valid_id(&a.id) || a.label.trim().is_empty() || a.label.len() > 60 || a.description.len() > 200 || !matches!(a.level.as_str(), "read" | "update") {
+                return Err("Aksi tidak valid".into());
+            }
+            if !seen.insert(a.id.clone()) {
+                return Err("Id aksi ganda".into());
+            }
         }
         if let Some(t) = &self.telemon {
             Range::parse(t).map_err(|e| format!("telemon: {e}"))?;
