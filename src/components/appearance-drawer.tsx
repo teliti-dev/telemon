@@ -153,7 +153,7 @@ export function AppearanceBody() {
  * Desktop/tablet: drawer di kanan. HP: tombolnya membuka halaman Appearance (bukan drawer).
  * `iconOnly` (halaman login) selalu memakai drawer.
  */
-export function AppearanceDrawer({ iconOnly }: { iconOnly?: boolean }) {
+export function AppearanceDrawer({ iconOnly, compact }: { iconOnly?: boolean; compact?: boolean }) {
   const t = useT()
   const isDesktop = useIsDesktop()
 
@@ -161,7 +161,7 @@ export function AppearanceDrawer({ iconOnly }: { iconOnly?: boolean }) {
     <Button
       variant="ghost"
       size={iconOnly ? "icon" : "sm"}
-      className={iconOnly ? undefined : "gap-1.5 px-2"}
+      className={cn(iconOnly ? undefined : "gap-1.5 px-2", compact && "size-6 md:size-6 [&_svg]:size-3.5")}
       aria-label={t("Appearance")}
       onClick={onClick}
     >

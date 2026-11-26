@@ -41,6 +41,8 @@ export function SiteHeader({ title }: { title: string }) {
   // Header menjadi bilah judul (Windows tanpa bilah bawaan, atau macOS Overlay): bisa diseret dan harus tetap terlihat.
   const titlebar = frameless || mac
   React.useEffect(initFrameless, [])
+  // Linux tanpa bilah bawaan: bilah judul dibuat ringkas (setinggi bilah judul bawaan) dengan ikon kecil.
+  const compact = frameless && WINDOW_CONTROLS_SIDE === "left"
 
   const dragProps = titlebar
     ? {
@@ -62,11 +64,13 @@ export function SiteHeader({ title }: { title: string }) {
         {...dragProps}
         className={cn(
           "sticky top-0 z-30 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80",
-          !titlebar && "md:static md:border-b-0 md:bg-background md:backdrop-blur-none"
+          !titlebar && "md:static md:border-b-0 md:bg-background md:backdrop-blur-none",
+          // Bilah judul ringkas menyatu dengan baris menu di bawahnya: tanpa garis pemisah.
+          compact && "border-b-0"
         )}
       >
-        <div className="flex h-12 items-stretch md:h-14">
-          {frameless && WINDOW_CONTROLS_SIDE === "left" && <WindowControls side="left" />}
+        <div className={cn("flex items-stretch", compact ? "h-9" : "h-12 md:h-14")}>
+          {compact && <WindowControls side="left" compact />}
           {mac && <div aria-hidden className="shrink-0" style={{ width: MAC_TRAFFIC_LIGHTS }} />}
           <div className={cn(PAGE_CONTAINER, "flex h-full min-w-0 items-center gap-2")}>
             <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -75,8 +79,8 @@ export function SiteHeader({ title }: { title: string }) {
                 aria-label={t("Telemon, ke Ringkasan")}
                 className="flex shrink-0 items-center gap-2 rounded-md font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
               >
-                <TelemonLogo />
-                <span className="hidden sm:inline">Telemon</span>
+                <TelemonLogo className={compact ? "size-5" : undefined} />
+                <span className={cn("hidden sm:inline", compact && "text-sm")}>Telemon</span>
               </a>
               {isDesktop ? <LiveIndicator /> : <LivePill />}
 
@@ -109,7 +113,7 @@ export function SiteHeader({ title }: { title: string }) {
                   <SearchTrigger />
                 </span>
               )}
-              <AppearanceDrawer iconOnly={isDesktop} />
+              <AppearanceDrawer iconOnly={isDesktop} compact={compact} />
               <AccountMenu />
             </div>
           </div>
@@ -119,7 +123,7 @@ export function SiteHeader({ title }: { title: string }) {
         </div>
       </div>
 
-      <div className={cn("sticky z-20 hidden border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:block", titlebar ? "top-14" : "top-0")}>
+      <div className={cn("sticky z-20 hidden border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:block", titlebar ? (compact ? "top-9" : "top-14") : "top-0")}>
         <div className={cn(PAGE_CONTAINER, "flex h-9 items-center gap-2")}>
           <nav aria-label={t("Menu utama")} className="-mb-px flex h-9 min-w-0 flex-1 items-end gap-0.5">
             {items.map((item, index) => {
