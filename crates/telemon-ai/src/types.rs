@@ -58,6 +58,75 @@ pub enum AiWidget {
     Bars { title: String, data: Vec<BarItem> },
     List { #[serde(default, skip_serializing_if = "Option::is_none")] title: Option<String>, rows: Vec<ListRow> },
     User { username: String, router: String, status: String, tone: AiTone, fields: Vec<Field>, to: AiLink },
+    /// Usulan perubahan tata letak Ringkasan (ADR 0027). Belum mengubah apa pun: UI menerapkannya hanya setelah
+    /// pengguna menekan Terapkan, memakai izin pengguna itu sendiri.
+    Proposal { ops: Vec<LayoutOp> },
+}
+
+/// Satu perubahan tata letak yang diusulkan. `config` memakai id router (bukan nama) dan sudah divalidasi alat.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "op", rename_all = "lowercase")]
+pub enum LayoutOp {
+    Add {
+        #[serde(rename = "type")]
+        widget: String,
+        #[serde(default)]
+        config: serde_json::Map<String, serde_json::Value>,
+    },
+    Remove { id: String },
+    Configure { id: String, config: serde_json::Map<String, serde_json::Value> },
+}
+
+/// Keadaan tampilan Ringkasan yang dikirim klien bersama pertanyaan, supaya AI tahu widget apa yang ada dan
+/// jenis apa yang tersedia (daftar jenis dimiliki UI). Tidak dipercaya untuk hal lain: hanya dipakai membuat usulan
+/// yang diperiksa ulang UI sebelum diterapkan.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct UiContext {
+    #[serde(default)]
+    pub widgets: Vec<UiWidget>,
+    #[serde(default)]
+    pub catalog: Vec<UiWidgetType>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UiWidget {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    #[serde(default)]
+    pub config: Option<serde_json::Map<String, serde_json::Value>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UiWidgetType {
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub title: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub configurable: bool,
+}
+
+impl UiContext {
+    /// Batas bentuk dan ukuran (klien tidak dipercaya untuk ukuran).
+    pub fn validate(&self) -> Result<(), String> {
+        let ident = |s: &str| !s.is_empty() && s.len() <= 40 && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+        if self.widgets.len() > 80 || self.catalog.len() > 40 {
+            return Err("Konteks tampilan terlalu besar".into());
+        }
+        for w in &self.widgets {
+            if !ident(&w.id) || !ident(&w.kind) || w.config.as_ref().is_some_and(|c| serde_json::Value::Object(c.clone()).to_string().len() > 2048) {
+                return Err("Widget pada konteks tampilan tidak valid".into());
+            }
+        }
+        for t in &self.catalog {
+            if !ident(&t.kind) || t.title.chars().count() > 120 || t.description.chars().count() > 400 {
+                return Err("Jenis widget pada konteks tampilan tidak valid".into());
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -721,6 +721,36 @@ impl Store {
         rows.filter_map(|r| r.transpose()).collect()
     }
 
+    /// Jumlah event per ember waktu dan jenis, dari `since_ms` sampai `until_ms`, untuk statistik (tanpa batas 500 baris
+    /// milik `list_events`). Hasil terurut menurut ember lalu jenis; `kind` berupa nama stabil (`auth_failed`, dst).
+    pub fn event_timeline(&self, router_id: Option<&str>, since_ms: i64, until_ms: i64, bucket_ms: i64) -> Result<Vec<(i64, String, u64)>> {
+        let bucket_ms = bucket_ms.max(1);
+        let mut st = self.conn.prepare(
+            "SELECT (at_ms / ?1) * ?1 AS b, kind, COUNT(*) FROM events
+             WHERE at_ms >= ?2 AND at_ms <= ?3 AND (?4 IS NULL OR router_id = ?4) GROUP BY b, kind ORDER BY b, kind",
+        )?;
+        let rows = st.query_map(params![bucket_ms, since_ms, until_ms, router_id], |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? as u64)))?;
+        rows.collect()
+    }
+
+    /// User dengan event `kind` terbanyak: (router, username, jumlah, waktu terakhir). Urut jumlah lalu yang terbaru.
+    pub fn event_top_users(&self, kind: &str, router_id: Option<&str>, since_ms: i64, until_ms: i64, limit: usize) -> Result<Vec<(String, String, u64, i64)>> {
+        let mut st = self.conn.prepare(
+            "SELECT router_id, username, COUNT(*) AS n, MAX(at_ms) FROM events
+             WHERE kind = ?1 AND username IS NOT NULL AND username <> '' AND at_ms >= ?2 AND at_ms <= ?3 AND (?4 IS NULL OR router_id = ?4)
+             GROUP BY router_id, username ORDER BY n DESC, MAX(at_ms) DESC LIMIT ?5",
+        )?;
+        let rows = st.query_map(params![kind, since_ms, until_ms, router_id, limit as i64], |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? as u64, r.get(3)?)))?;
+        rows.collect()
+    }
+
+    /// Jumlah event per router dan jenis dalam rentang: (router, jenis, jumlah).
+    pub fn event_counts_by_router(&self, since_ms: i64, until_ms: i64) -> Result<Vec<(String, String, u64)>> {
+        let mut st = self.conn.prepare("SELECT router_id, kind, COUNT(*) FROM events WHERE at_ms >= ?1 AND at_ms <= ?2 GROUP BY router_id, kind ORDER BY router_id, kind")?;
+        let rows = st.query_map(params![since_ms, until_ms], |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? as u64)))?;
+        rows.collect()
+    }
+
     pub fn count_events(&self) -> Result<u64> {
         self.conn.query_row("SELECT COUNT(*) FROM events", [], |r| r.get::<_, i64>(0)).map(|n| n as u64)
     }
@@ -1847,5 +1877,36 @@ mod tests {
         let cut = s.purge(now, &policy(None, 2, None)).unwrap();
         assert_eq!(cut.events, 2);
         assert_eq!(s.count_events().unwrap(), 2);
+    }
+
+    #[test]
+    fn agregasi_event_untuk_statistik_tanpa_batas_baris() {
+        let mut s = Store::open_in_memory().unwrap();
+        let hour = 3_600_000;
+        let base = 100 * hour;
+        // r1: sari gagal auth 3x (dua di jam 0, satu di jam 1), budi putus 2x, router down 1x. r2: sari gagal 1x.
+        s.insert_events("r1", &[ev(base + 10, EventKind::AuthFailed, Some("sari")), ev(base + 20, EventKind::AuthFailed, Some("sari")), ev(base + hour + 5, EventKind::AuthFailed, Some("sari")), ev(base + 30, EventKind::Disconnected, Some("budi")), ev(base + hour + 9, EventKind::Disconnected, Some("budi")), ev(base + 40, EventKind::RouterDown, None)]).unwrap();
+        s.insert_events("r2", &[ev(base + 50, EventKind::AuthFailed, Some("sari"))]).unwrap();
+
+        // Ember per jam: jam 0 = 3 gagal auth + 1 putus + 1 router down + 1 gagal auth di r2; jam 1 = 1 gagal + 1 putus.
+        let t = s.event_timeline(None, base, base + 3 * hour, hour).unwrap();
+        let get = |b: i64, k: &str| t.iter().find(|(x, kk, _)| *x == b && kk == k).map(|r| r.2).unwrap_or(0);
+        assert_eq!((get(base, "auth_failed"), get(base, "disconnected"), get(base, "router_down"), get(base + hour, "auth_failed"), get(base + hour, "disconnected")), (3, 1, 1, 1, 1));
+        // Satu router saja, dan rentang membatasi.
+        assert_eq!(s.event_timeline(Some("r2"), base, base + 3 * hour, hour).unwrap(), vec![(base, "auth_failed".to_string(), 1)]);
+        assert!(s.event_timeline(None, base + 2 * hour, base + 3 * hour, hour).unwrap().is_empty());
+
+        // Top user: sari terbanyak di r1 (3), lalu r2 (1); event tanpa username dilewati.
+        let top = s.event_top_users("auth_failed", None, base, base + 3 * hour, 10).unwrap();
+        assert_eq!(top.iter().map(|(r, u, n, _)| (r.as_str(), u.as_str(), *n)).collect::<Vec<_>>(), vec![("r1", "sari", 3), ("r2", "sari", 1)]);
+        assert_eq!(top[0].3, base + hour + 5, "waktu terakhir");
+        assert_eq!(s.event_top_users("auth_failed", Some("r2"), base, base + 3 * hour, 10).unwrap().len(), 1);
+        assert_eq!(s.event_top_users("auth_failed", None, base, base + 3 * hour, 1).unwrap().len(), 1, "batas jumlah");
+        assert!(s.event_top_users("router_down", None, base, base + 3 * hour, 10).unwrap().is_empty());
+
+        // Jumlah per router dan jenis.
+        let c = s.event_counts_by_router(base, base + 3 * hour).unwrap();
+        let cnt = |r: &str, k: &str| c.iter().find(|(a, b, _)| a == r && b == k).map(|x| x.2).unwrap_or(0);
+        assert_eq!((cnt("r1", "auth_failed"), cnt("r1", "router_down"), cnt("r2", "auth_failed"), cnt("r2", "router_down")), (3, 1, 1, 0));
     }
 }

@@ -384,7 +384,7 @@ impl AiService {
     // ---- pertanyaan
 
     /// Jawab satu pertanyaan. `account` = id akun penanya (`desktop` untuk aplikasi desktop).
-    pub async fn ask(&self, caller: Option<&Session>, account: &str, messages: &[AiMessage], lang: Lang, emit: &mut (dyn FnMut(AiStreamEvent) + Send)) -> Res<()> {
+    pub async fn ask(&self, caller: Option<&Session>, account: &str, messages: &[AiMessage], lang: Lang, ui: Option<&UiContext>, emit: &mut (dyn FnMut(AiStreamEvent) + Send)) -> Res<()> {
         self.auth.authorize(caller, Resource::Ai, Level::Read).map_err(|x| e(Kind::Forbidden, x.to_string()))?;
         let settings = self.store.lock().expect("lock").get_settings().map_err(|x| e(Kind::Invalid, x.to_string()))?;
         if !settings.ai.enabled {
@@ -396,7 +396,7 @@ impl AiService {
             return Err(e(Kind::Unavailable, "Anggaran AI bulan ini sudah habis"));
         }
         let cfg = self.llm_config(&provider)?;
-        let tools = ToolCtx { store: &self.store, auth: &self.auth, caller, mask: settings.ai.mask_sensitive, now_ms: self.now(), lang };
+        let tools = ToolCtx { store: &self.store, auth: &self.auth, caller, mask: settings.ai.mask_sensitive, now_ms: self.now(), lang, ui };
         let run = Run { llm: self.llm.as_ref(), cfg: &cfg, tools: &tools };
         let now = self.clock.clone();
         let mut record = |u: Usage, ok: bool, ms: i64| self.record_usage(&provider, account, u, ok, ms);

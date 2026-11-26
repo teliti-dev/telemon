@@ -1588,6 +1588,40 @@ mod ai_tests {
     }
 
     #[tokio::test]
+    async fn usulan_tata_letak_ai_sampai_ke_klien_tanpa_menulis_dan_konteks_tampilan_dibatasi() {
+        let t = harness();
+        with_ai(&t, vec![tool("propose_layout_change", json!({ "changes": [{ "op": "add", "type": "bandwidth-total" }] })), say("Saya usulkan; tekan Terapkan."), tool("propose_layout_change", json!({ "changes": [{ "op": "add", "type": "bandwidth-total" }] })), say("Tidak bisa.")]);
+        t.account("admin", "role-admin");
+        t.account("operator", "role-operator");
+        let ca = t.login("admin").await;
+        t.post("/api/ai/providers", PROVIDER(), Some(&ca)).await;
+        let ui = json!({ "widgets": [], "catalog": [{ "type": "bandwidth-total", "title": "Total", "description": "", "configurable": true }] });
+        let msg = json!([{ "id": "m1", "role": "user", "text": "tambah total bandwidth", "at": 1 }]);
+
+        // Administrator (izin Ubah Ringkasan): usulan datang sebagai widget `proposal`; tidak ada yang tersimpan.
+        let q = t.post("/api/ai/ask", json!({ "messages": msg, "lang": "id", "ui": ui }), Some(&ca)).await;
+        assert_eq!(q.status, StatusCode::OK, "{:?}", q.body);
+        let ev = lines(&q);
+        let proposal = ev.iter().find(|e| e["type"] == "widget" && e["widget"]["kind"] == "proposal").unwrap_or_else(|| panic!("tidak ada usulan: {ev:?}"));
+        assert_eq!(proposal["widget"]["ops"], json!([{ "op": "add", "type": "bandwidth-total", "config": { "range": "6h" } }]));
+        assert!(t.get("/api/dashboard", Some(&ca)).await.body["layout"].is_null(), "AI tidak boleh menulis tata letak");
+
+        // Operator (hanya Lihat Ringkasan): alat menolak, tidak ada usulan.
+        let co = t.login("operator").await;
+        let q = t.post("/api/ai/ask", json!({ "messages": msg, "lang": "id", "ui": ui }), Some(&co)).await;
+        assert_eq!(q.status, StatusCode::OK, "{:?}", q.body);
+        let ev = lines(&q);
+        assert!(!ev.iter().any(|e| e["type"] == "widget" && e["widget"]["kind"] == "proposal"), "{ev:?}");
+        assert!(ev.iter().any(|e| e["type"] == "step" && e["text"].as_str().unwrap_or("").contains("tidak ada izin")), "{ev:?}");
+
+        // Konteks tampilan yang terlalu besar atau salah bentuk ditolak sebelum model dipanggil.
+        let big = json!({ "widgets": (0..100).map(|i| json!({ "id": format!("w{i}"), "type": "x" })).collect::<Vec<_>>(), "catalog": [] });
+        assert_eq!(t.post("/api/ai/ask", json!({ "messages": msg, "ui": big }), Some(&ca)).await.status, StatusCode::BAD_REQUEST);
+        let bad = json!({ "widgets": [{ "id": "spasi tidak boleh", "type": "x" }], "catalog": [] });
+        assert_eq!(t.post("/api/ai/ask", json!({ "messages": msg, "ui": bad }), Some(&ca)).await.status, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
     async fn tanpa_layanan_rute_ai_menjawab_501_dan_fitur_mati() {
         let t = harness();
         t.account("admin", "role-admin");
