@@ -599,6 +599,8 @@ export interface ExtensionInfo {
   hasData: boolean
   hasBackend: boolean
   routes: { id: string; method: string; path: string; level: string; action?: string }[]
+  /** Sesi interaktif (mis. terminal SSH): butuh izin sensitif `feature.router-ssh` menyala. */
+  sessions: { id: string; kind: string; action: string }[]
   workers: ExtensionWorker[]
   installedAt: number
   updatedAt: number

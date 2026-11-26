@@ -3,6 +3,7 @@ import { ChevronDownIcon, GlobeIcon, PuzzleIcon, SettingsIcon, SparklesIcon, Wif
 
 import { AccountMenu } from "@/components/account-menu"
 import { AppearanceDrawer } from "@/components/appearance-drawer"
+import { ExtensionsMenu } from "@/components/extensions/menu"
 import { TelemonLogo } from "@/components/telemon-logo"
 import { WindowControls } from "@/components/window-controls"
 import { isNavActive, type NavItem } from "@/components/nav-items"
@@ -123,9 +124,12 @@ export function SiteHeader({ title }: { title: string }) {
             if (item.page === "pengaturan") {
               return <SettingsMenu key={item.page} item={item} active={active} first={index === firstEnd} />
             }
+            // Menu Extension tepat sebelum kelompok menu kanan (Berbagi, Admin, Pengaturan).
+            const extMenu = index === firstEnd ? <ExtensionsMenu key="extensions" /> : null
             return (
+              <React.Fragment key={item.page}>
+              {extMenu}
               <a
-                key={item.page}
                 href={href(item.page)}
                 aria-current={active ? "page" : undefined}
                 className={cn(
@@ -148,8 +152,10 @@ export function SiteHeader({ title }: { title: string }) {
                   </span>
                 ) : null}
               </a>
+              </React.Fragment>
             )
           })}
+          {firstEnd === -1 && <ExtensionsMenu />}
         </nav>
       </div>
     </>

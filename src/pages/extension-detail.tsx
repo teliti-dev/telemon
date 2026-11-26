@@ -131,6 +131,13 @@ export function ExtensionDetailPage({ id }: { id: string }) {
               <AlertDescription>{t("Versi Telemon ini di luar rentang yang didukung extension ({range}), jadi tidak dimuat. Perbarui extension.", { range: ext.telemon ?? "" })}</AlertDescription>
             </Alert>
           )}
+          {ext.enabled && ext.status === "ok" && ext.sessions.some((s) => s.kind === "router-ssh") && !ext.permissions.some((p) => p.id === "feature.router-ssh" && p.granted) && (
+            <Alert>
+              <ShieldAlertIcon />
+              <AlertTitle>{t("Belum bisa dipakai")}</AlertTitle>
+              <AlertDescription>{t("Terminal SSH butuh izin feature.router-ssh. Nyalakan di bagian Izin di bawah, lalu berikan akses ke peran di Akses peran.")}</AlertDescription>
+            </Alert>
+          )}
           {ext.status === "limited" && (
             <Alert>
               <ShieldAlertIcon />
