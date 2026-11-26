@@ -540,11 +540,20 @@ pub struct AiDto {
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+pub struct BandwidthDto {
+    pub enabled: bool,
+    pub interval_seconds: u32,
+    pub retention_days: u32,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy)]
 pub struct SettingsDto {
     pub retention: RetentionDto,
     pub polling: PollingDto,
     pub remote: RemoteDto,
     pub ai: AiDto,
+    pub bandwidth: BandwidthDto,
 }
 
 impl From<&telemon_core::Settings> for SettingsDto {
@@ -554,18 +563,20 @@ impl From<&telemon_core::Settings> for SettingsDto {
             polling: PollingDto { session_seconds: s.polling.session_seconds, log_seconds: s.polling.log_seconds, auto_import_hours: s.polling.auto_import_hours, timeout_seconds: s.polling.timeout_seconds, retries: s.polling.retries },
             remote: RemoteDto { session_hours: s.remote.session_hours, max_failures: s.remote.max_failures, lock_minutes: s.remote.lock_minutes, allow_public_write: s.remote.allow_public_write },
             ai: AiDto { enabled: s.ai.enabled, mask_sensitive: s.ai.mask_sensitive },
+            bandwidth: BandwidthDto { enabled: s.bandwidth.enabled, interval_seconds: s.bandwidth.interval_seconds, retention_days: s.bandwidth.retention_days },
         }
     }
 }
 
 impl From<&SettingsDto> for telemon_core::Settings {
     fn from(d: &SettingsDto) -> Self {
-        use telemon_core::settings::{Ai, Polling, Remote, Retention};
+        use telemon_core::settings::{Ai, Bandwidth, Polling, Remote, Retention};
         telemon_core::Settings {
             retention: Retention { event_days: d.retention.event_days, ai_chat_days: d.retention.ai_chat_days, max_events: d.retention.max_events, deleted_days: d.retention.deleted_days, audit_days: d.retention.audit_days },
             polling: Polling { session_seconds: d.polling.session_seconds, log_seconds: d.polling.log_seconds, auto_import_hours: d.polling.auto_import_hours, timeout_seconds: d.polling.timeout_seconds, retries: d.polling.retries },
             remote: Remote { session_hours: d.remote.session_hours, max_failures: d.remote.max_failures, lock_minutes: d.remote.lock_minutes, allow_public_write: d.remote.allow_public_write },
             ai: Ai { enabled: d.ai.enabled, mask_sensitive: d.ai.mask_sensitive },
+            bandwidth: Bandwidth { enabled: d.bandwidth.enabled, interval_seconds: d.bandwidth.interval_seconds, retention_days: d.bandwidth.retention_days },
         }
     }
 }

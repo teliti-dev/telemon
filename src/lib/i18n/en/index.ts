@@ -3,6 +3,7 @@ import admin from "./admin"
 import ai from "./ai"
 import aidash from "./aidash"
 import auth from "./auth"
+import bandwidth from "./bandwidth"
 import common from "./common"
 import dashboard from "./dashboard"
 import data from "./data"
@@ -22,6 +23,7 @@ import users from "./users"
 export const EN: Record<string, string> = {
   ...common,
   ...dashboard,
+  ...bandwidth,
   ...shell,
   ...auth,
   ...users,

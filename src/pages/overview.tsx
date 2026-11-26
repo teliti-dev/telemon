@@ -59,7 +59,7 @@ export function OverviewPage({ onOpenUser }: { onOpenUser: (id: string) => void 
   function addWidget(type: string) {
     const def = WIDGET_BY_TYPE.get(type)
     if (!def) return
-    setDraft((d) => (d ? [...d, { id: newWidgetId(type), type, x: 0, y: nextY(d), w: def.w, h: def.h }] : d))
+    setDraft((d) => (d ? [...d, { id: newWidgetId(type), type, x: 0, y: nextY(d), w: def.w, h: def.h, ...(def.defaultConfig ? { config: { ...def.defaultConfig } } : {}) }] : d))
     setAdding(false)
     toast.success(t("Widget ditambahkan di bagian bawah"))
   }
@@ -100,6 +100,7 @@ export function OverviewPage({ onOpenUser }: { onOpenUser: (id: string) => void 
           editing={editing}
           onChange={setDraft}
           onRemove={(id) => setDraft((d) => (d ? d.filter((w) => w.id !== id) : d))}
+          onConfigure={(id, config) => setDraft((d) => (d ? d.map((w) => (w.id === id ? { ...w, config } : w)) : d))}
           onOpenUser={onOpenUser}
         />
       ) : (

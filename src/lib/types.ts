@@ -287,6 +287,13 @@ export interface AppSettings {
     /** Samarkan IP dan MAC pelanggan dalam jawaban. */
     maskSensitive: boolean
   }
+  /** Pengumpulan bandwidth per antarmuka untuk widget Ringkasan (ADR 0026). */
+  bandwidth: {
+    enabled: boolean
+    /** Detik antar pembacaan counter antarmuka. */
+    intervalSeconds: number
+    retentionDays: number
+  }
 }
 
 export interface PurgeCounts {
@@ -446,6 +453,50 @@ export interface AiDashboard {
 export type AiBudgetInput = Pick<AiBudget, "monthlyUsd" | "alertPercent" | "hardStop">
 
 // ---- Pembaruan aplikasi (hanya aplikasi desktop; ADR 0023) ----
+// ---- Bandwidth (widget Ringkasan) ----
+export interface TrafficInterface {
+  /** Nama antarmuka di router, atau `@pppoe` = jumlah semua sesi PPPoE router itu. */
+  name: string
+  kind: string
+  running: boolean
+  lastSeen: number
+}
+
+export interface TrafficInterfaces {
+  interfaces: TrafficInterface[]
+  /** Pengumpulan bandwidth menyala di Pengaturan. */
+  enabled: boolean
+  intervalSeconds: number
+}
+
+export type TrafficRange = "1h" | "6h" | "24h" | "7d" | "30d"
+
+export interface TrafficPoint {
+  /** Awal ember waktu (epoch ms). */
+  at: number
+  /** bit per detik, sudut pandang router: untuk PPPoE `tx` = unduhan pelanggan, `rx` = unggahan. */
+  rxBps: number
+  txBps: number
+  /** Rata-rata jumlah sesi, hanya untuk `@pppoe`. */
+  sessions?: number
+}
+
+export interface TrafficSeries {
+  points: TrafficPoint[]
+  from: number
+  to: number
+  bucketSeconds: number
+  intervalSeconds: number
+  enabled: boolean
+}
+
+export interface TrafficQuery {
+  /** Id router, atau `all` (total semua router; hanya untuk `@pppoe`). */
+  router: string
+  iface: string
+  range: TrafficRange
+}
+
 // ---- Tata letak widget Ringkasan (satu untuk semua akun) ----
 export interface DashboardWidget {
   /** Id unik di dalam tata letak. */

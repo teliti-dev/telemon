@@ -5,6 +5,9 @@ import type {
   AiBudgetInput,
   AiDashboard,
   DashboardLayout,
+  TrafficInterfaces,
+  TrafficQuery,
+  TrafficSeries,
   AiMessage,
   AiProvider,
   AiProviderInput,
@@ -145,6 +148,10 @@ export interface TelemonApi {
   getDashboard(): Promise<DashboardLayout | null>
   /** Simpan tata letak untuk semua akun (izin Ubah Ringkasan); null = kembali ke susunan bawaan. */
   saveDashboard(layout: DashboardLayout | null): Promise<DashboardLayout | null>
+  /** Antarmuka yang pernah terbaca pada satu router (termasuk `@pppoe`). */
+  getTrafficInterfaces(routerId: string): Promise<TrafficInterfaces>
+  /** Deret waktu laju bandwidth; `router: "all"` hanya untuk `@pppoe`. */
+  getTrafficSeries(q: TrafficQuery): Promise<TrafficSeries>
   getSettings(): Promise<AppSettings>
   saveSettings(settings: AppSettings): Promise<AppSettings>
   // Dasbor AI. Kunci API write-only; server hanya mengembalikan petunjuk kunci.

@@ -11,7 +11,8 @@ use tokio::sync::{broadcast, mpsc, watch};
 use tokio::task::JoinHandle;
 
 use crate::events::Event;
-use crate::monitor::{MonitorConfig, SharedStore, run_purge, run_router, sync_router};
+use crate::monitor::{MonitorConfig, SharedStore, run_purge, run_router, run_traffic, sync_router};
+use crate::traffic::TrafficConfig;
 use crate::router::{Error, MikrotikClient, Row, RouterApi, TlsMode};
 use crate::store::{NewRouter, PasswordError, PurgeCounts, RetentionPolicy, RouterError, RouterPatch, RouterRecord, Store};
 use crate::write::{self, NewProfile, NewUser, Plan, ProfilePatch, UserPatch};
@@ -173,11 +174,13 @@ pub struct Probe {
 pub struct RuntimeConfig {
     pub poll_every: Duration,
     pub sync_every: Option<Duration>,
+    /// `None` = pengumpulan bandwidth mati.
+    pub traffic: Option<TrafficConfig>,
 }
 
 impl Default for RuntimeConfig {
     fn default() -> Self {
-        Self { poll_every: Duration::from_secs(30), sync_every: Some(Duration::from_secs(3600)) }
+        Self { poll_every: Duration::from_secs(30), sync_every: Some(Duration::from_secs(3600)), traffic: None }
     }
 }
 
@@ -334,6 +337,7 @@ impl<C: Connector> Telemon<C> {
         }
         let api = self.client(router_id)?;
         let cfg = *self.cfg.lock().expect("lock");
+        let traffic_api = api.clone();
         let (stop_tx, stop_rx) = watch::channel(false);
         let (tx, mut rx) = mpsc::channel::<(i64, Event)>(64);
         let events = self.events.clone();
@@ -346,8 +350,11 @@ impl<C: Connector> Telemon<C> {
                 }
             }
         });
+        let traffic_task = cfg.traffic.map(|t| tokio::spawn(run_traffic(ArcApi(traffic_api), self.store.clone(), id.clone(), t, stop_rx.clone())));
         let run = tokio::spawn(run_router_arc(api, self.store.clone(), id, MonitorConfig { poll_every: cfg.poll_every, sync_every: cfg.sync_every }, tx, stop_rx));
-        self.monitors.lock().expect("lock").insert(router_id.to_string(), Monitor { stop: stop_tx, tasks: vec![run, forward] });
+        let mut tasks = vec![run, forward];
+        tasks.extend(traffic_task);
+        self.monitors.lock().expect("lock").insert(router_id.to_string(), Monitor { stop: stop_tx, tasks });
         Ok(())
     }
 
@@ -607,7 +614,7 @@ mod tests {
         st.unlock(&crate::vault::generate_key().unwrap()).unwrap();
         let secrets: Arc<dyn SecretStore> = Arc::new(MemorySecrets::default());
         let conn = FakeConnector { world: Some(w), fail_first: AtomicUsize::new(fail_first), ..Default::default() };
-        let cfg = RuntimeConfig { poll_every: Duration::from_millis(10), sync_every: None };
+        let cfg = RuntimeConfig { poll_every: Duration::from_millis(10), sync_every: None, traffic: None };
         (Telemon::new(st, secrets.clone(), conn, cfg), secrets)
     }
 

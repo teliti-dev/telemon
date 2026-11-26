@@ -6,6 +6,7 @@ use std::time::Duration;
 use crate::auth::AuthPolicy;
 use crate::service::RuntimeConfig;
 use crate::store::RetentionPolicy;
+use crate::traffic::TrafficConfig;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Retention {
@@ -42,12 +43,21 @@ pub struct Ai {
     pub mask_sensitive: bool,
 }
 
+/// Pengumpulan bandwidth per antarmuka (ADR 0026).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Bandwidth {
+    pub enabled: bool,
+    pub interval_seconds: u32,
+    pub retention_days: u32,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Settings {
     pub retention: Retention,
     pub polling: Polling,
     pub remote: Remote,
     pub ai: Ai,
+    pub bandwidth: Bandwidth,
 }
 
 impl Default for Settings {
@@ -57,6 +67,7 @@ impl Default for Settings {
             polling: Polling { session_seconds: 30, log_seconds: 30, auto_import_hours: Some(24), timeout_seconds: 10, retries: 2 },
             remote: Remote { session_hours: 12, max_failures: 5, lock_minutes: 5, allow_public_write: false },
             ai: Ai { enabled: true, mask_sensitive: true },
+            bandwidth: Bandwidth { enabled: true, interval_seconds: 60, retention_days: 7 },
         }
     }
 }
@@ -86,6 +97,8 @@ impl Settings {
         range("Masa sesi login (jam)", m.session_hours, 1, 720)?;
         range("Batas gagal login", m.max_failures, 3, 20)?;
         range("Lama penguncian (menit)", m.lock_minutes, 1, 1440)?;
+        range("Interval bandwidth (detik)", self.bandwidth.interval_seconds, 10, 3600)?;
+        range("Simpan data bandwidth (hari)", self.bandwidth.retention_days, 1, 365)?;
         Ok(())
     }
 
@@ -109,13 +122,17 @@ impl Settings {
         RuntimeConfig {
             poll_every: Duration::from_secs(u64::from(self.polling.session_seconds.min(self.polling.log_seconds))),
             sync_every: self.polling.auto_import_hours.map(|h| Duration::from_secs(u64::from(h) * 3600)),
+            traffic: self.bandwidth.enabled.then(|| TrafficConfig {
+                every: Duration::from_secs(u64::from(self.bandwidth.interval_seconds)),
+                retention: Duration::from_secs(u64::from(self.bandwidth.retention_days) * 86_400),
+            }),
         }
     }
 
     /// Daftar (kunci, nilai) untuk penyimpanan; `null` = tanpa batas.
     pub fn to_pairs(&self) -> Vec<(&'static str, String)> {
         let o = |v: Option<u32>| v.map_or("null".to_string(), |v| v.to_string());
-        let (r, p, m, a) = (&self.retention, &self.polling, &self.remote, &self.ai);
+        let (r, p, m, a, b) = (&self.retention, &self.polling, &self.remote, &self.ai, &self.bandwidth);
         vec![
             ("retention.event_days", o(r.event_days)),
             ("retention.ai_chat_days", o(r.ai_chat_days)),
@@ -133,6 +150,9 @@ impl Settings {
             ("remote.allow_public_write", m.allow_public_write.to_string()),
             ("ai.enabled", a.enabled.to_string()),
             ("ai.mask_sensitive", a.mask_sensitive.to_string()),
+            ("bandwidth.enabled", b.enabled.to_string()),
+            ("bandwidth.interval_seconds", b.interval_seconds.to_string()),
+            ("bandwidth.retention_days", b.retention_days.to_string()),
         ]
     }
 
@@ -159,6 +179,9 @@ impl Settings {
                 "remote.allow_public_write" => s.remote.allow_public_write = v == "true",
                 "ai.enabled" => s.ai.enabled = v == "true",
                 "ai.mask_sensitive" => s.ai.mask_sensitive = v == "true",
+                "bandwidth.enabled" => s.bandwidth.enabled = v == "true",
+                "bandwidth.interval_seconds" => num(v).into_iter().for_each(|x| s.bandwidth.interval_seconds = x),
+                "bandwidth.retention_days" => num(v).into_iter().for_each(|x| s.bandwidth.retention_days = x),
                 _ => {}
             }
         }
@@ -199,6 +222,8 @@ mod tests {
         assert!(bad(&|x| x.polling.retries = 6).contains("0-5"));
         assert!(bad(&|x| x.remote.max_failures = 2).contains("3-20"));
         assert!(bad(&|x| x.remote.lock_minutes = 0).contains("1-1440"));
+        assert!(bad(&|x| x.bandwidth.interval_seconds = 5).contains("10-3600"));
+        assert!(bad(&|x| x.bandwidth.retention_days = 0).contains("1-365"));
         // Selamanya (None) valid untuk kolom yang membolehkannya.
         s.retention.event_days = None;
         s.polling.auto_import_hours = None;
@@ -233,6 +258,11 @@ mod tests {
         assert_eq!((p.max_failures, p.require_2fa, p.public_on, p.session_hours), (7, true, true, 12));
         let rc = s.runtime_config();
         assert_eq!((rc.poll_every, rc.sync_every), (Duration::from_secs(20), None));
+        // Bandwidth: bawaan aktif tiap 60 detik, simpan 7 hari; dimatikan = tanpa pengumpul.
+        assert_eq!(rc.traffic, Some(TrafficConfig { every: Duration::from_secs(60), retention: Duration::from_secs(7 * 86_400) }));
+        let mut off = s;
+        off.bandwidth.enabled = false;
+        assert_eq!(off.runtime_config().traffic, None);
         assert_eq!(s.retention_policy().max_events, 200_000);
         let d = Settings::default().diff(&s);
         let keys: Vec<&str> = d.iter().map(|(k, ..)| *k).collect();
