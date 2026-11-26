@@ -3,7 +3,7 @@ import { LayoutGridIcon, ListIcon, Loader2Icon, PlusIcon, PuzzleIcon, SearchIcon
 import { toast } from "sonner"
 
 import { InstallChooserDialog } from "@/components/extensions/install-chooser"
-import { Permissions, Requires, StatusBadge, TierBadge, ToggleExtensionDialog, errMsg, useExtensionPatch } from "@/components/extensions/parts"
+import { LicenseInfo, LicenseNote, Permissions, Requires, StatusBadge, TierBadge, ToggleExtensionDialog, errMsg, useExtensionPatch } from "@/components/extensions/parts"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -59,6 +59,11 @@ function InstallDialog({ inspect, file, onClose, onInstalled }: { inspect: Exten
                 {p.publisher} · {p.id}
               </div>
               {inspect?.installedVersion && <div className="text-xs text-muted-foreground">{t("Terpasang: v{v}", { v: inspect.installedVersion })}</div>}
+            </div>
+            <div className="grid gap-1">
+              <div className="font-medium">{t("Lisensi")}</div>
+              <LicenseInfo license={p.license} />
+              <LicenseNote />
             </div>
             <div className="flex gap-2">
               <Badge>{p.tier === "official" ? t("Official") : t("Publik")}</Badge>
