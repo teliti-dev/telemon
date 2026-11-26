@@ -76,7 +76,7 @@ pub fn run() {
       // macOS: bilah judul menjadi lapisan transparan (Overlay) tanpa teks judul; header UI yang menjadi bilah judulnya
       // dan tombol lalu lintas bawaan mengambang di kiri atas (lihat `useMacOverlay` di src/lib/window.ts).
       #[cfg(target_os = "macos")]
-      let builder = builder.title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true).traffic_light_position(tauri::LogicalPosition::new(18.0, 21.0));
+      let builder = builder.title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true).traffic_light_position(tauri::LogicalPosition::new(18.0, 12.0));
       builder.build()?;
       Ok(())
     })
