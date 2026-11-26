@@ -4,6 +4,7 @@ import type {
   AiChatSummary,
   AiBudgetInput,
   AiDashboard,
+  AiUiContext,
   DashboardLayout,
   TrafficInterfaces,
   TrafficQuery,
@@ -172,7 +173,7 @@ export interface TelemonApi {
    * AI chat (hanya membaca): jawaban datang bertahap. Server menjawab dari data yang boleh
    * dibaca peran penanya dan menolak bila AI dimatikan atau peran tanpa akses.
    */
-  askAi(messages: AiMessage[], opts?: { signal?: AbortSignal }): AsyncGenerator<AiStreamEvent>
+  askAi(messages: AiMessage[], opts?: { signal?: AbortSignal; ui?: AiUiContext }): AsyncGenerator<AiStreamEvent>
   // Riwayat chat AI: disimpan di data Telemon per akun (bukan di browser), mengikuti retensi.
   listAiChats(): Promise<AiChatSummary[]>
   getAiChat(id: string): Promise<AiChat>

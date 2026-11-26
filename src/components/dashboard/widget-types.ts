@@ -38,5 +38,7 @@ export interface WidgetDef {
   defaultConfig?: WidgetConfig
   /** Ada formulir pengaturan (sumber data, rentang) bila diisi. */
   Config?: React.ComponentType<ConfigProps>
+  /** Kunci pengaturan yang sah; dipakai memeriksa usulan AI sebelum diterapkan. */
+  configKeys?: string[]
   Component: React.ComponentType<WidgetProps>
 }

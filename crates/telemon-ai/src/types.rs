@@ -60,7 +60,12 @@ pub enum AiWidget {
     User { username: String, router: String, status: String, tone: AiTone, fields: Vec<Field>, to: AiLink },
     /// Usulan perubahan tata letak Ringkasan (ADR 0027). Belum mengubah apa pun: UI menerapkannya hanya setelah
     /// pengguna menekan Terapkan, memakai izin pengguna itu sendiri.
-    Proposal { ops: Vec<LayoutOp> },
+    Proposal {
+        ops: Vec<LayoutOp>,
+        /// Diisi UI setelah pengguna memutuskan (`applied` atau `dismissed`), supaya tersimpan di riwayat chat.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        state: Option<String>,
+    },
 }
 
 /// Satu perubahan tata letak yang diusulkan. `config` memakai id router (bukan nama) dan sudah divalidasi alat.

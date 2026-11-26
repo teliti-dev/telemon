@@ -1,6 +1,7 @@
 import about from "./about"
 import admin from "./admin"
 import ai from "./ai"
+import aiplus from "./aiplus"
 import aidash from "./aidash"
 import auth from "./auth"
 import bandwidth from "./bandwidth"
@@ -24,6 +25,7 @@ export const EN: Record<string, string> = {
   ...common,
   ...dashboard,
   ...bandwidth,
+  ...aiplus,
   ...shell,
   ...auth,
   ...users,

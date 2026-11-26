@@ -9,8 +9,8 @@ use serde_json::{Map, Value, json};
 use telemon_core::auth::{Level, Resource};
 use telemon_core::traffic::PPPOE_AGGREGATE;
 
-use crate::tools::{Names, ToolCtx, ToolOutput, err, link, need};
-use crate::types::{AiWidget, LayoutOp, ListRow, UiContext};
+use crate::tools::{Names, ToolCtx, ToolOutput, err, need};
+use crate::types::{AiWidget, LayoutOp, UiContext};
 
 /// Sama dengan batas di server tata letak.
 const MAX_WIDGETS: usize = 60;
@@ -49,16 +49,12 @@ pub(crate) fn get_layout(ctx: &ToolCtx) -> ToolOutput {
     let can_edit = ctx.auth.authorize(ctx.caller, Resource::Ringkasan, Level::Update).is_ok();
     let widgets: Vec<Value> = ui.widgets.iter().map(|w| json!({ "id": w.id, "type": w.kind, "title": title_of(ui, &w.kind), "config": w.config })).collect();
     let catalog: Vec<Value> = ui.catalog.iter().map(|t| json!({ "type": t.kind, "title": t.title, "description": t.description, "configurable": t.configurable })).collect();
-    let rows = ui
-        .widgets
-        .iter()
-        .map(|w| ListRow { primary: title_of(ui, &w.kind).to_string(), secondary: Some(w.kind.clone()), trailing: None, tone: None, to: Some(link("ringkasan", &[])) })
-        .collect();
     ToolOutput {
         for_model: json!({ "widgets": widgets, "available_types": catalog, "routers": routers, "asker_can_edit_layout": can_edit,
             "config_options": { "bandwidth-chart": "router (nama router atau 'all'), iface (nama antarmuka atau '@pppoe'), range (1h|6h|24h|7d|30d)", "bandwidth-total": "range", "bandwidth-per-user": "router (nama atau 'all'), range" } })
         .to_string(),
-        widgets: vec![AiWidget::List { title: Some(ctx.lang.t("Widget di Ringkasan", "Widgets on Overview").into()), rows }],
+        // Tanpa kartu: daftarnya teknis (id dan jenis) dan hanya berguna bagi model; jawabannya berupa teks.
+        widgets: vec![],
         source: Some(ctx.lang.t("Tata letak Ringkasan", "Overview layout").into()),
         step,
     }
@@ -214,7 +210,7 @@ pub(crate) fn propose_layout_change(ctx: &ToolCtx, a: &Value) -> ToolOutput {
         for_model: json!({ "status": "proposal_ready", "applied": false, "changes": lines,
             "note": "Belum ada yang berubah. Usulan tampil di chat dengan tombol Terapkan; ceritakan apa yang diusulkan dan minta pengguna menekan Terapkan bila setuju." })
         .to_string(),
-        widgets: vec![AiWidget::Proposal { ops }],
+        widgets: vec![AiWidget::Proposal { ops, state: None }],
         source: Some(ctx.lang.t("Tata letak Ringkasan", "Overview layout").into()),
         step: format!("{step} — {}", lines.len()),
     }

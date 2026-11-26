@@ -4,6 +4,7 @@ import type {
   AiChat,
   AiChatSummary,
   AiDashboard,
+  AiUiContext,
   DashboardLayout,
   TrafficInterfaces,
   TrafficQuery,
@@ -609,13 +610,13 @@ export class HttpApi implements TelemonApi {
    * Pertanyaan dialirkan server sebagai NDJSON (satu objek JSON per baris). Galat sebelum jawaban dimulai datang
    * sebagai respons HTTP biasa; galat sesudahnya sebagai event `error`.
    */
-  async *askAi(messages: AiMessage[], opts?: { signal?: AbortSignal }): AsyncGenerator<AiStreamEvent> {
+  async *askAi(messages: AiMessage[], opts?: { signal?: AbortSignal; ui?: AiUiContext }): AsyncGenerator<AiStreamEvent> {
     const slim = messages.map((m) => ({ id: m.id, role: m.role, text: m.text, at: m.at, ...(m.error ? { error: true } : {}) }))
     const res = await this.f(this.base + "/api/ai/ask", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "same-origin",
-      body: JSON.stringify({ messages: slim, lang: getLang() }),
+      body: JSON.stringify({ messages: slim, lang: getLang(), ...(opts?.ui ? { ui: opts.ui } : {}) }),
       signal: opts?.signal,
     })
     if (!res.ok) {

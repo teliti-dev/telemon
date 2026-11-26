@@ -10,17 +10,9 @@ import { Button } from "@/components/ui/button"
 import { useDashboard } from "@/hooks/use-dashboard"
 import { useIsDesktop } from "@/hooks/use-media-query"
 import { useUpdateGate } from "@/hooks/use-write-gate"
-import { DEFAULT_WIDGETS, MAX_WIDGETS, newWidgetId, nextY } from "@/lib/dashboard"
+import { DEFAULT_WIDGETS, MAX_WIDGETS, newWidgetId, nextY, sameLayout } from "@/lib/dashboard"
 import { useT } from "@/lib/i18n"
 import type { DashboardWidget } from "@/lib/types"
-
-/** Dua tata letak sama bila setiap widget punya jenis dan kotak yang sama (urutan dan pengaturan tidak dihitung). */
-function sameLayout(a: DashboardWidget[], b: DashboardWidget[]) {
-  const key = (w: DashboardWidget) => `${w.id}|${w.type}|${w.x}|${w.y}|${w.w}|${w.h}`
-  const ka = a.map(key).sort()
-  const kb = b.map(key).sort()
-  return ka.length === kb.length && ka.every((k, i) => k === kb[i])
-}
 
 /**
  * Ringkasan = kumpulan widget dengan satu tata letak untuk semua akun. Akun berizin Ubah Ringkasan bisa

@@ -486,7 +486,7 @@ async fn get_layout_memberi_widget_jenis_dan_router() {
     assert_eq!(v["widgets"][1], json!({ "id": "w-bw", "type": "bandwidth-chart", "title": "Judul bandwidth-chart", "config": { "router": "all", "iface": "@pppoe", "range": "6h" } }));
     assert_eq!(v["available_types"].as_array().unwrap().len(), 5);
     assert_eq!((v["routers"].clone(), v["asker_can_edit_layout"].clone()), (json!(["RB-Utara"]), json!(true)));
-    assert!(widgets_of(&ev).iter().any(|w| matches!(w, AiWidget::List { .. })));
+    assert!(widgets_of(&ev).is_empty(), "get_layout tidak menampilkan kartu teknis ke pengguna");
     // Peran tanpa izin Ubah tahu bahwa ia tidak bisa mengubah; klien tanpa konteks tampilan mendapat galat jelas.
     let (v, _) = run_tool(&{ let w = world(vec![call("get_layout", json!({})), say("x")]); add_provider(&w); w }, &session(full()), Some(&ui)).await;
     assert_eq!(v["asker_can_edit_layout"], false);
@@ -506,7 +506,7 @@ async fn usulan_tata_letak_tidak_menulis_apa_pun_dan_hasilnya_sudah_divalidasi()
     let (v, ev, w) = propose(changes, can_edit(), Some(&ui), true).await;
     assert_eq!((v["status"].clone(), v["applied"].clone()), (json!("proposal_ready"), json!(false)), "{v}");
     let rid = router_id(&w);
-    let proposal = widgets_of(&ev).into_iter().find_map(|w| if let AiWidget::Proposal { ops } = w { Some(ops) } else { None }).expect("ada widget usulan");
+    let proposal = widgets_of(&ev).into_iter().find_map(|w| if let AiWidget::Proposal { ops, .. } = w { Some(ops) } else { None }).expect("ada widget usulan");
     let cfg = |v: serde_json::Value| v.as_object().unwrap().clone();
     assert_eq!(
         proposal,

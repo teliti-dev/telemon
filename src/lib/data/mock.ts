@@ -6,6 +6,7 @@
 import type {
   AiBudgetInput,
   AiDashboard,
+  AiUiContext,
   DashboardLayout,
   TrafficInterfaces,
   TrafficPoint,
@@ -49,7 +50,7 @@ import type {
   UserPatch,
   UserStatus,
 } from "../types"
-import { answerQuestion } from "./ai-engine"
+import { answerQuestion, wantsBandwidth } from "./ai-engine"
 import { DEFAULT_ROLES, DEFAULT_SETTINGS } from "../defaults"
 import { t, tk } from "../i18n"
 import { hasUpdate, RESOURCES } from "../permissions"
@@ -826,12 +827,15 @@ export class MockApi implements TelemonApi {
     }
   }
 
-  async *askAi(messages: AiMessage[], opts?: { signal?: AbortSignal }): AsyncGenerator<AiStreamEvent> {
+  async *askAi(messages: AiMessage[], opts?: { signal?: AbortSignal; ui?: AiUiContext }): AsyncGenerator<AiStreamEvent> {
     this.authorize("ai", "read")
     if (!this.settings.ai.enabled) throw new Error(t("AI dimatikan oleh pemilik Telemon"))
     const question = [...messages].reverse().find((m) => m.role === "user")?.text ?? ""
     const perms = this.currentSessionId ? this.roleOf(this.current().a).permissions : null
-    const ans = answerQuestion(question, this.aiContext((r) => !perms || perms[r] !== "none"))
+    const can = (r: Resource) => !perms || perms[r] !== "none"
+    const series = wantsBandwidth(question) && can("router") ? await this.getTrafficSeries({ router: "all", iface: "@pppoe", range: "24h" }).then((s) => s.points).catch(() => undefined) : undefined
+    const canEditLayout = !perms || perms.ringkasan === "update"
+    const ans = answerQuestion(question, { ...this.aiContext(can), ui: opts?.ui, canEditLayout, series })
     const stopped = () => !!opts?.signal?.aborted
     for (const text of ans.steps ?? []) {
       if (stopped()) return

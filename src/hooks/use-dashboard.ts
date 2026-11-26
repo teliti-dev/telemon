@@ -1,7 +1,7 @@
 import * as React from "react"
 
 import { WIDGET_BY_TYPE } from "@/components/dashboard/registry"
-import { DEFAULT_WIDGETS } from "@/lib/dashboard"
+import { DEFAULT_WIDGETS, onDashboardChanged } from "@/lib/dashboard"
 import { useStore } from "@/lib/store-context"
 import type { DashboardWidget } from "@/lib/types"
 
@@ -19,6 +19,9 @@ export function useDashboard() {
   const [widgets, setWidgets] = React.useState<DashboardWidget[] | null>(null)
   const [custom, setCustom] = React.useState(false)
 
+  // `version` naik saat tata letak berubah dari tempat lain (usulan AI diterapkan): muat ulang.
+  const [version, setVersion] = React.useState(0)
+  React.useEffect(() => onDashboardChanged(() => setVersion((v) => v + 1)), [])
   React.useEffect(() => {
     let cancelled = false
     api
@@ -36,7 +39,7 @@ export function useDashboard() {
     return () => {
       cancelled = true
     }
-  }, [api])
+  }, [api, version])
 
   /** Simpan untuk semua akun. Melempar galat dari server bila ditolak. */
   const save = React.useCallback(

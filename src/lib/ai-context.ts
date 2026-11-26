@@ -1,6 +1,6 @@
 import * as React from "react"
 
-import type { AiChatSummary, AiMessage } from "./types"
+import type { AiChatSummary, AiMessage, AiWidget } from "./types"
 
 export type AiView = "chat" | "history"
 
@@ -23,6 +23,8 @@ export interface AiChatValue {
   busy: boolean
   send: (text: string) => void
   stop: () => void
+  /** Ubah satu widget di jawaban (mis. usulan jadi `applied`) dan simpan ke riwayat. */
+  patchWidget: (messageId: string, index: number, patch: Partial<AiWidget>) => void
   newChat: () => void
   /** Buka panel, mulai percakapan baru, dan langsung bertanya (pintasan dari halaman lain). */
   ask: (text: string) => void

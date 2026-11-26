@@ -1,5 +1,6 @@
 import { ArrowUpRightIcon } from "lucide-react"
 
+import { AiProposalCard } from "@/components/ai-proposal"
 import { useT } from "@/lib/i18n"
 import type { AiLink, AiTone, AiWidget } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -16,8 +17,10 @@ function Dot({ tone }: { tone?: AiTone }) {
 }
 
 /** Komponen visual di dalam jawaban AI: kartu angka, grafik batang, daftar, dan kartu user. */
-export function AiWidgetView({ widget, onNavigate }: { widget: AiWidget; onNavigate: (to: AiLink) => void }) {
+export function AiWidgetView({ widget, onNavigate, onPatch }: { widget: AiWidget; onNavigate: (to: AiLink) => void; onPatch?: (patch: Partial<AiWidget>) => void }) {
   const t = useT()
+
+  if (widget.kind === "proposal") return <AiProposalCard widget={widget} onPatch={(p) => onPatch?.(p)} />
 
   if (widget.kind === "stats") {
     return (
