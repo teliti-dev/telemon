@@ -90,4 +90,7 @@ export default {
   "URL berganti setiap kali akses publik dinyalakan.": "The URL changes each time public access is turned on.",
   "Akun dan peran (apa yang boleh dilakukan tiap akun) dikelola di menu": "Accounts and roles (what each account may do) are managed in the",
   "Tulis lewat akses publik diatur di Pengaturan.": "Write over public access is set in Settings.",
+  "Umum": "General",
+  "Pengaturan AI": "AI settings",
+  "Buka dasbor AI": "Open AI dashboard",
 } satisfies Record<string, string>

@@ -2,7 +2,6 @@ import * as React from "react"
 import { DatabaseIcon, RadioTowerIcon, RotateCcwIcon, ShieldIcon, SparklesIcon, TimerResetIcon } from "lucide-react"
 import { toast } from "sonner"
 
-import { AiDashboard } from "@/components/ai-dashboard"
 import { UpdateCard } from "@/components/update-card"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -23,6 +22,7 @@ import { useUpdateGate } from "@/hooks/use-write-gate"
 import { useApi } from "@/lib/api-context"
 import { DEFAULT_SETTINGS } from "@/lib/defaults"
 import { formatBytes, formatNumber } from "@/lib/format"
+import { pathHref } from "@/lib/route"
 import { useStore } from "@/lib/store-context"
 import type { AppSettings, StorageInfo } from "@/lib/types"
 
@@ -317,10 +317,11 @@ function SettingsForm() {
               </div>
               <Switch id="ai-mask" checked={draft.ai.maskSensitive} onCheckedChange={(v) => set("ai", { maskSensitive: v })} />
             </div>
+            <Button variant="outline" size="sm" asChild className="justify-self-start">
+              <a href={pathHref("pengaturan", ["ai"])}><SparklesIcon /> {t("Buka dasbor AI")}</a>
+            </Button>
           </CardContent>
         </Card>
-
-        <div className="xl:col-span-2"><AiDashboard /></div>
 
         <UpdateCard />
 

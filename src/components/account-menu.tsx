@@ -1,5 +1,5 @@
 import * as React from "react"
-import { LogOutIcon, UserRoundIcon } from "lucide-react"
+import { LogOutIcon, SparklesIcon, UserRoundIcon } from "lucide-react"
 
 import { isNavActive } from "@/components/nav-items"
 import { Button } from "@/components/ui/button"
@@ -22,7 +22,7 @@ import { useIsDesktop } from "@/hooks/use-media-query"
 import { useNavItems } from "@/hooks/use-nav-items"
 import { useAuth } from "@/lib/auth-context"
 import { useT } from "@/lib/i18n"
-import { navigate, useRoute, type Page } from "@/lib/route"
+import { navigate, navigatePath, useRoute, type Page } from "@/lib/route"
 import { cn } from "@/lib/utils"
 
 /**
@@ -35,9 +35,10 @@ export function AccountMenu() {
   const t = useT()
   const isDesktop = useIsDesktop()
   const { session, logout } = useAuth()
-  const { page } = useRoute()
+  const { page, segments } = useRoute()
   const manageItems = useNavItems().filter((i) => i.more)
   const [open, setOpen] = React.useState(false)
+  const onAi = page === "pengaturan" && (segments[0] === "ai" || segments[0] === "ai-provider")
 
   const initials = session
     ? session.displayName
@@ -126,15 +127,31 @@ export function AccountMenu() {
               </li>
             )}
             {manageItems.map((item) => (
-              <li key={item.page}>
-                <Button
-                  variant="ghost"
-                  className={cn(row, isNavActive(item.page, page) && "text-brand")}
-                  onClick={() => go(item.page)}
-                >
-                  <item.icon /> {t(item.label /* i18n-ignore: label bertanda tk() */)}
-                </Button>
-              </li>
+              <React.Fragment key={item.page}>
+                <li>
+                  <Button
+                    variant="ghost"
+                    className={cn(row, isNavActive(item.page, page) && !(item.page === "pengaturan" && onAi) && "text-brand")}
+                    onClick={() => go(item.page)}
+                  >
+                    <item.icon /> {t(item.label /* i18n-ignore: label bertanda tk() */)}
+                  </Button>
+                </li>
+                {item.page === "pengaturan" && (
+                  <li>
+                    <Button
+                      variant="ghost"
+                      className={cn(row, onAi && "text-brand")}
+                      onClick={() => {
+                        setOpen(false)
+                        navigatePath("pengaturan", ["ai"])
+                      }}
+                    >
+                      <SparklesIcon /> {t("Pengaturan AI")}
+                    </Button>
+                  </li>
+                )}
+              </React.Fragment>
             ))}
             {session && (
               <li className="mt-1 border-t pt-2">
