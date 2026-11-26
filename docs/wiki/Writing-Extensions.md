@@ -67,6 +67,19 @@ signature.json         Ed25519 signature over every file
 
 Telemon only **shows** this on the install preview, the store and the detail page. It does not sell, verify or enforce your license, and it adds no payment system.
 
+### Is my extension bound by Telemon's AGPL?
+
+**No, as long as it only uses the documented extension interface.** Telemon is AGPL-3.0, and the project grants an
+[Extension Exception](../../EXTENSION-EXCEPTION.md): an additional permission under section 7 of the AGPL that lets you license your
+own extension under terms of your choice (free, open source, freemium, paid, proprietary...), provided that:
+
+1. it talks to Telemon only through the extension interface (the manifest and `.tmx` format, the UI contract in `sdk.ts`, the routes and sessions Telemon exposes, and the WASM host interface);
+2. it does not copy Telemon code into itself (using the types in `sdk.ts` at build time is fine); and
+3. it is not a modified Telemon (changing Telemon's own files keeps the AGPL in full).
+
+The `telemon-ext-guest` crate you link into a Rust backend is MIT or Apache-2.0. Read the exact terms in
+[EXTENSION-EXCEPTION.md](../../EXTENSION-EXCEPTION.md).
+
 > [!WARNING]
 > Older Telemon builds reject a manifest with an unknown field. Packages that use `license` need a Telemon release that understands it.
 

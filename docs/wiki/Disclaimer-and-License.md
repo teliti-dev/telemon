@@ -11,7 +11,7 @@ Telemon is free software under the **GNU AGPL-3.0**. You may use, study, change 
 
 ### Extensions
 
-**Each extension has its own license**, chosen by its publisher (free, open source, freemium, paid or other) and shown on the extension's page. Telemon does not sell, verify or enforce extension licenses.
+**Each extension has its own license**, chosen by its publisher (free, open source, freemium, paid or other) and shown on the extension's page. Telemon does not sell, verify or enforce extension licenses. The project's [Extension Exception](https://github.com/teliti-dev/telemon/blob/master/EXTENSION-EXCEPTION.md) (an additional permission under AGPL section 7) lets developers license their own extensions under terms of their choice, as long as the extension only uses the documented extension interface.
 
 ## Disclaimer
 

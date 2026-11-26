@@ -166,4 +166,5 @@ export default {
   "Syarat lengkap": "Full terms",
   "Tidak dinyatakan penerbit": "Not stated by the publisher",
   "Lisensi extension ditentukan penerbitnya. Telemon tidak menjual, memverifikasi, atau menegakkan lisensi itu, dan tidak bertanggung jawab atas extension pihak ketiga.": "An extension's license is set by its publisher. Telemon does not sell, verify or enforce it, and is not responsible for third-party extensions.",
+  "Lisensi tidak dinyatakan": "License not stated",
 } as Record<string, string>

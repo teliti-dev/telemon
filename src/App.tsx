@@ -5,6 +5,7 @@ import { AiChatDock, AI_DOCK_WIDTH } from "@/components/ai-chat-dock"
 import { AuthGate } from "@/components/auth-gate"
 import { BottomNav } from "@/components/bottom-nav"
 import { CommandPalette } from "@/components/command-palette"
+import { DisclaimerNotice } from "@/components/disclaimer-notice"
 import { BottomPanel } from "@/components/extensions/bottom-panel"
 import { PageSkeleton } from "@/components/skeletons"
 import { SiteHeader } from "@/components/site-header"
@@ -181,6 +182,7 @@ function Content() {
       </main>
       <BottomPanel />
       <CommandPalette onOpenUser={openUserFn} />
+      <DisclaimerNotice />
       <BottomNav />
       <AiChatDock />
       {isDesktop && <UserDetailSheet userId={openUser} onOpenChange={(o) => !o && setOpenUser(null)} />}

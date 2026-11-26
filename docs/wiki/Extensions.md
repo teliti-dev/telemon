@@ -32,6 +32,8 @@ Each extension has an **Access** page: for each role you choose *no access*, *vi
 
 > [!IMPORTANT]
 > Telemon does **not** sell, verify or enforce extension licenses, and is not responsible for extensions made by others.
+>
+> Developers can license their extensions as they like. See [Writing extensions](Writing-Extensions.md#is-my-extension-bound-by-telemons-agpl).
 
 ## Official extensions
 
