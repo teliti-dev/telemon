@@ -9,6 +9,7 @@ mod error;
 mod guard;
 mod share;
 mod state;
+mod traffic;
 mod update;
 mod ws;
 

@@ -197,6 +197,25 @@ CREATE TABLE ai_chats (
   messages TEXT NOT NULL
 );
 CREATE INDEX ai_chats_account ON ai_chats(account, updated_at);
+", "
+CREATE TABLE traffic_samples (
+  router_id TEXT NOT NULL,
+  iface TEXT NOT NULL,
+  at INTEGER NOT NULL,
+  rx_bps INTEGER NOT NULL,
+  tx_bps INTEGER NOT NULL,
+  sessions INTEGER
+);
+CREATE INDEX traffic_samples_router ON traffic_samples(router_id, iface, at);
+CREATE INDEX traffic_samples_iface ON traffic_samples(iface, at);
+CREATE TABLE traffic_ifaces (
+  router_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  running INTEGER NOT NULL,
+  last_seen INTEGER NOT NULL,
+  PRIMARY KEY (router_id, name)
+);
 "];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -920,6 +939,8 @@ impl Store {
         for table in ["user_meta", "user_secrets"] {
             tx.execute(&format!("DELETE FROM {table} WHERE {like}"), [&esc])?;
         }
+        tx.execute("DELETE FROM traffic_samples WHERE router_id = ?1", [id])?;
+        tx.execute("DELETE FROM traffic_ifaces WHERE router_id = ?1", [id])?;
         let out = RouterRemoved {
             events: tx.execute("DELETE FROM events WHERE router_id = ?1", [id])? as u64,
             users: tx.execute("DELETE FROM users WHERE router_id = ?1", [id])? as u64,

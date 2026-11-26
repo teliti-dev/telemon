@@ -112,7 +112,7 @@ fn harness_with(cfg: HttpConfig) -> T {
     let secrets: Arc<dyn SecretStore> = Arc::new(MemorySecrets::default());
     let reachable = Arc::new(AtomicBool::new(true));
     let conn = FakeConnector { world: world.clone(), connects: AtomicUsize::new(0), reachable: reachable.clone() };
-    let telemon = Arc::new(Telemon::new(store, secrets, conn, RuntimeConfig { poll_every: Duration::from_millis(20), sync_every: None }));
+    let telemon = Arc::new(Telemon::new(store, secrets, conn, RuntimeConfig { poll_every: Duration::from_millis(20), sync_every: None, traffic: None }));
     let clock = Arc::new(AtomicI64::new(T0));
     let (c1, c2) = (clock.clone(), clock.clone());
     let auth = Arc::new(Auth::with_clock(telemon.store(), HashParams { memory_kib: 8, iterations: 1, parallelism: 1 }, Box::new(move || c1.load(Ordering::SeqCst))).unwrap());
@@ -1173,6 +1173,83 @@ async fn tata_letak_dashboard_global_dengan_izin_dan_validasi() {
     let r = t.call(Method::PUT, "/api/dashboard", Some(json!({ "layout": null })), Some(&ca), &[], LAN).await;
     assert_eq!(r.status, StatusCode::OK);
     assert!(t.call(Method::GET, "/api/dashboard", None, Some(&cv), &[], LAN).await.body["layout"].is_null());
+}
+
+// ---------------- bandwidth ----------------
+
+#[tokio::test]
+async fn bandwidth_antarmuka_deret_waktu_validasi_dan_izin() {
+    let t = harness();
+    let rid = t.router(false);
+    let c = desk_cookie();
+    // Waktu sampel diselaraskan ke batas ember 6 menit (rentang 24 jam) supaya hasil tidak bergantung pada kapan tes jalan.
+    let base = (t.st.now() / 360_000) * 360_000 - 360_000;
+    let ifc = |n: &str, running: bool| telemon_core::traffic::IfaceInfo { name: n.into(), kind: "ether".into(), running };
+    let smp = |i: &str, rx: i64, tx: i64, sessions: Option<i64>| telemon_core::traffic::Sample { iface: i.into(), rx_bps: rx, tx_bps: tx, sessions };
+    t.telemon
+        .with_store(|s| {
+            s.insert_traffic(&rid, base + 10_000, &[ifc("ether1", true), ifc("@pppoe", true)], &[smp("ether1", 1_000, 2_000, None), smp("@pppoe", 4_000, 40_000, Some(8))]).unwrap();
+            s.insert_traffic(&rid, base + 70_000, &[ifc("ether1", true), ifc("@pppoe", true)], &[smp("ether1", 3_000, 4_000, None), smp("@pppoe", 6_000, 60_000, Some(10))]).unwrap();
+        });
+    let get = |path: String| {
+        let (t, c) = (&t, &c);
+        async move { t.desk(Method::GET, &path, None, Some(c), LOOP).await }
+    };
+
+    // Daftar antarmuka + pengaturan yang relevan.
+    let l = get(format!("/api/traffic/interfaces?router={rid}")).await;
+    assert_eq!(l.status, StatusCode::OK, "{:?}", l.body);
+    let names: Vec<&str> = l.body["interfaces"].as_array().unwrap().iter().map(|i| i["name"].as_str().unwrap()).collect();
+    assert_eq!(names, vec!["@pppoe", "ether1"]);
+    assert_eq!((l.body["enabled"].as_bool(), l.body["intervalSeconds"].as_i64()), (Some(true), Some(60)));
+    assert_eq!(get("/api/traffic/interfaces?router=tidak-ada".into()).await.status, StatusCode::NOT_FOUND);
+
+    // Deret satu antarmuka: rata-rata per ember; ember minimal sama dengan interval (60 detik) sehingga dua sampel terpisah.
+    let s = get(format!("/api/traffic/series?router={rid}&iface=ether1&range=1h")).await;
+    assert_eq!(s.status, StatusCode::OK, "{:?}", s.body);
+    let pts = s.body["points"].as_array().unwrap();
+    let vals: Vec<(i64, i64)> = pts.iter().map(|p| (p["rxBps"].as_i64().unwrap(), p["txBps"].as_i64().unwrap())).collect();
+    assert_eq!(vals, vec![(1_000, 2_000), (3_000, 4_000)]);
+    assert!(pts[0].get("sessions").is_none());
+    assert_eq!(s.body["bucketSeconds"], 60);
+
+    // Antarmuka virtual PPPoE: ada jumlah sesi; semua router = total pelanggan.
+    let p = get(format!("/api/traffic/series?router={rid}&iface=%40pppoe&range=24h")).await;
+    assert_eq!(p.body["bucketSeconds"], 360);
+    assert_eq!(p.body["points"].as_array().unwrap().len(), 1, "rentang 24 jam: ember 6 menit menggabungkan dua sampel");
+    assert_eq!(p.body["points"][0]["sessions"], 9.0);
+    let all = get("/api/traffic/series?router=all&iface=%40pppoe&range=1h".into()).await;
+    assert_eq!(all.status, StatusCode::OK, "{:?}", all.body);
+    assert_eq!(all.body["points"].as_array().unwrap().len(), 2);
+    // Total lintas router hanya untuk @pppoe (antarmuka fisik terhitung ganda).
+    assert_eq!(get("/api/traffic/series?router=all&iface=ether1&range=1h".into()).await.status, StatusCode::BAD_REQUEST);
+    for bad in ["range=2h", "range=", "iface=&range=1h"] {
+        let q = if bad.starts_with("iface") { format!("/api/traffic/series?router={rid}&{bad}") } else { format!("/api/traffic/series?router={rid}&iface=ether1&{bad}") };
+        assert_eq!(get(q).await.status, StatusCode::BAD_REQUEST, "{bad}");
+    }
+    assert_eq!(get("/api/traffic/series?router=tidak-ada&iface=ether1&range=1h".into()).await.status, StatusCode::NOT_FOUND);
+
+    // Interval di Pengaturan menentukan lebar ember minimum, dan bisa dibaca/diubah lewat /api/settings.
+    let mut cfg = t.desk(Method::GET, "/api/settings", None, Some(&c), LOOP).await.body;
+    assert_eq!((cfg["bandwidth"]["enabled"].as_bool(), cfg["bandwidth"]["intervalSeconds"].as_i64(), cfg["bandwidth"]["retentionDays"].as_i64()), (Some(true), Some(60), Some(7)));
+    cfg["bandwidth"]["intervalSeconds"] = json!(300);
+    let r = t.desk(Method::PUT, "/api/settings", Some(cfg.clone()), Some(&c), LOOP).await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    assert_eq!(get(format!("/api/traffic/series?router={rid}&iface=ether1&range=1h")).await.body["bucketSeconds"], 300);
+    cfg["bandwidth"]["intervalSeconds"] = json!(5);
+    assert_eq!(t.desk(Method::PUT, "/api/settings", Some(cfg), Some(&c), LOOP).await.status, StatusCode::BAD_REQUEST, "interval di luar 10-3600 ditolak");
+
+    // Izin: perlu Router Lihat. Peran yang hanya punya Ringkasan ditolak.
+    let role = t.auth.create_role(None, &RoleInput { name: "tanpa-router".into(), description: String::new(), permissions: Permissions::default().with(Resource::Ringkasan, Level::Read) }).unwrap();
+    t.account("nirrouter", &role.id);
+    let cn = t.login("nirrouter").await;
+    for path in [format!("/api/traffic/interfaces?router={rid}"), format!("/api/traffic/series?router={rid}&iface=ether1&range=1h")] {
+        let r = t.call(Method::GET, &path, None, Some(&cn), &[], LAN).await;
+        assert_eq!((r.status, r.code()), (StatusCode::FORBIDDEN, "forbidden"), "{path}");
+    }
+    t.account("pemantau", "role-monitor");
+    let cm = t.login("pemantau").await;
+    assert_eq!(t.call(Method::GET, &format!("/api/traffic/series?router={rid}&iface=ether1&range=1h"), None, Some(&cm), &[], LAN).await.status, StatusCode::OK);
 }
 
 // ---------------- pembaruan aplikasi ----------------

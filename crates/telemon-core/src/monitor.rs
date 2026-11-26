@@ -11,6 +11,7 @@ use crate::events::{Detector, Event};
 use crate::poller::poll_once_status;
 use crate::router::{Error, RouterApi, ppp_active, ppp_profiles, ppp_secrets};
 use crate::store::{RetentionPolicy, RouterStatus, Store, SyncReport};
+use crate::traffic::{Collector, TrafficConfig};
 
 /// Akses ke Store dibagi antar tugas; kunci hanya dipegang sebentar dan tidak melewati `await`.
 pub type SharedStore = Arc<Mutex<Store>>;
@@ -109,6 +110,42 @@ pub async fn run_router(
             for (id, e) in ids.into_iter().zip(events) {
                 let _ = tx.send((id, e)).await;
             }
+        }
+    }
+}
+
+/// Kumpulkan bandwidth per antarmuka sampai `stop`. Router yang tidak menjawab dilewati (statusnya diurus
+/// `run_router`) dan pembacaan berikutnya mulai dari nol, supaya laju tidak dirata-ratakan melintasi jeda.
+/// Sampel lebih lama dari `cfg.retention` dihapus tiap jam.
+pub async fn run_traffic(api: impl RouterApi, store: SharedStore, router_id: String, cfg: TrafficConfig, mut stop: watch::Receiver<bool>) {
+    let mut collector = Collector::new();
+    let mut tick = interval(cfg.every);
+    tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    let mut last_purge: Option<Instant> = None;
+    loop {
+        tokio::select! {
+            _ = tick.tick() => {}
+            _ = stop.changed() => return,
+        }
+        if *stop.borrow() {
+            return;
+        }
+        let rows = match api.print("/interface").await {
+            Ok(rows) => rows,
+            Err(_) => {
+                collector = Collector::new();
+                continue;
+            }
+        };
+        let now = now_ms();
+        let c = collector.collect(&rows, now);
+        let mut s = store.lock().expect("store lock");
+        if let Err(e) = s.insert_traffic(&router_id, now, &c.ifaces, &c.samples) {
+            eprintln!("telemon: gagal menyimpan bandwidth {router_id}: {e}");
+        }
+        if last_purge.is_none_or(|t| t.elapsed() >= Duration::from_secs(3600)) {
+            let _ = s.purge_traffic(now - i64::try_from(cfg.retention.as_millis()).unwrap_or(i64::MAX));
+            last_purge = Some(Instant::now());
         }
     }
 }
@@ -260,6 +297,50 @@ mod tests {
         wait_until(|| store.lock().unwrap().get_router(&r.id).unwrap().unwrap().status == RouterStatus::Error).await;
         stop_tx.send(true).unwrap();
         h.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn bandwidth_tersimpan_dan_gagal_baca_mereset_pembacaan() {
+        // Router tiruan: tiap pembacaan `/interface` menaikkan counter. Pembacaan ke-3 gagal, setelah ke-6 gagal terus
+        // (supaya hasil tidak bergantung pada kapan tugas dihentikan).
+        struct Counters(Mutex<u64>);
+        impl RouterApi for Counters {
+            async fn print(&self, path: &str) -> Result<Vec<Row>, Error> {
+                assert_eq!(path, "/interface");
+                let n = {
+                    let mut g = self.0.lock().unwrap();
+                    *g += 1;
+                    *g
+                };
+                if n == 3 || n > 6 {
+                    return Err(Error::Fatal("putus".into()));
+                }
+                let bytes = (n * 125_000).to_string();
+                Ok(vec![
+                    row(&[("name", "ether1"), ("type", "ether"), ("running", "true"), ("disabled", "false"), ("rx-byte", &bytes), ("tx-byte", &bytes)]),
+                    row(&[("name", "<pppoe-a>"), ("type", "pppoe-in"), ("running", "true"), ("disabled", "false"), ("rx-byte", &bytes), ("tx-byte", &bytes)]),
+                ])
+            }
+        }
+        let store: SharedStore = Arc::new(Mutex::new(Store::open_in_memory().unwrap()));
+        let api = Counters(Mutex::new(0));
+        let (stop_tx, stop_rx) = watch::channel(false);
+        let cfg = TrafficConfig { every: Duration::from_millis(10), retention: Duration::from_secs(86_400) };
+        let h = tokio::spawn(run_traffic(api, store.clone(), "r1".into(), cfg, stop_rx));
+        // Pembacaan sukses: 1, 2, 4, 5, 6. Sampel hanya ada di 2, 5, dan 6 (1 = acuan, 4 = acuan baru setelah gagal).
+        wait_until(|| store.lock().unwrap().count_traffic_samples().unwrap() >= 6).await;
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        stop_tx.send(true).unwrap();
+        tokio::time::timeout(Duration::from_secs(2), h).await.expect("berhenti").unwrap();
+
+        let s = store.lock().unwrap();
+        let ifaces: Vec<String> = s.list_traffic_ifaces("r1").unwrap().into_iter().map(|i| i.name).collect();
+        assert_eq!(ifaces, vec!["@pppoe".to_string(), "ether1".to_string()]);
+        let eth = s.traffic_series(Some("r1"), "ether1", 0, i64::MAX, 1).unwrap();
+        let ppp = s.traffic_series(Some("r1"), "@pppoe", 0, i64::MAX, 1).unwrap();
+        assert_eq!((eth.len(), ppp.len()), (3, 3), "eth={eth:?} ppp={ppp:?}");
+        assert!(eth.iter().all(|p| p.rx_bps > 0.0 && p.sessions.is_none()));
+        assert!(ppp.iter().all(|p| p.sessions == Some(1.0)));
     }
 
     #[tokio::test]
