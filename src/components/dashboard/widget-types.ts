@@ -32,6 +32,8 @@ export interface WidgetDef {
   tile?: boolean
   /** Di HP tinggi mengikuti isi (bukan tinggi grid). */
   stackAuto?: boolean
+  /** Di grid, tingginya mengikuti isi widget (diukur); hanya lebarnya yang bisa diubah. */
+  autoHeight?: boolean
   /** Pengaturan awal saat widget ditambahkan. */
   defaultConfig?: WidgetConfig
   /** Ada formulir pengaturan (sumber data, rentang) bila diisi. */

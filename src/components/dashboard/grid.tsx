@@ -7,7 +7,8 @@ import { SettingsIcon, XIcon } from "lucide-react"
 import { WidgetConfigDialog } from "@/components/dashboard/config-dialog"
 import { WIDGET_BY_TYPE, type WidgetDef } from "@/components/dashboard/registry"
 import type { WidgetConfig } from "@/components/dashboard/widget-types"
-import { GRID_COLS, GRID_MARGIN, ROW_HEIGHT, readingOrder } from "@/lib/dashboard"
+import { AutoHeightProvider } from "@/components/dashboard/auto-height"
+import { GRID_COLS, GRID_MARGIN, ROW_HEIGHT, WIDGET_GAP, readingOrder, rowsForHeight } from "@/lib/dashboard"
 import { useT } from "@/lib/i18n"
 import type { DashboardWidget } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -21,9 +22,14 @@ interface Props {
   onOpenUser: (id: string) => void
 }
 
-const px = (rows: number) => rows * ROW_HEIGHT + (rows - 1) * GRID_MARGIN[1]
+const px = (rows: number) => rows * ROW_HEIGHT - WIDGET_GAP
 
-function layoutItem(w: DashboardWidget, def: WidgetDef): LayoutItem {
+function layoutItem(w: DashboardWidget, def: WidgetDef, measuredPx?: number): LayoutItem {
+  if (def.autoHeight && measuredPx !== undefined) {
+    // Tinggi mengikuti isi: tetap, hanya lebar yang bisa ditarik.
+    const rows = Math.max(def.minH ?? 1, rowsForHeight(measuredPx))
+    return { i: w.id, x: w.x, y: w.y, w: w.w, h: rows, minW: def.minW ?? 1, minH: rows, maxH: rows, isResizable: def.resizable, resizeHandles: ["e"] }
+  }
   return {
     i: w.id,
     x: w.x,
@@ -42,9 +48,11 @@ function layoutItem(w: DashboardWidget, def: WidgetDef): LayoutItem {
 export function DashboardGrid({ widgets, editing, onChange, onRemove, onConfigure, onOpenUser }: Props) {
   const t = useT()
   const [configuring, setConfiguring] = React.useState<string | null>(null)
+  const [measured, setMeasured] = React.useState<Record<string, number>>({})
+  const report = React.useCallback((id: string, px: number) => setMeasured((m) => (m[id] === px ? m : { ...m, [id]: px })), [])
   const { width, containerRef, mounted } = useContainerWidth()
   const known = widgets.filter((w) => WIDGET_BY_TYPE.has(w.type))
-  const layout = known.map((w) => layoutItem(w, WIDGET_BY_TYPE.get(w.type)!))
+  const layout = known.map((w) => layoutItem(w, WIDGET_BY_TYPE.get(w.type)!, measured[w.id]))
 
   function onLayoutChange(next: readonly LayoutItem[]) {
     if (!editing) return
@@ -61,6 +69,7 @@ export function DashboardGrid({ widgets, editing, onChange, onRemove, onConfigur
   return (
     <div ref={containerRef} className="w-full">
       {mounted && (
+        <AutoHeightProvider value={report}>
         <ReactGridLayout
           width={width}
           layout={layout}
@@ -73,7 +82,7 @@ export function DashboardGrid({ widgets, editing, onChange, onRemove, onConfigur
             const def = WIDGET_BY_TYPE.get(w.type)!
             return (
               <div key={w.id} className={cn("relative", editing && "cursor-grab rounded-xl outline-2 outline-dashed outline-border active:cursor-grabbing")}>
-                <div className={cn("h-full min-h-0", editing && "pointer-events-none select-none")}>
+                <div className={cn("h-full min-h-0", editing && "pointer-events-none select-none")} style={{ paddingBottom: WIDGET_GAP }}>
                   <def.Component widget={w} onOpenUser={onOpenUser} />
                 </div>
                 {editing && (
@@ -108,6 +117,7 @@ export function DashboardGrid({ widgets, editing, onChange, onRemove, onConfigur
             )
           })}
         </ReactGridLayout>
+        </AutoHeightProvider>
       )}
       <WidgetConfigDialog
         widget={known.find((w) => w.id === configuring) ?? null}
@@ -149,7 +159,7 @@ export function DashboardStack({ widgets, onOpenUser }: Pick<Props, "widgets" | 
           g.items.map((w) => {
             const def = WIDGET_BY_TYPE.get(w.type)!
             return (
-              <div key={w.id} style={def.stackAuto ? undefined : { height: px(Math.min(w.h, 9)) }}>
+              <div key={w.id} style={def.stackAuto ? undefined : { height: px(Math.min(w.h, 108)) }}>
                 <def.Component widget={w} onOpenUser={onOpenUser} />
               </div>
             )

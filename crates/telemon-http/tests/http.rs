@@ -1134,6 +1134,7 @@ async fn tata_letak_dashboard_global_dengan_izin_dan_validasi() {
         ("id ganda", json!({ "version": 1, "widgets": [widget("a"), widget("a")] })),
         ("id spasi", json!({ "version": 1, "widgets": [widget("a b")] })),
         ("jenis huruf besar", json!({ "version": 1, "widgets": [{ "id": "a", "type": "Stat", "x": 0, "y": 0, "w": 1, "h": 1 }] })),
+        ("terlalu tinggi", json!({ "version": 1, "widgets": [{ "id": "a", "type": "stat", "x": 0, "y": 0, "w": 1, "h": 2001 }] })),
         ("lebar nol", json!({ "version": 1, "widgets": [{ "id": "a", "type": "stat", "x": 0, "y": 0, "w": 0, "h": 1 }] })),
         ("x negatif", json!({ "version": 1, "widgets": [{ "id": "a", "type": "stat", "x": -1, "y": 0, "w": 1, "h": 1 }] })),
         ("config besar", json!({ "version": 1, "widgets": [{ "id": "a", "type": "stat", "x": 0, "y": 0, "w": 1, "h": 1, "config": long_cfg }] })),

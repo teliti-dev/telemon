@@ -329,20 +329,20 @@ async fn main() -> std::io::Result<()> {
     {
         let w = |id: &str, ty: &str, x: u32, y: u32, w: u32, h: u32, config: serde_json::Value| serde_json::json!({ "id": id, "type": ty, "x": x, "y": y, "w": w, "h": h, "config": config });
         let mut widgets = vec![
-            w("default-routers-online", "stat-routers-online", 0, 0, 4, 2, serde_json::json!({})),
-            w("default-users-active", "stat-users-active", 4, 0, 4, 2, serde_json::json!({})),
-            w("default-users-inactive", "stat-users-inactive", 8, 0, 4, 2, serde_json::json!({})),
-            w("default-users-disabled", "stat-users-disabled", 12, 0, 4, 2, serde_json::json!({})),
-            w("default-auth-fails", "stat-auth-fails", 16, 0, 4, 2, serde_json::json!({})),
-            w("bw-chart-pppoe", "bandwidth-chart", 0, 2, 12, 7, serde_json::json!({ "router": "all", "iface": "@pppoe", "range": "24h" })),
-            w("bw-total", "bandwidth-total", 12, 2, 8, 4, serde_json::json!({ "range": "6h" })),
-            w("bw-per-user", "bandwidth-per-user", 12, 6, 8, 3, serde_json::json!({ "router": "all", "range": "6h" })),
-            w("bw-chart-uplink", "bandwidth-chart", 0, 9, 10, 7, serde_json::json!({ "router": router_ids[0], "iface": "ether1", "range": "6h" })),
-            w("default-recent-events", "recent-events", 10, 9, 10, 7, serde_json::json!({})),
-            w("default-router-cards", "router-cards", 0, 16, 20, 4, serde_json::json!({})),
-            w("default-top-auth-fails", "top-auth-fails", 0, 20, 7, 8, serde_json::json!({})),
-            w("users-per-profile", "users-per-profile", 7, 20, 7, 8, serde_json::json!({})),
-            w("user-status-mix", "user-status-mix", 14, 20, 6, 4, serde_json::json!({})),
+            w("default-routers-online", "stat-routers-online", 0, 0, 4, 24, serde_json::json!({})),
+            w("default-users-active", "stat-users-active", 4, 0, 4, 24, serde_json::json!({})),
+            w("default-users-inactive", "stat-users-inactive", 8, 0, 4, 24, serde_json::json!({})),
+            w("default-users-disabled", "stat-users-disabled", 12, 0, 4, 24, serde_json::json!({})),
+            w("default-auth-fails", "stat-auth-fails", 16, 0, 4, 24, serde_json::json!({})),
+            w("bw-chart-pppoe", "bandwidth-chart", 0, 24, 12, 84, serde_json::json!({ "router": "all", "iface": "@pppoe", "range": "24h" })),
+            w("bw-total", "bandwidth-total", 12, 24, 8, 48, serde_json::json!({ "range": "6h" })),
+            w("bw-per-user", "bandwidth-per-user", 12, 72, 8, 36, serde_json::json!({ "router": "all", "range": "6h" })),
+            w("bw-chart-uplink", "bandwidth-chart", 0, 108, 10, 84, serde_json::json!({ "router": router_ids[0], "iface": "ether1", "range": "6h" })),
+            w("default-recent-events", "recent-events", 10, 108, 10, 84, serde_json::json!({})),
+            w("default-router-cards", "router-cards", 0, 192, 20, 48, serde_json::json!({})),
+            w("default-top-auth-fails", "top-auth-fails", 0, 240, 7, 96, serde_json::json!({})),
+            w("users-per-profile", "users-per-profile", 7, 240, 7, 96, serde_json::json!({})),
+            w("user-status-mix", "user-status-mix", 14, 240, 6, 48, serde_json::json!({})),
         ];
         widgets.shrink_to_fit();
         let layout = serde_json::json!({ "version": 1, "widgets": widgets });

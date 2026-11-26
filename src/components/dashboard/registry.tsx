@@ -15,6 +15,7 @@ import {
 import { EVENT_META, EventIcon, RouterStatusBadge, UserMixBar } from "@/components/status"
 import { Button } from "@/components/ui/button"
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { useAutoHeight } from "@/components/dashboard/auto-height"
 import { useNow } from "@/hooks/use-now"
 import { formatNumber, formatRelative } from "@/lib/format"
 import { tk, useT } from "@/lib/i18n"
@@ -110,12 +111,14 @@ function AuthFails() {
 
 // ---------------- kartu router ----------------
 
-function RouterCards() {
+function RouterCards({ widget }: WidgetProps) {
   const t = useT()
+  const measure = useAutoHeight(widget.id)
   const { routers, liveUsers: users } = useStore()
   const now = useNow(10_000)
   return (
-    <section aria-label={t("Router")} className="grid h-full content-start gap-2 overflow-auto sm:grid-cols-2 md:gap-3 xl:grid-cols-4">
+    <div className="h-full overflow-auto">
+    <section ref={measure} aria-label={t("Router")} className="grid content-start gap-2 p-px sm:grid-cols-2 md:gap-3 xl:grid-cols-4">
       {routers.map((r) => {
         const c = countByStatus(users.filter((u) => u.routerId === r.id))
         return (
@@ -154,6 +157,7 @@ function RouterCards() {
         )
       })}
     </section>
+    </div>
   )
 }
 
@@ -356,7 +360,7 @@ function UsersPerProfile() {
 
 // ---------------- daftar jenis ----------------
 
-const TILE = { w: 4, h: 2, resizable: false, tile: true } as const
+const TILE = { w: 4, h: 24, resizable: false, tile: true } as const
 
 export const WIDGETS: WidgetDef[] = [
   { type: "stat-routers-online", title: tk("Router online"), description: tk("Jumlah router yang terhubung dari semua router."), icon: RadioTowerIcon, ...TILE, Component: RoutersOnline },
@@ -364,15 +368,15 @@ export const WIDGETS: WidgetDef[] = [
   { type: "stat-users-inactive", title: tk("Tidak aktif"), description: tk("Secret ada tetapi tidak terhubung."), icon: UserMinusIcon, ...TILE, Component: UsersInactive },
   { type: "stat-users-disabled", title: tk("Dinonaktifkan"), description: tk("Secret yang dinonaktifkan."), icon: UserXIcon, ...TILE, Component: UsersDisabled },
   { type: "stat-auth-fails", title: tk("Gagal auth (1 jam)"), description: tk("Percobaan masuk yang gagal dalam satu jam terakhir."), icon: ShieldXIcon, ...TILE, Component: AuthFails },
-  { type: "router-cards", title: tk("Kartu router"), description: tk("Status dan komposisi user per router."), icon: RadioTowerIcon, w: 20, h: 4, minW: 6, minH: 3, resizable: true, stackAuto: true, Component: RouterCards },
-  { type: "recent-events", title: tk("Event terbaru"), description: tk("Daftar event PPPoE terbaru; klik untuk membuka user."), icon: ActivityIcon, w: 13, h: 9, minW: 6, minH: 5, resizable: true, Component: RecentEvents },
-  { type: "top-auth-fails", title: tk("Sering gagal auth"), description: tk("User yang paling sering gagal auth dalam 24 jam."), icon: ShieldXIcon, w: 7, h: 9, minW: 5, minH: 4, resizable: true, Component: TopAuthFails },
-  { type: "user-status-mix", title: tk("Komposisi user"), description: tk("Perbandingan user aktif, tidak aktif, dan dinonaktifkan."), icon: UsersIcon, w: 7, h: 4, minW: 5, minH: 3, resizable: true, Component: UserStatusMix },
-  { type: "events-per-hour", title: tk("Event per jam"), description: tk("Grafik batang jumlah event dalam 24 jam terakhir."), icon: ActivityIcon, w: 10, h: 5, minW: 6, minH: 4, resizable: true, Component: EventsPerHour },
-  { type: "bandwidth-chart", title: tk("Bandwidth"), description: tk("Grafik laju unduh dan unggah satu antarmuka atau seluruh sesi PPPoE; router dan antarmuka dipilih di pengaturan widget."), icon: ActivityIcon, w: 12, h: 7, minW: 6, minH: 5, resizable: true, defaultConfig: BANDWIDTH_CHART_DEFAULT, Config: BandwidthChartConfig, Component: BandwidthChartWidget },
-  { type: "bandwidth-total", title: tk("Total bandwidth pelanggan"), description: tk("Jumlah laju seluruh sesi PPPoE dari semua router, dengan jumlah sesi."), icon: GaugeIcon, w: 8, h: 5, minW: 5, minH: 4, resizable: true, defaultConfig: TOTAL_DEFAULT, Config: TotalBandwidthConfig, Component: TotalBandwidthWidget },
-  { type: "bandwidth-per-user", title: tk("Rata-rata per user"), description: tk("Rata-rata unduh dan unggah per user aktif, untuk satu router atau semuanya."), icon: UsersIcon, w: 8, h: 5, minW: 5, minH: 4, resizable: true, defaultConfig: PER_USER_DEFAULT, Config: PerUserConfig, Component: AvgPerUserWidget },
-  { type: "users-per-profile", title: tk("User per profil"), description: tk("Profil PPP yang paling banyak dipakai."), icon: TagsIcon, w: 7, h: 6, minW: 5, minH: 4, resizable: true, Component: UsersPerProfile },
+  { type: "router-cards", title: tk("Kartu router"), description: tk("Status dan komposisi user per router."), icon: RadioTowerIcon, w: 20, h: 48, minW: 6, minH: 24, resizable: true, stackAuto: true, autoHeight: true, Component: RouterCards },
+  { type: "recent-events", title: tk("Event terbaru"), description: tk("Daftar event PPPoE terbaru; klik untuk membuka user."), icon: ActivityIcon, w: 13, h: 108, minW: 6, minH: 60, resizable: true, Component: RecentEvents },
+  { type: "top-auth-fails", title: tk("Sering gagal auth"), description: tk("User yang paling sering gagal auth dalam 24 jam."), icon: ShieldXIcon, w: 7, h: 108, minW: 5, minH: 48, resizable: true, Component: TopAuthFails },
+  { type: "user-status-mix", title: tk("Komposisi user"), description: tk("Perbandingan user aktif, tidak aktif, dan dinonaktifkan."), icon: UsersIcon, w: 7, h: 48, minW: 5, minH: 36, resizable: true, Component: UserStatusMix },
+  { type: "events-per-hour", title: tk("Event per jam"), description: tk("Grafik batang jumlah event dalam 24 jam terakhir."), icon: ActivityIcon, w: 10, h: 60, minW: 6, minH: 48, resizable: true, Component: EventsPerHour },
+  { type: "bandwidth-chart", title: tk("Bandwidth"), description: tk("Grafik laju unduh dan unggah satu antarmuka atau seluruh sesi PPPoE; router dan antarmuka dipilih di pengaturan widget."), icon: ActivityIcon, w: 12, h: 84, minW: 6, minH: 60, resizable: true, defaultConfig: BANDWIDTH_CHART_DEFAULT, Config: BandwidthChartConfig, Component: BandwidthChartWidget },
+  { type: "bandwidth-total", title: tk("Total bandwidth pelanggan"), description: tk("Jumlah laju seluruh sesi PPPoE dari semua router, dengan jumlah sesi."), icon: GaugeIcon, w: 8, h: 60, minW: 5, minH: 48, resizable: true, defaultConfig: TOTAL_DEFAULT, Config: TotalBandwidthConfig, Component: TotalBandwidthWidget },
+  { type: "bandwidth-per-user", title: tk("Rata-rata per user"), description: tk("Rata-rata unduh dan unggah per user aktif, untuk satu router atau semuanya."), icon: UsersIcon, w: 8, h: 60, minW: 5, minH: 48, resizable: true, defaultConfig: PER_USER_DEFAULT, Config: PerUserConfig, Component: AvgPerUserWidget },
+  { type: "users-per-profile", title: tk("User per profil"), description: tk("Profil PPP yang paling banyak dipakai."), icon: TagsIcon, w: 7, h: 72, minW: 5, minH: 48, resizable: true, Component: UsersPerProfile },
 ]
 
 export const WIDGET_BY_TYPE = new Map(WIDGETS.map((w) => [w.type, w]))

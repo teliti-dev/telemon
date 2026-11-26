@@ -87,7 +87,7 @@ pub(crate) fn validate(v: &Value) -> Result<(), String> {
         int(w, "x", 0, 200)?;
         int(w, "y", 0, 10_000)?;
         int(w, "w", 1, 40)?;
-        int(w, "h", 1, 100)?;
+        int(w, "h", 1, 2000)?;
         match w.get("config") {
             None | Some(Value::Null) => {}
             Some(c @ Value::Object(_)) => {
