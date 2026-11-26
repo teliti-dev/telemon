@@ -34,6 +34,7 @@ import { OverviewPage } from "@/pages/overview"
 import { ProfilesPage } from "@/pages/profiles"
 import { RoutersPage } from "@/pages/routers"
 import { SettingsPage } from "@/pages/settings"
+import { SettingsAiPage } from "@/pages/settings-ai"
 import { SharePage } from "@/pages/share"
 import { AccountFormPage, AiProviderFormPage, ImportPage, ProfileFormPage, RoleFormPage, RouterFormPage, UserFormPage } from "@/pages/subpages"
 import { UsersPage } from "@/pages/users"
@@ -127,6 +128,7 @@ function Content() {
       case "berbagi": return <SharePage />
       case "tentang": return <AboutPage />
       case "pengaturan":
+        if (s0 === "ai") return <SettingsAiPage />
         if (s0 === "ai-provider" && s1 === "new") return <AiProviderFormPage />
         if (s0 === "ai-provider" && s1 && s2 === "edit") return <AiProviderFormPage providerId={s1} />
         return <SettingsPage />

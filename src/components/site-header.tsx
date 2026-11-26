@@ -1,16 +1,17 @@
 import * as React from "react"
-import { GlobeIcon, WifiIcon, ZapIcon } from "lucide-react"
+import { ChevronDownIcon, GlobeIcon, SettingsIcon, SparklesIcon, WifiIcon, ZapIcon } from "lucide-react"
 
 import { AccountMenu } from "@/components/account-menu"
 import { AppearanceDrawer } from "@/components/appearance-drawer"
 import { WindowControls } from "@/components/window-controls"
-import { isNavActive } from "@/components/nav-items"
+import { isNavActive, type NavItem } from "@/components/nav-items"
 import { Badge } from "@/components/ui/badge"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { useNavBadges } from "@/hooks/use-nav-badges"
 import { useNavItems } from "@/hooks/use-nav-items"
 import { useT } from "@/lib/i18n"
 import { PAGE_CONTAINER } from "@/lib/layout"
-import { href, useRoute } from "@/lib/route"
+import { href, navigate, navigatePath, useRoute } from "@/lib/route"
 import { useStore } from "@/lib/store-context"
 import { cn } from "@/lib/utils"
 import { initFrameless, useFrameless, winStartDragging, winToggleMaximize } from "@/lib/window"
@@ -120,6 +121,9 @@ export function SiteHeader({ title }: { title: string }) {
           {items.map((item, index) => {
             const active = isNavActive(item.page, page)
             const n = badges[item.page]
+            if (item.page === "pengaturan") {
+              return <SettingsMenu key={item.page} item={item} active={active} first={index === firstEnd} />
+            }
             return (
               <a
                 key={item.page}
@@ -150,5 +154,40 @@ export function SiteHeader({ title }: { title: string }) {
         </nav>
       </div>
     </>
+  )
+}
+
+/** Menu Pengaturan di menu atas: dropdown berisi Umum dan AI (dasbor provider, pemakaian, anggaran). */
+function SettingsMenu({ item, active, first }: { item: NavItem; active: boolean; first: boolean }) {
+  const t = useT()
+  const { segments } = useRoute()
+  const onAi = segments[0] === "ai" || segments[0] === "ai-provider"
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-current={active ? "page" : undefined}
+          className={cn(
+            "inline-flex h-9 items-center gap-1.5 border-b-2 px-2 text-sm font-medium transition-colors outline-none focus-visible:bg-muted",
+            first && "ml-auto",
+            active ? "border-brand text-brand" : "border-transparent text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <item.icon className="size-4" />
+          {/* i18n-ignore: label sudah berupa kunci (tk) */}
+          {t(item.label)}
+          <ChevronDownIcon className="size-3.5" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-44">
+        <DropdownMenuItem className={cn(active && !onAi && "text-brand")} onSelect={() => navigate("pengaturan")}>
+          <SettingsIcon /> {t("Umum")}
+        </DropdownMenuItem>
+        <DropdownMenuItem className={cn(onAi && "text-brand")} onSelect={() => navigatePath("pengaturan", ["ai"])}>
+          <SparklesIcon /> {t("AI")}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }

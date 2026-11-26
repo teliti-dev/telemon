@@ -155,7 +155,7 @@ export function AiProviderFormPage({ providerId }: { providerId?: string }) {
   const t = useT()
   const { api } = useApi()
   const [state, setState] = React.useState<{ provider?: AiProvider; loading: boolean }>({ loading: !!providerId })
-  const back = () => navigate("pengaturan")
+  const back = () => navigatePath("pengaturan", ["ai"])
   React.useEffect(() => {
     if (!providerId) return
     let cancelled = false
