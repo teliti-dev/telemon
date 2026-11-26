@@ -15,9 +15,7 @@ PLATFORMS = {
     # kunci manifest -> pola berkas yang diperbarui (ada .sig di sebelahnya)
     "linux-x86_64": re.compile(r"^Telemon_.+_amd64\.AppImage$"),
     "windows-x86_64": re.compile(r"^Telemon_.+_x64-setup\.exe$"),
-    # Satu berkas universal melayani kedua arsitektur macOS.
-    "darwin-aarch64": re.compile(r"^Telemon_.+_universal\.app\.tar\.gz$"),
-    "darwin-x86_64": re.compile(r"^Telemon_.+_universal\.app\.tar\.gz$"),
+    # macOS tidak dibangun lagi; tambahkan kembali "darwin-*" di sini bila job macOS dihidupkan lagi.
 }
 SEMVER = re.compile(r"^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$")
 
