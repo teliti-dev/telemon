@@ -374,6 +374,10 @@ async fn main() -> std::io::Result<()> {
     let ai = st.enable_ai(Arc::new(demo_llm::DemoLlm));
     if st.cfg.extensions.is_some() {
         telemon_http::spawn_scheduler(st.clone());
+        // Toko demo: katalog dan paket dari folder lokal (`TELEMON_DEMO_STORE_DIR`), tanpa jaringan.
+        if let Ok(dir) = std::env::var("TELEMON_DEMO_STORE_DIR") {
+            st.set_ext_fetcher(Arc::new(DirFetcher(std::path::PathBuf::from(dir))));
+        }
     }
     ai.save_provider(None, telemon_ai::AiProviderInput { name: "Demo (offline)".into(), kind: telemon_ai::ProviderKind::Openai, model: "demo-offline".into(), base_url: None, api_key: Some("demo-tidak-dipakai".into()), price_in_per_mtok: Some(1.0), price_out_per_mtok: Some(2.0) }).expect("provider demo");
 
@@ -398,4 +402,21 @@ async fn main() -> std::io::Result<()> {
     .await?;
     telemon.shutdown().await;
     Ok(())
+}
+
+/// Pengunduh toko untuk demo: membaca berkas bernama sama dengan segmen terakhir alamat dari satu folder.
+struct DirFetcher(std::path::PathBuf);
+
+impl telemon_http::ExtFetch for DirFetcher {
+    fn get(&self, url: &str, max_bytes: usize) -> Result<Vec<u8>, String> {
+        let name = url.rsplit('/').next().unwrap_or("");
+        if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_')) || name.contains("..") {
+            return Err(format!("nama berkas tidak valid: {name}"));
+        }
+        let bytes = std::fs::read(self.0.join(name)).map_err(|e| format!("{name}: {e}"))?;
+        if bytes.len() > max_bytes {
+            return Err("berkas terlalu besar".into());
+        }
+        Ok(bytes)
+    }
 }

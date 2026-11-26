@@ -241,6 +241,8 @@ async fn store_list<C: Connector>(State(st): State<St<C>>, c: Caller) -> ApiResu
             json!({
                 "id": m.id, "name": m.name, "version": m.version, "publisher": m.publisher, "description": m.description,
                 "telemon": m.telemon, "requires": m.requires, "size": e.size, "installedVersion": have,
+                "widgets": m.contributes.widgets, "pages": m.contributes.pages, "permissions": m.permissions, "actions": m.actions,
+                "hasBackend": m.backend.is_some(), "routes": m.contributes.routes.len(), "workers": m.contributes.workers.len(), "sessions": m.contributes.sessions,
                 "upToDate": have.as_deref() == Some(m.version.as_str()),
                 "alsoInstalls": will, "problem": problem,
             })

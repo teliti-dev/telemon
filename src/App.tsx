@@ -36,6 +36,8 @@ import { OverviewPage } from "@/pages/overview"
 import { ProfilesPage } from "@/pages/profiles"
 import { RoutersPage } from "@/pages/routers"
 import { SettingsPage } from "@/pages/settings"
+import { ExtensionDetailPage } from "@/pages/extension-detail"
+import { ExtensionStorePage } from "@/pages/extension-store"
 import { SettingsExtensionsPage } from "@/pages/settings-extensions"
 import { SettingsAiPage } from "@/pages/settings-ai"
 import { SharePage } from "@/pages/share"
@@ -134,7 +136,7 @@ function Content() {
       case "tentang": return <AboutPage />
       case "pengaturan":
         if (s0 === "ai") return <SettingsAiPage />
-        if (s0 === "extension") return <SettingsExtensionsPage />
+        if (s0 === "extension") return s1 === "store" ? <ExtensionStorePage /> : s1 ? <ExtensionDetailPage id={s1} /> : <SettingsExtensionsPage />
         if (s0 === "ai-provider" && s1 === "new") return <AiProviderFormPage />
         if (s0 === "ai-provider" && s1 && s2 === "edit") return <AiProviderFormPage providerId={s1} />
         return <SettingsPage />

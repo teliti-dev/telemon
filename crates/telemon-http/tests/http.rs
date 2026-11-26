@@ -2221,6 +2221,8 @@ mod extensions {
         assert_eq!(list.status, StatusCode::OK, "{:?}", list.body);
         let a = list.body["extensions"].as_array().unwrap().iter().find(|e| e["id"] == "net.teliti.a").unwrap();
         assert_eq!(a["alsoInstalls"], json!(["net.teliti.c", "net.teliti.b"]), "urutan: dependensi dulu");
+        assert!(a["permissions"].is_array() && a["widgets"].is_array() && a["actions"].is_array(), "detail untuk popup toko: izin, widget, aksi");
+        assert_eq!((a["hasBackend"].as_bool(), a["routes"].as_u64()), (Some(false), Some(0)));
 
         // Pasang A: B dan C ikut, urut, semuanya mati dan siap diatur.
         let r = t.post("/api/extensions/store/install", json!({ "id": "net.teliti.a" }), Some(&c)).await;

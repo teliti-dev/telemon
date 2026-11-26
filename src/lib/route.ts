@@ -67,3 +67,8 @@ export function navigate(page: Page, params?: Record<string, string>) {
 export function navigatePath(page: Page, segments: string[] = [], params?: Record<string, string>) {
   window.location.hash = pathHref(page, segments, params)
 }
+
+/** Seperti `navigatePath` tetapi mengganti entri riwayat saat ini (tombol Back tidak kembali ke halaman perantara). */
+export function replacePath(page: Page, segments: string[] = [], params?: Record<string, string>) {
+  window.location.replace(pathHref(page, segments, params))
+}

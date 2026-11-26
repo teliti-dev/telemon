@@ -692,6 +692,14 @@ export interface ExtensionStoreItem {
   upToDate: boolean
   /** Extension yang ikut terpasang (dependensi), berurutan. */
   alsoInstalls: string[]
+  widgets: ExtensionWidgetDecl[]
+  pages: ExtensionPageDecl[]
+  permissions: { id: string; required: boolean; sensitive: boolean; description: string }[]
+  actions: ExtensionActionDecl[]
+  hasBackend: boolean
+  routes: number
+  workers: number
+  sessions: { id: string; kind: string; action: string }[]
   /** Alasan tidak bisa dipasang; kosong = bisa. */
   problem?: string
 }
