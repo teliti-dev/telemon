@@ -1,0 +1,9 @@
+[package]
+name = "telemon-ext-guest"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "SDK untuk menulis backend extension Telemon dalam Rust (kompilasi ke wasm32-unknown-unknown), ADR 0028"
+
+[dependencies]
+serde_json = "1.0.154"

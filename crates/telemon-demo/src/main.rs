@@ -230,7 +230,7 @@ impl RouterApi for DemoApi {
             "/ppp/profile" => w.profiles.lock().unwrap().clone(),
             "/ppp/active" => w.active.lock().unwrap().clone(),
             "/log" => w.log.lock().unwrap().clone(),
-            "/system/resource" => vec![row(&[("board-name", "RB4011iGS+ (demo)"), ("version", "7.15 (stable)")])],
+            "/system/resource" => vec![row(&[("board-name", "RB4011iGS+ (demo)"), ("version", "7.15 (stable)"), ("cpu-load", "17"), ("free-memory", "412000000"), ("total-memory", "1000000000"), ("uptime", "3d4h12m")])],
             "/interface" => w.interfaces(),
             "/user" => vec![row(&[("name", "api"), ("group", "demo")])],
             "/user/group" => vec![row(&[("name", "demo"), ("policy", "read,write,api,sensitive")])],
