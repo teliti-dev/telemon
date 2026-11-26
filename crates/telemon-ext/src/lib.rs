@@ -12,7 +12,7 @@ mod resolve;
 mod runtime;
 mod version;
 
-pub use manifest::{ActionDecl, BackendDecl, Contributes, RouteDecl, SessionDecl, WorkerDecl, Manifest, PageDecl, PermissionDecl, Requirement, UiDecl, WidgetDecl, valid_id};
+pub use manifest::{ActionDecl, BackendDecl, Contributes, PanelDecl, RouteDecl, RouterActionDecl, SessionDecl, WorkerDecl, Manifest, PageDecl, PermissionDecl, Requirement, UiDecl, WidgetDecl, valid_id};
 pub use resolve::{DepStatus, Problem, check_install, dep_status, dependents_of, host_compatible, install_order};
 pub use migrate::{Dialect, Migration, namespace, parse_all as parse_migrations, plan as plan_migrations, to_sql as migration_sql};
 pub use runtime::{Host, RunLimits, RuntimeError, Sandbox};

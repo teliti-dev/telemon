@@ -145,4 +145,13 @@ export default {
   "Pilih berkas .tmx dari komputer Anda. Tandatangannya diperiksa sebelum dipasang.": "Pick a .tmx file from your computer. Its signature is checked before it is installed.",
   "Belum bisa dipakai": "Not usable yet",
   "Terminal SSH butuh izin feature.router-ssh. Nyalakan di bagian Izin di bawah, lalu berikan akses ke peran di Akses peran.": "The SSH terminal needs the feature.router-ssh permission. Turn it on in Permissions below, then give roles access under Role access.",
+  "Panel bawah": "Bottom panel",
+  "Ubah tinggi panel": "Resize panel",
+  "Tab panel": "Panel tabs",
+  "Tutup tab {title}": "Close tab {title}",
+  "Kecilkan panel": "Restore panel",
+  "Besarkan panel": "Maximise panel",
+  "Buka panel": "Open panel",
+  "Lipat panel": "Collapse panel",
+  "Tutup panel": "Close panel",
 } as Record<string, string>

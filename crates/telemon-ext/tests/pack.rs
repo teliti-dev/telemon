@@ -165,3 +165,21 @@ fn session_declarations_require_a_sensitive_permission_and_an_update_action() {
     assert!(t(&good.replace("router-ssh\",\"action", "shell\",\"action")).is_err());
     assert!(t(&good.replace(r#"{"id":"feature.router-ssh","sensitive":true}"#, "")).is_err(), "tanpa izin sama sekali");
 }
+
+#[test]
+fn router_actions_and_panels_are_validated() {
+    let t = |extra: &str| {
+        let m = format!(r#"{{"id":"net.teliti.t","name":"T","version":"1.0.0","apiVersion":1,"publisher":"T","ui":{{"entry":"ui/index.js"}}{extra}}}"#);
+        let f = vec![("manifest.json".into(), m.into_bytes()), ("ui/index.js".into(), b"x".to_vec())];
+        let mut k = keys();
+        k.allow_unsigned = true;
+        Package::open(&pack(&f, None).unwrap(), &k, &Limits::default())
+    };
+    let good = r#","actions":[{"id":"terminal","label":"T","level":"update"}],"contributes":{"routerActions":[{"id":"open","title":"Open","action":"terminal"}],"panels":[{"id":"term","title":"Terminal"}]}"#;
+    assert!(t(good).is_ok());
+    assert!(t(&good.replace(r#""action":"terminal""#, r#""action":"lain""#)).is_err(), "aksi tak dideklarasikan");
+    assert!(t(&good.replace(r#""id":"open""#, r#""id":"Bad.Id""#)).is_err());
+    assert!(t(&good.replace(r#""title":"Open""#, r#""title":"""#)).is_err());
+    assert!(t(&good.replace(r#"{"id":"term","title":"Terminal"}"#, r#"{"id":"term","title":"A"},{"id":"term","title":"B"}"#)).is_err(), "panel ganda");
+    assert!(t(r#","contributes":{"panels":[{"id":"a","title":"A"}]}"#).is_ok());
+}

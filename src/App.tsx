@@ -4,6 +4,7 @@ import { ShieldAlertIcon, TriangleAlertIcon } from "lucide-react"
 import { AiChatDock, AI_DOCK_WIDTH } from "@/components/ai-chat-dock"
 import { AuthGate } from "@/components/auth-gate"
 import { BottomNav } from "@/components/bottom-nav"
+import { BottomPanel } from "@/components/extensions/bottom-panel"
 import { PageSkeleton } from "@/components/skeletons"
 import { SiteHeader } from "@/components/site-header"
 import { UpdateBanner } from "@/components/update-banner"
@@ -177,6 +178,7 @@ function Content() {
       <main className={`${PAGE_CONTAINER} flex-1 py-4 pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:py-6`}>
         {body}
       </main>
+      <BottomPanel />
       <BottomNav />
       <AiChatDock />
       {isDesktop && <UserDetailSheet userId={openUser} onOpenChange={(o) => !o && setOpenUser(null)} />}

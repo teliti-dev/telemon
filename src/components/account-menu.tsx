@@ -1,7 +1,6 @@
 import * as React from "react"
 import { LogOutIcon, PuzzleIcon, SparklesIcon, UserRoundIcon } from "lucide-react"
 
-import { pageLabel, useExtensionMenuPages } from "@/components/extensions/menu"
 
 import { isNavActive } from "@/components/nav-items"
 import { Button } from "@/components/ui/button"
@@ -42,7 +41,6 @@ export function AccountMenu() {
   const [open, setOpen] = React.useState(false)
   const onAi = page === "pengaturan" && (segments[0] === "ai" || segments[0] === "ai-provider")
   const onExt = page === "pengaturan" && segments[0] === "extension"
-  const extPages = useExtensionMenuPages()
 
   const initials = session
     ? session.displayName
@@ -130,20 +128,6 @@ export function AccountMenu() {
                 </Button>
               </li>
             )}
-            {extPages.map((p) => (
-              <li key={`${p.extId}/${p.id}`}>
-                <Button
-                  variant="ghost"
-                  className={cn(row, page === "ext" && segments[0] === p.extId && "text-brand")}
-                  onClick={() => {
-                    setOpen(false)
-                    navigatePath("ext", [p.extId, p.id])
-                  }}
-                >
-                  <PuzzleIcon /> {pageLabel(p, extPages)}
-                </Button>
-              </li>
-            ))}
             {manageItems.map((item) => (
               <React.Fragment key={item.page}>
                 <li>

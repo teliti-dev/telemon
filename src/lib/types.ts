@@ -601,6 +601,8 @@ export interface ExtensionInfo {
   routes: { id: string; method: string; path: string; level: string; action?: string }[]
   /** Sesi interaktif (mis. terminal SSH): butuh izin sensitif `feature.router-ssh` menyala. */
   sessions: { id: string; kind: string; action: string }[]
+  routerActions: ExtensionRouterActionDecl[]
+  panels: ExtensionPanelDecl[]
   workers: ExtensionWorker[]
   installedAt: number
   updatedAt: number
@@ -640,6 +642,18 @@ export interface ExtensionPageDecl {
   kind: "dashboard" | "page"
 }
 
+export interface ExtensionRouterActionDecl {
+  id: string
+  title: string
+  /** Aksi yang harus dimiliki peran agar entri tampil. */
+  action?: string
+}
+
+export interface ExtensionPanelDecl {
+  id: string
+  title: string
+}
+
 export interface ExtensionActionDecl {
   id: string
   label: string
@@ -658,6 +672,8 @@ export interface ActiveExtension {
   entry: string
   widgets: ExtensionWidgetDecl[]
   pages: ExtensionPageDecl[]
+  routerActions: ExtensionRouterActionDecl[]
+  panels: ExtensionPanelDecl[]
   /** Izin (toggle) yang diberikan admin. */
   permissions: string[]
   /** Akses efektif akun ini pada extension. */
