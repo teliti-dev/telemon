@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "src-tauri" / "installer" / "installer.nsi"
 
 START = b"Unicode true\nManifestDPIAware true"
-END = b"Signing NSIS plugins"  # the next string in the binary; the template is everything before it
+END = b"Failed to setup handlebar template"  # the next string in the binary; the template is everything before it
 
 PATCHES = [
     # (anchor, replacement). The anchor must occur exactly once in the template.
