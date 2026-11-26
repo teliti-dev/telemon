@@ -1,6 +1,10 @@
 export default {
   "Harga per 1 juta token (USD, opsional)": "Price per 1M tokens (USD, optional)",
   "Pilih model": "Choose a model",
+  "Pilih atau isi model.": "Choose or enter a model.",
+  "Kunci API minimal 8 karakter.": "The API key needs at least 8 characters.",
+  "Isi URL dasar yang valid (http:// atau https://).": "Enter a valid base URL (http:// or https://).",
+  "Harga token harus berupa angka 0 atau lebih.": "Token prices must be a number, 0 or more.",
   "Lainnya (ketik manual)": "Other (type manually)",
   "Nama model": "Model name",
   "Token masuk": "Input tokens",

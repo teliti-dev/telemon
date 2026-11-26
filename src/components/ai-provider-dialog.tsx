@@ -77,7 +77,20 @@ export function AiProviderForm({ provider, onSaved, onClose }: { provider?: AiPr
 
   const needsKey = true
   const needsUrl = kind === "ninerouter"
-  const valid = name.trim() && model.trim() && (!needsKey || editing || apiKey.trim().length >= 8) && (!needsUrl || /^https?:\/\/\S+$/.test(baseUrl.trim())) && [priceIn, priceOut].every((v) => v.trim() === "" || (Number.isFinite(Number(v)) && Number(v) >= 0))
+  // Nama boleh dikosongkan: dipakai nama jenis provider (sama dengan placeholder).
+  const finalName = name.trim() || t(PROVIDER_KIND_LABEL[kind]) /* i18n-ignore: kunci tk */
+  const pricesOk = [priceIn, priceOut].every((v) => v.trim() === "" || (Number.isFinite(Number(v)) && Number(v) >= 0))
+  // Alasan tombol Simpan mati; kosong bila semua isian sah.
+  const problem = !model.trim()
+    ? t("Pilih atau isi model.")
+    : needsKey && !editing && apiKey.trim().length < 8
+      ? t("Kunci API minimal 8 karakter.")
+      : needsUrl && !/^https?:\/\/\S+$/.test(baseUrl.trim())
+        ? t("Isi URL dasar yang valid (http:// atau https://).")
+        : !pricesOk
+          ? t("Harga token harus berupa angka 0 atau lebih.")
+          : null
+  const valid = !problem
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -86,7 +99,7 @@ export function AiProviderForm({ provider, onSaved, onClose }: { provider?: AiPr
     setError(null)
     try {
       await api.saveAiProvider(provider?.id ?? null, {
-        name,
+        name: finalName,
         kind,
         model,
         baseUrl: needsUrl ? baseUrl : undefined,
@@ -231,6 +244,11 @@ export function AiProviderForm({ provider, onSaved, onClose }: { provider?: AiPr
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>
         </Alert>
+      )}
+      {problem && !reason && (
+        <p role="status" className="text-xs text-muted-foreground">
+          {problem}
+        </p>
       )}
       <FormFooter>
         <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
