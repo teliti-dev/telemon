@@ -4,6 +4,7 @@ import { ShieldAlertIcon, TriangleAlertIcon } from "lucide-react"
 import { AiChatDock, AI_DOCK_WIDTH } from "@/components/ai-chat-dock"
 import { AuthGate } from "@/components/auth-gate"
 import { BottomNav } from "@/components/bottom-nav"
+import { CommandPalette } from "@/components/command-palette"
 import { BottomPanel } from "@/components/extensions/bottom-panel"
 import { PageSkeleton } from "@/components/skeletons"
 import { SiteHeader } from "@/components/site-header"
@@ -179,6 +180,7 @@ function Content() {
         {body}
       </main>
       <BottomPanel />
+      <CommandPalette onOpenUser={openUserFn} />
       <BottomNav />
       <AiChatDock />
       {isDesktop && <UserDetailSheet userId={openUser} onOpenChange={(o) => !o && setOpenUser(null)} />}
