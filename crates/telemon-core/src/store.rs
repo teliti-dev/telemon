@@ -259,6 +259,13 @@ CREATE TABLE extension_kv (
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (ext_id, key)
 );
+", "
+CREATE TABLE router_ssh (
+  router_id TEXT PRIMARY KEY,
+  port INTEGER NOT NULL DEFAULT 22,
+  host_key TEXT,
+  pinned_at INTEGER
+);
 "];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -1056,6 +1063,7 @@ impl Store {
         }
         tx.execute("DELETE FROM traffic_samples WHERE router_id = ?1", [id])?;
         tx.execute("DELETE FROM traffic_ifaces WHERE router_id = ?1", [id])?;
+        tx.execute("DELETE FROM router_ssh WHERE router_id = ?1", [id])?;
         let out = RouterRemoved {
             events: tx.execute("DELETE FROM events WHERE router_id = ?1", [id])? as u64,
             users: tx.execute("DELETE FROM users WHERE router_id = ?1", [id])? as u64,
@@ -1385,6 +1393,27 @@ impl Store {
         tx.commit()?;
         Ok(tables.len())
     }
+
+    // ---- SSH router (ADR 0029): port dan kunci host yang disematkan ----
+
+    /// Port SSH (bawaan 22) dan sidik jari kunci host yang sudah disematkan.
+    pub fn router_ssh_get(&self, router_id: &str) -> Result<(u16, Option<String>)> {
+        Ok(self
+            .conn
+            .query_row("SELECT port, host_key FROM router_ssh WHERE router_id = ?1", params![router_id], |r| Ok((r.get::<_, i64>(0)? as u16, r.get::<_, Option<String>>(1)?)))
+            .optional()?
+            .unwrap_or((22, None)))
+    }
+
+    /// Tetapkan port dan pin (`None` = hapus pin; harus disematkan ulang sebelum bisa masuk).
+    pub fn router_ssh_set(&mut self, router_id: &str, port: u16, host_key: Option<&str>, now: i64) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO router_ssh (router_id, port, host_key, pinned_at) VALUES (?1,?2,?3,?4) ON CONFLICT(router_id) DO UPDATE SET port=?2, host_key=?3, pinned_at=?4",
+            params![router_id, port as i64, host_key, now],
+        )?;
+        Ok(())
+    }
+
 
     // ---------------- riwayat perubahan ----------------
 
@@ -2343,6 +2372,17 @@ mod ext_tests {
         // Namespace lain bisa membaca tabelnya sendiri saja.
         assert!(s.ext_db_query("x_net_t_b__", "SELECT * FROM x_net_t_a__notes", &[], 1).is_err());
         assert!(s.ext_db_query("x_net_t_b__", "SELECT * FROM x_net_t_b__other", &[], 1).is_ok());
+    }
+
+    #[test]
+    fn router_ssh_defaults_pin_and_cleanup() {
+        let mut s = Store::open_in_memory().unwrap();
+        assert_eq!(s.router_ssh_get("r1").unwrap(), (22, None), "bawaan: port 22 tanpa pin");
+        s.router_ssh_set("r1", 2222, Some("SHA256:abc"), 5).unwrap();
+        assert_eq!(s.router_ssh_get("r1").unwrap(), (2222, Some("SHA256:abc".to_string())));
+        s.router_ssh_set("r1", 22, None, 6).unwrap();
+        assert_eq!(s.router_ssh_get("r1").unwrap(), (22, None), "pin bisa dihapus");
+        assert_eq!(s.router_ssh_get("r2").unwrap(), (22, None));
     }
 
     #[test]

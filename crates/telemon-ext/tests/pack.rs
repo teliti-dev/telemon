@@ -146,3 +146,22 @@ fn size_limits_apply() {
     assert_eq!(Package::open(&bytes, &k, &lim).unwrap_err(), PackageError::TooLarge);
     assert_eq!(Package::open(b"bukan zip", &k, &Limits::default()).unwrap_err(), PackageError::NotZip);
 }
+
+#[test]
+fn session_declarations_require_a_sensitive_permission_and_an_update_action() {
+    let t = |extra: &str| {
+        let m = format!(r#"{{"id":"net.teliti.t","name":"T","version":"1.0.0","apiVersion":1,"publisher":"T","ui":{{"entry":"ui/index.js"}}{extra}}}"#);
+        let f = vec![("manifest.json".into(), m.into_bytes()), ("ui/index.js".into(), b"x".to_vec())];
+        let mut k = keys();
+        k.allow_unsigned = true;
+        Package::open(&pack(&f, None).unwrap(), &k, &Limits::default())
+    };
+    let good = r#","actions":[{"id":"terminal","label":"T","level":"update"}],"permissions":[{"id":"feature.router-ssh","sensitive":true}],"contributes":{"sessions":[{"id":"ssh","kind":"router-ssh","action":"terminal"}]}"#;
+    assert!(t(good).is_ok());
+    // Izin tidak sensitif, aksi level read, aksi tak dideklarasikan, jenis lain: semuanya ditolak.
+    assert!(t(&good.replace(r#""sensitive":true"#, r#""sensitive":false"#)).is_err());
+    assert!(t(&good.replace(r#""level":"update""#, r#""level":"read""#)).is_err());
+    assert!(t(&good.replace(r#""action":"terminal""#, r#""action":"lain""#)).is_err());
+    assert!(t(&good.replace("router-ssh\",\"action", "shell\",\"action")).is_err());
+    assert!(t(&good.replace(r#"{"id":"feature.router-ssh","sensitive":true}"#, "")).is_err(), "tanpa izin sama sekali");
+}

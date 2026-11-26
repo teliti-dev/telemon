@@ -119,9 +119,23 @@ pub struct WorkerDecl {
     pub every_seconds: u64,
 }
 
+/// Sesi interaktif yang disediakan core untuk UI extension (aliran dua arah lewat WebSocket). Jenis `router-ssh`:
+/// terminal SSH ke router (ADR 0029). Core yang memegang sambungan dan kredensial; extension hanya menampilkannya.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SessionDecl {
+    pub id: String,
+    /// Saat ini hanya `router-ssh`.
+    pub kind: String,
+    /// Aksi (level update) yang harus diberikan ke peran pemanggil.
+    pub action: String,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Contributes {
+    #[serde(default)]
+    pub sessions: Vec<SessionDecl>,
     #[serde(default)]
     pub routes: Vec<RouteDecl>,
     #[serde(default)]
@@ -216,6 +230,25 @@ impl Manifest {
         if let Some(b) = &self.backend {
             if b.entry != "backend.wasm" {
                 return Err("backend.entry harus backend.wasm di akar paket".into());
+            }
+        }
+        if self.contributes.sessions.len() > 5 {
+            return Err("Terlalu banyak sesi".into());
+        }
+        for s in &self.contributes.sessions {
+            if !valid_id(&s.id) || s.id.contains('.') || s.kind != "router-ssh" {
+                return Err(format!("Sesi tidak valid: {}", s.id));
+            }
+            let decl = self.actions.iter().find(|a| a.id == s.action).ok_or_else(|| format!("Sesi {}: aksi {} tidak dideklarasikan", s.id, s.action))?;
+            if decl.level != "update" {
+                return Err(format!("Sesi {}: aksi {} harus berlevel update", s.id, s.action));
+            }
+            // Terminal = hak penuh akun router: izin harus dideklarasikan sensitif supaya mulai mati.
+            if !self.permissions.iter().any(|p| p.id == "feature.router-ssh" && p.sensitive) {
+                return Err(format!("Sesi {}: butuh izin feature.router-ssh bertanda sensitive", s.id));
+            }
+            if self.ui.is_none() {
+                return Err("Sesi butuh ui.entry".into());
             }
         }
         if (!self.contributes.routes.is_empty() || !self.contributes.workers.is_empty()) && self.backend.is_none() {

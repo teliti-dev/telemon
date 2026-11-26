@@ -2549,6 +2549,196 @@ mod extensions {
         let _ = std::fs::remove_dir_all(&d);
     }
 
+    // ---------------- terminal SSH (ADR 0029) ----------------
+
+    mod ssh {
+        use russh::keys::{Algorithm, HashAlg, PrivateKey};
+        use russh::server::{self, Auth, Msg, Server as _, Session};
+        use russh::{Channel, ChannelId, Pty};
+
+        #[derive(Clone)]
+        pub struct Fake;
+
+        impl server::Server for Fake {
+            type Handler = Self;
+            fn new_client(&mut self, _: Option<std::net::SocketAddr>) -> Self {
+                self.clone()
+            }
+        }
+
+        impl server::Handler for Fake {
+            type Error = russh::Error;
+            async fn auth_password(&mut self, user: &str, password: &str) -> Result<Auth, Self::Error> {
+                Ok(if user == "api" && password == "rahasia" { Auth::Accept } else { Auth::reject() })
+            }
+            async fn channel_open_session(&mut self, _c: Channel<Msg>, reply: server::ChannelOpenHandle, _s: &mut Session) -> Result<(), Self::Error> {
+                reply.accept().await;
+                Ok(())
+            }
+            async fn pty_request(&mut self, channel: ChannelId, _t: &str, _c: u32, _r: u32, _pw: u32, _ph: u32, _m: &[(Pty, u32)], session: &mut Session) -> Result<(), Self::Error> {
+                session.channel_success(channel)?;
+                Ok(())
+            }
+            async fn shell_request(&mut self, channel: ChannelId, session: &mut Session) -> Result<(), Self::Error> {
+                session.channel_success(channel)?;
+                session.data(channel, b"[api@router] > ".to_vec())?;
+                Ok(())
+            }
+            async fn data(&mut self, channel: ChannelId, data: &[u8], session: &mut Session) -> Result<(), Self::Error> {
+                let mut out = b"echo:".to_vec();
+                out.extend_from_slice(data);
+                session.data(channel, out)?;
+                Ok(())
+            }
+        }
+
+        /// Server SSH tiruan di port acak; mengembalikan port dan sidik jari kunci host.
+        pub async fn start() -> (u16, String) {
+            let key = PrivateKey::random(&mut rand::rng(), Algorithm::Ed25519).unwrap();
+            let fp = key.public_key().fingerprint(HashAlg::Sha256).to_string();
+            let config = std::sync::Arc::new(server::Config { keys: vec![key], auth_rejection_time: std::time::Duration::from_millis(1), auth_rejection_time_initial: Some(std::time::Duration::from_millis(0)), ..Default::default() });
+            let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let mut srv = Fake;
+            tokio::spawn(async move {
+                let _ = srv.run_on_socket(config, &listener).await;
+            });
+            (port, fp)
+        }
+    }
+
+    const TERM_EXTRA: &str = r#","actions":[{"id":"terminal","label":"Terminal","level":"update"}],
+        "permissions":[{"id":"feature.router-ssh","sensitive":true}],
+        "contributes":{"sessions":[{"id":"ssh","kind":"router-ssh","action":"terminal"}]}"#;
+
+    fn ssh_router(t: &T, can_write: bool) -> String {
+        let n = telemon_core::store::NewRouter { name: format!("ssh-router-{can_write}"), host: "127.0.0.1".into(), port: 8728, tls_pin: None, username: "api".into(), can_write };
+        t.telemon.add_router(&n, "rahasia").unwrap().id
+    }
+
+    async fn ws_connect(addr: std::net::SocketAddr, ext: &str, router: &str, cookie: &str) -> Result<tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>, u16> {
+        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+        let mut req = format!("ws://{addr}/api/ext-session/{ext}/ssh?router={router}&cols=100&rows=30").into_client_request().unwrap();
+        req.headers_mut().insert("cookie", format!("telemon_session={cookie}").parse().unwrap());
+        req.headers_mut().insert("origin", format!("http://{addr}").parse().unwrap());
+        match tokio_tungstenite::connect_async(req).await {
+            Ok((ws, _)) => Ok(ws),
+            Err(tokio_tungstenite::tungstenite::Error::Http(r)) => Err(r.status().as_u16()),
+            Err(e) => panic!("galat tak terduga: {e}"),
+        }
+    }
+
+    async fn next_text(ws: &mut tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>, needle: &str) -> String {
+        use futures_util::StreamExt;
+        let mut all = String::new();
+        let r = tokio::time::timeout(Duration::from_secs(5), async {
+            while !all.contains(needle) {
+                match ws.next().await {
+                    Some(Ok(tokio_tungstenite::tungstenite::Message::Binary(b))) => all.push_str(&String::from_utf8_lossy(&b)),
+                    Some(Ok(_)) => {}
+                    other => panic!("sesi berakhir sebelum {needle:?}: {other:?} (diterima: {all:?})"),
+                }
+            }
+        })
+        .await;
+        assert!(r.is_ok(), "waktu habis menunggu {needle:?}; diterima {all:?}");
+        all
+    }
+
+    #[tokio::test]
+    async fn terminal_ssh_pin_izin_dan_sesi() {
+        use futures_util::SinkExt;
+        use tokio_tungstenite::tungstenite::Message as M;
+        let d = dir();
+        let t = harness_with(on(&d));
+        t.account("admin", "role-admin");
+        t.account("pantau", "role-monitor");
+        let (a, p) = (t.login("admin").await, t.login("pantau").await);
+        let (port, fp) = ssh::start().await;
+        let rid = ssh_router(&t, true);
+        let id = "net.teliti.term";
+        let manifest = format!(r#"{{"id":"{id}","name":"Term","version":"1.0.0","apiVersion":1,"publisher":"Teliti","ui":{{"entry":"ui/index.js"}}{TERM_EXTRA}}}"#);
+        let bytes = pack(&[("manifest.json".into(), manifest.into_bytes()), ("ui/index.js".into(), b"export default {}".to_vec())], Some(OFFICIAL)).unwrap();
+        assert_eq!(install(&t, bytes, &a).await.status, StatusCode::OK);
+        patch(&t, id, json!({ "enabled": true }), &a).await;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let st = t.st.clone();
+        tokio::spawn(async move { telemon_http::serve_on(st, listener, std::future::pending()).await });
+
+        // Pin kunci host: butuh Router Ubah; sidik jari harus sama dengan yang router tawarkan sekarang.
+        t.call(Method::PUT, &format!("/api/routers/{rid}/ssh"), Some(json!({ "port": port })), Some(&a), &[], LAN).await;
+        let g = t.get(&format!("/api/routers/{rid}/ssh"), Some(&a)).await;
+        assert_eq!((g.status, g.body["presented"].as_str(), g.body["pinned"].is_null()), (StatusCode::OK, Some(fp.as_str()), true), "{:?}", g.body);
+        let other = t.get(&format!("/api/routers/{rid}/ssh?port=1"), Some(&a)).await;
+        assert_eq!((other.status, other.body["presented"].is_null(), other.body["error"].is_string(), other.body["savedPort"].as_u64()), (StatusCode::OK, true, true, Some(port as u64)), "port lain diperiksa tanpa mengubah yang tersimpan");
+        assert_eq!(t.get(&format!("/api/routers/{rid}/ssh"), Some(&p)).await.status, StatusCode::FORBIDDEN, "peran tanpa Router Ubah");
+        let bad = t.call(Method::PUT, &format!("/api/routers/{rid}/ssh"), Some(json!({ "fingerprint": "SHA256:salah" })), Some(&a), &[], LAN).await;
+        assert_eq!((bad.status, bad.code()), (StatusCode::CONFLICT, "ssh_host_key_changed"));
+
+        // Sebelum pin, sesi ditolak (409). Setelah itu syarat lain diperiksa satu per satu.
+        assert_eq!(ws_connect(addr, id, &rid, &a).await.err(), Some(403), "izin feature.router-ssh mulai mati");
+        patch(&t, id, json!({ "perms": { "feature.router-ssh": true } }), &a).await;
+        assert_eq!(ws_connect(addr, id, &rid, &a).await.err(), Some(409), "belum disematkan");
+        let ok = t.call(Method::PUT, &format!("/api/routers/{rid}/ssh"), Some(json!({ "fingerprint": fp })), Some(&a), &[], LAN).await;
+        assert_eq!((ok.status, ok.body["pinned"].as_str()), (StatusCode::OK, Some(fp.as_str())), "{:?}", ok.body);
+        assert_eq!(ws_connect(addr, id, &rid, &p).await.err(), Some(403), "peran tanpa akses extension");
+        assert_eq!(ws_connect(addr, "net.teliti.hantu", &rid, &a).await.err(), Some(404));
+        let ro = ssh_router(&t, false);
+        assert_eq!(ws_connect(addr, id, &ro, &a).await.err(), Some(403), "router tanpa izin tulis");
+
+        // Sesi sungguhan: prompt, masukan, ubah ukuran, tutup; audit mencatat buka, tutup, dan baris perintah.
+        let mut ws = ws_connect(addr, id, &rid, &a).await.expect("terhubung");
+        next_text(&mut ws, "[api@router] > ").await;
+        ws.send(M::Binary(b"/ip address print\r".to_vec().into())).await.unwrap();
+        next_text(&mut ws, "echo:/ip address print").await;
+        ws.send(M::Text(json!({ "type": "resize", "cols": 120, "rows": 40 }).to_string().into())).await.unwrap();
+        ws.send(M::Close(None)).await.unwrap();
+        drop(ws);
+        let mut closed = false;
+        for _ in 0..50 {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            let rows = t.telemon.with_store(|s| s.list_audit(&telemon_core::AuditQuery::default()).unwrap());
+            if rows.iter().any(|r| r.entry.action == "extension.ssh") {
+                closed = true;
+                let open = rows.iter().find(|r| r.entry.action == "extension.ssh_open").expect("catatan buka");
+                assert_eq!(open.entry.actor, "admin");
+                let close = rows.iter().find(|r| r.entry.action == "extension.ssh").unwrap();
+                assert!(close.entry.changes.iter().any(|c| c.field == "perintah" && c.to.as_deref() == Some("/ip address print")), "{:?}", close.entry.changes);
+                assert!(!format!("{:?}", close.entry).contains("rahasia"), "kata sandi tidak boleh masuk audit");
+                break;
+            }
+        }
+        assert!(closed, "catatan penutupan tidak muncul");
+
+        // Kunci host berubah (pin lama salah): ditolak sebelum kata sandi dikirim.
+        t.telemon.with_store(|s| s.router_ssh_set(&rid, port, Some("SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"), 1)).unwrap();
+        assert_eq!(ws_connect(addr, id, &rid, &a).await.err(), Some(409), "kunci host tidak cocok");
+        t.telemon.with_store(|s| s.router_ssh_set(&rid, port, Some(&fp), 2)).unwrap();
+
+        // Batas sesi per akun: 3 terbuka, yang keempat 429; setelah satu ditutup, bisa lagi.
+        let mut open = Vec::new();
+        for _ in 0..3 {
+            let mut w = ws_connect(addr, id, &rid, &a).await.expect("sesi");
+            next_text(&mut w, "[api@router] > ").await;
+            open.push(w);
+        }
+        assert_eq!(ws_connect(addr, id, &rid, &a).await.err(), Some(429));
+        let mut first = open.remove(0);
+        first.send(M::Close(None)).await.unwrap();
+        drop(first);
+        let mut again = None;
+        for _ in 0..50 {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            if let Ok(w) = ws_connect(addr, id, &rid, &a).await {
+                again = Some(w);
+                break;
+            }
+        }
+        assert!(again.is_some(), "slot dilepas setelah sesi ditutup");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
     #[tokio::test]
     async fn izin_akun_dan_akses_publik() {
         let d = dir();

@@ -29,6 +29,6 @@ pub use write::{Change, Plan, apply, apply_audited};
 pub use vault::{VaultError, generate_key};
 #[cfg(feature = "tls")]
 pub use tls::{Fingerprint, fetch_fingerprint, pinned_config};
-pub use service::{Connector, MemorySecrets, NetConnector, Probe, Resilient, RouterEvent, RuntimeConfig, SecretStore, ServiceError, Telemon};
+pub use service::{Connector, MemorySecrets, NetConnector, Probe, Resilient, RouterEvent, RuntimeConfig, SecretStore, ServiceError, SshCredentials, Telemon};
 pub use settings::Settings;
 pub use aistore::{ChatMeta, ChatRow, ProviderRow, UsageRow};

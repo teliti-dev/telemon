@@ -63,6 +63,11 @@ export interface ExtensionSdk {
     get<T = unknown>(path: string): Promise<T>
     post<T = unknown>(path: string, body?: unknown): Promise<T>
   }
+  /**
+   * Alamat WebSocket sesi interaktif yang dideklarasikan manifest (`contributes.sessions`), mis. terminal SSH:
+   * `new WebSocket(sdk.sessionUrl("ssh", { router, cols, rows }))`. Core menegakkan izin, pin kunci host, dan batas.
+   */
+  sessionUrl(sessionId: string, params?: Record<string, string | number>): string
   registerWidget(def: ExtWidgetDef): void
   registerPage(def: ExtPageDef): void
 }

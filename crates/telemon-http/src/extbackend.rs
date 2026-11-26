@@ -240,17 +240,22 @@ async fn invoke<C: Connector>(st: &St<C>, row: &telemon_core::StoredExtension, m
     }
 }
 
-fn granted_of<C: Connector>(st: &St<C>, id: &str) -> Vec<String> {
+pub(crate) fn granted_of<C: Connector>(st: &St<C>, id: &str) -> Vec<String> {
     st.telemon.with_store(|d| d.ext_perms(id)).unwrap_or_default().into_iter().filter(|(_, g)| *g).map(|(k, _)| k).collect()
 }
 
 /// Extension yang boleh dijalankan: aktif, official, punya backend, syarat terpenuhi, versi Telemon cocok.
 fn runnable<C: Connector>(st: &St<C>, id: &str) -> Option<(telemon_core::StoredExtension, Arc<Manifest>)> {
+    usable(st, id, true)
+}
+
+/// Seperti `runnable`, dengan `need_backend = false` untuk extension yang hanya punya UI dan sesi.
+pub(crate) fn usable<C: Connector>(st: &St<C>, id: &str, need_backend: bool) -> Option<(telemon_core::StoredExtension, Arc<Manifest>)> {
     let rows = all_rows(st).ok()?;
     let row = rows.iter().find(|r| r.id == id)?.clone();
     let m = manifest_of(&row).ok()?;
     let perms = st.telemon.with_store(|d| d.ext_perms(id)).ok()?;
-    let ok = row.enabled && row.tier == "official" && m.backend.is_some() && matches!(status(&row, &m, &perms, &blocked_by(&m, &rows), &st.cfg.host_version), "ok");
+    let ok = row.enabled && row.tier == "official" && (m.backend.is_some() || !need_backend) && matches!(status(&row, &m, &perms, &blocked_by(&m, &rows), &st.cfg.host_version), "ok");
     ok.then(|| (row, Arc::new(m)))
 }
 

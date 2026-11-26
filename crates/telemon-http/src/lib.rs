@@ -10,6 +10,7 @@ mod extbackend;
 mod extensions;
 mod guard;
 mod share;
+mod sshterm;
 mod state;
 mod traffic;
 mod update;

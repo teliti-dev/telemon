@@ -52,6 +52,11 @@ async function activateOne(ext: ActiveExtension): Promise<{ defs: WidgetDef[]; p
     accessLevel: ext.access.level,
     can: (id) => ext.access.actions.includes(id),
     api: extApi(ext.id),
+    sessionUrl: (sessionId, params = {}) => {
+      const q = new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)]))
+      const proto = window.location.protocol === "https:" ? "wss:" : "ws:"
+      return `${proto}//${window.location.host}/api/ext-session/${encodeURIComponent(ext.id)}/${encodeURIComponent(sessionId)}?${q}`
+    },
     registerWidget: (d) => registered.push(d),
     registerPage: (d) => registeredPages.push(d),
   })

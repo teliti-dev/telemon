@@ -114,6 +114,22 @@ impl<C: Connector> RouterApi for Resilient<C> {
 
 // ---------------- galat dan tipe ----------------
 
+/// Kredensial SSH satu router (lihat `Telemon::ssh_credentials`).
+pub struct SshCredentials {
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub password: String,
+    /// Sidik jari kunci host yang disematkan; `None` = belum disematkan.
+    pub host_key: Option<String>,
+}
+
+impl std::fmt::Debug for SshCredentials {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SshCredentials").field("host", &self.host).field("port", &self.port).field("username", &self.username).field("password", &"***").field("host_key", &self.host_key).finish()
+    }
+}
+
 #[derive(Debug)]
 pub enum ServiceError {
     Router(Error),
@@ -314,6 +330,18 @@ impl<C: Connector> Telemon<C> {
     #[cfg(feature = "tls")]
     pub async fn fetch_fingerprint(&self, addr: &str) -> Res<crate::tls::Fingerprint> {
         Ok(crate::tls::fetch_fingerprint(addr, Duration::from_secs(10)).await?)
+    }
+
+    /// Alamat, akun, dan kata sandi router untuk SSH (akun yang sama dengan API; ADR 0029). Hanya untuk router yang boleh
+    /// ditulis (`can_write`): SSH selalu memberi hak penuh akun itu. Kata sandi tidak boleh masuk log.
+    pub fn ssh_credentials(&self, router_id: &str) -> Res<SshCredentials> {
+        let rec = self.with_store(|s| s.get_router(router_id))?.ok_or(ServiceError::NotFound)?;
+        if !rec.can_write {
+            return Err(ServiceError::Rejected("Router ini tidak diizinkan ditulis dari Telemon, jadi terminal SSH dimatikan".into()));
+        }
+        let (port, pin) = self.with_store(|s| s.router_ssh_get(router_id))?;
+        let password = self.secrets.get(&secret_key(router_id)).ok_or_else(|| ServiceError::Secret("kata sandi router tidak ditemukan".into()))?;
+        Ok(SshCredentials { host: rec.host, port, username: rec.username, password, host_key: pin })
     }
 
     /// Sambungan router yang dipakai bersama pemantau dan penulisan.
