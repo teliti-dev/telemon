@@ -62,6 +62,7 @@ pub fn routes<C: Connector>() -> Router<Arc<AppState<C>>> {
         .route("/api/update/channel", post(update_channel::<C>))
         // pengaturan dan penyimpanan
         .merge(crate::ai::routes::<C>())
+        .merge(crate::dashboard::routes::<C>())
         .route("/api/settings", get(settings_get::<C>).put(settings_put::<C>))
         .route("/api/storage", get(storage_get::<C>))
         .route("/api/storage/purge", post(storage_purge::<C>))

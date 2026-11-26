@@ -59,10 +59,10 @@ impl Resource {
         Self::ALL.into_iter().find(|r| r.as_str() == s)
     }
 
-    /// Menu tanpa fitur ubah hanya boleh Tanpa akses atau Lihat.
+    /// Menu tanpa fitur ubah hanya boleh Tanpa akses atau Lihat. Ringkasan: Ubah = mengatur tata letak widget.
     pub fn max_level(self) -> Level {
         match self {
-            Resource::Ringkasan | Resource::Event | Resource::Ai => Level::Read,
+            Resource::Event | Resource::Ai => Level::Read,
             _ => Level::Update,
         }
     }
@@ -151,12 +151,15 @@ pub struct RoleInput {
     pub permissions: Permissions,
 }
 
+/// Penanda migrasi satu kali (tabel `settings`): izin Ubah Ringkasan untuk Administrator lama.
+const MIGRATE_RINGKASAN_UPDATE: &str = "migrate.ringkasan-update";
+
 fn default_roles() -> Vec<(&'static str, &'static str, &'static str, Permissions)> {
     use Level::{None as N, Read as R, Update as U};
     let p = |v: [Level; 8]| Permissions(v);
     // urutan: ringkasan, user, profile, event, router, admin, pengaturan, ai
     vec![
-        ("role-admin", "Administrator", "Semua menu, termasuk Admin dan Pengaturan; boleh mengubah semuanya.", p([R, U, U, R, U, U, U, R])),
+        ("role-admin", "Administrator", "Semua menu, termasuk Admin dan Pengaturan; boleh mengubah semuanya.", p([U, U, U, R, U, U, U, R])),
         ("role-operator", "Operator", "Mengelola user dan profil PPP; router hanya dilihat.", p([R, U, U, R, R, N, N, R])),
         ("role-viewer", "Viewer", "Hanya melihat semua menu.", p([R, R, R, R, R, N, N, N])),
         ("role-monitor", "Monitor", "Layar pantau: Ringkasan, Event, dan Router saja.", p([R, N, N, R, R, N, N, N])),
@@ -545,6 +548,19 @@ impl Auth {
                 for (id, name, desc, perms) in default_roles() {
                     st.conn.execute("INSERT INTO roles (id, name, description, permissions, builtin) VALUES (?1,?2,?3,?4,1)", params![id, name, desc, perms.encode()])?;
                 }
+            }
+            // Satu kali: Administrator lama (dibuat sebelum widget Ringkasan) mendapat izin Ubah Ringkasan,
+            // supaya admin bisa mengatur widget. Peran yang diubah sengaja (bukan Lihat) tidak disentuh.
+            if st.kv_get(MIGRATE_RINGKASAN_UPDATE)?.is_none() {
+                let stored: Option<String> = st.conn.query_row("SELECT permissions FROM roles WHERE id = 'role-admin' AND builtin = 1", [], |r| r.get(0)).optional()?;
+                if let Some(raw) = stored {
+                    let mut perms = Permissions::parse(&raw);
+                    if perms.get(Resource::Ringkasan) == Level::Read {
+                        perms.set(Resource::Ringkasan, Level::Update);
+                        st.conn.execute("UPDATE roles SET permissions = ?1 WHERE id = 'role-admin'", params![perms.encode()])?;
+                    }
+                }
+                st.kv_set(MIGRATE_RINGKASAN_UPDATE, "1")?;
             }
             Ok(())
         })
@@ -1249,9 +1265,34 @@ mod tests {
         let p = Permissions::default().with(Resource::User, Level::Update).with(Resource::Event, Level::Read);
         assert_eq!(Permissions::parse(&p.encode()), p);
         // Menu tanpa fitur ubah dibatasi Lihat; kolom asing dan rusak diabaikan.
-        let q = Permissions::parse("ringkasan=update,user=read,xx=read,event,router=salah");
-        assert_eq!((q.get(Resource::Ringkasan), q.get(Resource::User), q.get(Resource::Router)), (Level::Read, Level::Read, Level::None));
+        let q = Permissions::parse("event=update,user=read,xx=read,ringkasan,router=salah");
+        assert_eq!((q.get(Resource::Event), q.get(Resource::User), q.get(Resource::Router)), (Level::Read, Level::Read, Level::None));
+        // Ringkasan punya izin Ubah (mengatur widget).
+        assert_eq!(Permissions::parse("ringkasan=update").get(Resource::Ringkasan), Level::Update);
         assert!(Level::Update > Level::Read && Level::Read > Level::None);
+    }
+
+    #[test]
+    fn administrator_lama_mendapat_ubah_ringkasan_satu_kali() {
+        let h = setup();
+        let admin = |h: &H| h.auth.list_roles(None).unwrap().into_iter().find(|r| r.id == "role-admin").unwrap();
+        // Peran baru: Administrator sudah boleh mengubah Ringkasan; Operator hanya melihat.
+        assert_eq!(admin(&h).permissions.get(Resource::Ringkasan), Level::Update);
+        let operator = h.auth.list_roles(None).unwrap().into_iter().find(|r| r.id == "role-operator").unwrap();
+        assert_eq!(operator.permissions.get(Resource::Ringkasan), Level::Read);
+        // Basis data lama: Administrator dengan Ringkasan=Lihat dan tanpa penanda migrasi.
+        let set_admin = |h: &H, v: &str| {
+            h.auth.with(|st| st.conn.execute("UPDATE roles SET permissions = ?1 WHERE id = 'role-admin'", params![v]).unwrap());
+        };
+        let old = "ringkasan=read,user=update,profile=update,event=read,router=update,admin=update,pengaturan=update,ai=read";
+        set_admin(&h, old);
+        h.auth.with(|st| st.conn.execute("DELETE FROM settings WHERE k = ?1", params![MIGRATE_RINGKASAN_UPDATE]).unwrap());
+        h.auth.seed_roles().unwrap();
+        assert_eq!(admin(&h).permissions.get(Resource::Ringkasan), Level::Update, "migrasi menaikkan Lihat menjadi Ubah");
+        // Sudah dimigrasi: pilihan sengaja kembali ke Lihat tidak ditimpa lagi saat start berikutnya.
+        set_admin(&h, old);
+        h.auth.seed_roles().unwrap();
+        assert_eq!(admin(&h).permissions.get(Resource::Ringkasan), Level::Read);
     }
 
     #[test]

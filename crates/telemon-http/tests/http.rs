@@ -1108,6 +1108,73 @@ async fn akses_publik_mati_otomatis_setelah_durasi() {
     t.st.shutdown_lan().await;
 }
 
+// ---------------- tata letak widget Ringkasan ----------------
+
+#[tokio::test]
+async fn tata_letak_dashboard_global_dengan_izin_dan_validasi() {
+    let t = harness();
+    let c = desk_cookie();
+    let widget = |id: &str| json!({ "id": id, "type": "stat-router-online", "x": 0, "y": 0, "w": 4, "h": 2, "config": { "router": "r1" } });
+    let layout = json!({ "version": 1, "widgets": [widget("w1"), widget("w2")] });
+
+    // Belum ada tata letak tersimpan: null, UI memakai susunan bawaan.
+    let g = t.desk(Method::GET, "/api/dashboard", None, Some(&c), LOOP).await;
+    assert_eq!((g.status, g.body["layout"].is_null()), (StatusCode::OK, true));
+
+    // Simpan dari desktop; dibaca kembali sama persis.
+    let r = t.desk(Method::PUT, "/api/dashboard", Some(json!({ "layout": layout })), Some(&c), LOOP).await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    assert_eq!(t.desk(Method::GET, "/api/dashboard", None, Some(&c), LOOP).await.body["layout"], layout);
+
+    // Bentuk yang salah ditolak dan tidak menimpa yang tersimpan.
+    let long_cfg = json!({ "k": "x".repeat(3000) });
+    let too_many: Vec<Value> = (0..61).map(|i| widget(&format!("w{i}"))).collect();
+    let bads = [
+        ("versi", json!({ "version": 2, "widgets": [] })),
+        ("id ganda", json!({ "version": 1, "widgets": [widget("a"), widget("a")] })),
+        ("id spasi", json!({ "version": 1, "widgets": [widget("a b")] })),
+        ("jenis huruf besar", json!({ "version": 1, "widgets": [{ "id": "a", "type": "Stat", "x": 0, "y": 0, "w": 1, "h": 1 }] })),
+        ("lebar nol", json!({ "version": 1, "widgets": [{ "id": "a", "type": "stat", "x": 0, "y": 0, "w": 0, "h": 1 }] })),
+        ("x negatif", json!({ "version": 1, "widgets": [{ "id": "a", "type": "stat", "x": -1, "y": 0, "w": 1, "h": 1 }] })),
+        ("config besar", json!({ "version": 1, "widgets": [{ "id": "a", "type": "stat", "x": 0, "y": 0, "w": 1, "h": 1, "config": long_cfg }] })),
+        ("config bukan objek", json!({ "version": 1, "widgets": [{ "id": "a", "type": "stat", "x": 0, "y": 0, "w": 1, "h": 1, "config": [1] }] })),
+        ("terlalu banyak", json!({ "version": 1, "widgets": too_many })),
+        ("tanpa daftar", json!({ "version": 1 })),
+    ];
+    for (why, bad) in bads {
+        let r = t.desk(Method::PUT, "/api/dashboard", Some(json!({ "layout": bad })), Some(&c), LOOP).await;
+        assert_eq!(r.status, StatusCode::BAD_REQUEST, "{why}: {:?}", r.body);
+    }
+    assert_eq!(t.desk(Method::GET, "/api/dashboard", None, Some(&c), LOOP).await.body["layout"], layout, "tata letak tidak berubah oleh isi yang ditolak");
+    // Jenis widget yang tak dikenal diterima: daftar jenis dikelola UI.
+    let future = json!({ "version": 1, "widgets": [{ "id": "z", "type": "jenis-masa-depan", "x": 0, "y": 0, "w": 3, "h": 3 }] });
+    assert_eq!(t.desk(Method::PUT, "/api/dashboard", Some(json!({ "layout": future })), Some(&c), LOOP).await.status, StatusCode::OK);
+    t.desk(Method::PUT, "/api/dashboard", Some(json!({ "layout": layout })), Some(&c), LOOP).await;
+
+    // Akun jarak jauh: tata letak sama untuk semua (global). Viewer dan Operator hanya melihat; Administrator boleh mengubah.
+    t.account("viewer", "role-viewer");
+    t.account("operator", "role-operator");
+    t.account("admin", "role-admin");
+    let (cv, co, ca) = (t.login("viewer").await, t.login("operator").await, t.login("admin").await);
+    for (who, ck) in [("viewer", &cv), ("operator", &co), ("admin", &ca)] {
+        let g = t.call(Method::GET, "/api/dashboard", None, Some(ck), &[], LAN).await;
+        assert_eq!((g.status, g.body["layout"].clone()), (StatusCode::OK, layout.clone()), "{who} membaca tata letak yang sama");
+    }
+    for (who, ck) in [("viewer", &cv), ("operator", &co)] {
+        let r = t.call(Method::PUT, "/api/dashboard", Some(json!({ "layout": { "version": 1, "widgets": [] } })), Some(ck), &[], LAN).await;
+        assert_eq!((r.status, r.code()), (StatusCode::FORBIDDEN, "forbidden"), "{who} tidak boleh mengubah");
+    }
+    let mine = json!({ "version": 1, "widgets": [widget("dari-admin")] });
+    let r = t.call(Method::PUT, "/api/dashboard", Some(json!({ "layout": mine })), Some(&ca), &[], LAN).await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    assert_eq!(t.call(Method::GET, "/api/dashboard", None, Some(&cv), &[], LAN).await.body["layout"], mine, "perubahan admin terlihat oleh akun lain");
+
+    // Kembalikan ke bawaan.
+    let r = t.call(Method::PUT, "/api/dashboard", Some(json!({ "layout": null })), Some(&ca), &[], LAN).await;
+    assert_eq!(r.status, StatusCode::OK);
+    assert!(t.call(Method::GET, "/api/dashboard", None, Some(&cv), &[], LAN).await.body["layout"].is_null());
+}
+
 // ---------------- pembaruan aplikasi ----------------
 
 #[derive(Default)]
