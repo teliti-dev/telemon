@@ -79,8 +79,8 @@ export function SiteHeader({ title }: { title: string }) {
                 aria-label={t("Telemon, ke Ringkasan")}
                 className="flex shrink-0 items-center gap-2 rounded-md font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
               >
-                <TelemonLogo className={compact ? "size-5" : undefined} />
-                <span className={cn("hidden sm:inline", compact && "text-sm")}>Telemon</span>
+                {!compact && <TelemonLogo />}
+                <span className={cn(!compact && "hidden sm:inline", compact && "text-sm")}>Telemon</span>
               </a>
               {isDesktop ? <LiveIndicator /> : <LivePill />}
 
