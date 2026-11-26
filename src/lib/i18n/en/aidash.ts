@@ -1,5 +1,8 @@
 export default {
   "Harga per 1 juta token (USD, opsional)": "Price per 1M tokens (USD, optional)",
+  "Pilih model": "Choose a model",
+  "Lainnya (ketik manual)": "Other (type manually)",
+  "Nama model": "Model name",
   "Token masuk": "Input tokens",
   "Token keluar": "Output tokens",
   "Harga token masuk per 1 juta (USD)": "Input token price per 1M (USD)",
