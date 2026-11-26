@@ -205,6 +205,8 @@ pub struct AuthPolicy {
     pub require_2fa: bool,
     /// Akses Publik sedang aktif: 2FA wajib untuk semua.
     pub public_on: bool,
+    /// Peran berizin Ubah wajib 2FA (bawaan **true**). Hanya dimatikan oleh server demo; tidak ada di pengaturan.
+    pub update_roles_need_2fa: bool,
     /// Peran berizin Ubah boleh menulis lewat akses Publik (bawaan mati).
     pub allow_public_write: bool,
     pub session_hours: u32,
@@ -214,7 +216,7 @@ pub struct AuthPolicy {
 
 impl Default for AuthPolicy {
     fn default() -> Self {
-        Self { require_2fa: false, public_on: false, allow_public_write: false, session_hours: 12, max_failures: 5, lock_minutes: 5 }
+        Self { require_2fa: false, public_on: false, update_roles_need_2fa: true, allow_public_write: false, session_hours: 12, max_failures: 5, lock_minutes: 5 }
     }
 }
 
@@ -621,10 +623,10 @@ impl Auth {
         self.with(|st| load_role(st, role_id))
     }
 
-    /// 2FA wajib: saklar pemilik, akses publik aktif, atau peran dengan izin Ubah.
+    /// 2FA wajib: saklar pemilik, akses publik aktif, atau peran dengan izin Ubah (kecuali dimatikan untuk demo).
     fn must_2fa(&self, role: &Role) -> bool {
         let p = self.policy();
-        p.require_2fa || p.public_on || role.permissions.has_update()
+        p.require_2fa || p.public_on || (p.update_roles_need_2fa && role.permissions.has_update())
     }
 
     fn session_for(&self, a: &AccountRow, id: &str, via: Via) -> Res<Session> {
@@ -1377,6 +1379,22 @@ mod tests {
         // Kedaluwarsa tantangan.
         h.advance(CHALLENGE_TTL_MS + 1);
         assert!(matches!(err(h.auth.verify_2fa(&challenge, &codes[1], true)), AuthError::Invalid(_)));
+    }
+
+    #[test]
+    fn peran_ubah_wajib_2fa_kecuali_dilonggarkan_untuk_demo() {
+        let h = setup();
+        h.account("editor", "role-admin");
+        // Bawaan: peran berizin Ubah diminta mendaftarkan 2FA.
+        assert!(matches!(h.auth.login("editor", "password-uji", Via::Lan, "", "").unwrap(), LoginOutcome::TwoFactorSetupRequired { .. }));
+        // Dilonggarkan (hanya demo): masuk tanpa 2FA...
+        h.auth.set_policy(AuthPolicy { update_roles_need_2fa: false, ..Default::default() });
+        assert!(matches!(h.auth.login("editor", "password-uji", Via::Lan, "", "").unwrap(), LoginOutcome::Ok { .. }));
+        // ...tetapi saklar pemilik dan akses Publik tetap memaksa.
+        h.auth.set_policy(AuthPolicy { update_roles_need_2fa: false, require_2fa: true, ..Default::default() });
+        assert!(matches!(h.auth.login("editor", "password-uji", Via::Lan, "", "").unwrap(), LoginOutcome::TwoFactorSetupRequired { .. }));
+        h.auth.set_policy(AuthPolicy { update_roles_need_2fa: false, public_on: true, ..Default::default() });
+        assert!(matches!(h.auth.login("editor", "password-uji", Via::Publik, "", "").unwrap(), LoginOutcome::TwoFactorSetupRequired { .. }));
     }
 
     #[test]

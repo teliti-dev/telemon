@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use telemon_core::auth::{Auth, HashParams, NewAccount};
+use telemon_core::auth::{Auth, HashParams, Level, NewAccount, Permissions, Resource, RoleInput};
 use telemon_core::store::{NewRouter, Store};
 use telemon_core::traffic::{IfaceInfo, Sample, TrafficConfig};
 use telemon_core::{Connector, Error, MemorySecrets, RouterApi, Row, RuntimeConfig, Telemon, TlsMode};
@@ -352,11 +352,22 @@ async fn main() -> std::io::Result<()> {
 
     eprintln!("[demo] membuat akun");
     let auth = Arc::new(Auth::new(telemon.store(), HashParams::default()).expect("auth"));
-    for (user, name, role) in [("admin", "Administrator Demo", "role-admin"), ("operator", "Operator Demo", "role-operator"), ("pantau", "Layar Pantau", "role-monitor")] {
-        auth.create_account(None, &NewAccount { username: user.into(), display_name: name.into(), password: "demo-telemon".into(), role_id: role.into() }).expect("akun");
+    // Monitor yang juga boleh mengatur widget Ringkasan dan memakai AI (chat dan dasbor AI), supaya fitur itu bisa dicoba.
+    let monitor_plus = auth
+        .create_role(
+            None,
+            &RoleInput {
+                name: "Monitor Plus".into(),
+                description: "Demo: layar pantau yang boleh mengatur widget Ringkasan, memakai AI chat, dan mengatur AI di Pengaturan.".into(),
+                permissions: Permissions::default().with(Resource::Ringkasan, Level::Update).with(Resource::Event, Level::Read).with(Resource::Router, Level::Read).with(Resource::Pengaturan, Level::Update).with(Resource::Ai, Level::Read),
+            },
+        )
+        .expect("peran demo");
+    for (user, name, role) in [("admin", "Administrator Demo", "role-admin".to_string()), ("operator", "Operator Demo", "role-operator".to_string()), ("pantau", "Layar Pantau", monitor_plus.id)] {
+        auth.create_account(None, &NewAccount { username: user.into(), display_name: name.into(), password: "demo-telemon".into(), role_id: role }).expect("akun");
     }
 
-    let cfg = HttpConfig { static_dir: (!static_dir.is_empty()).then(|| static_dir.clone().into()), db_path: "(memori, demo)".into(), ..Default::default() };
+    let cfg = HttpConfig { static_dir: (!static_dir.is_empty()).then(|| static_dir.clone().into()), db_path: "(memori, demo)".into(), relax_update_2fa: true, ..Default::default() };
     eprintln!("[demo] menyiapkan server");
     let st = AppState::new(telemon.clone(), auth, cfg);
     // AI untuk mencoba UI tanpa kunci API: model offline berbasis kata kunci yang memakai alat baca asli.
@@ -376,7 +387,7 @@ async fn main() -> std::io::Result<()> {
 
     let addr = SocketAddr::new(bind, port);
     println!("Telemon demo di http://{addr}  (UI: {})", if static_dir.is_empty() { "tidak dilayani; pakai --static" } else { &static_dir });
-    println!("Akun: admin / operator / pantau, kata sandi: demo-telemon (admin dan operator wajib mendaftarkan 2FA saat masuk)");
+    println!("Akun: admin / operator / pantau, kata sandi: demo-telemon (pantau = Monitor Plus: widget, AI chat, dan pengaturan AI; 2FA dilonggarkan hanya di demo)");
     println!("PERINGATAN: hanya untuk mencoba UI; data tiruan, kata sandi diketahui publik.");
     telemon_http::serve(st, addr, async {
         let _ = tokio::signal::ctrl_c().await;

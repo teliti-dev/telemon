@@ -1253,6 +1253,32 @@ async fn bandwidth_antarmuka_deret_waktu_validasi_dan_izin() {
     assert_eq!(t.call(Method::GET, &format!("/api/traffic/series?router={rid}&iface=ether1&range=1h"), None, Some(&cm), &[], LAN).await.status, StatusCode::OK);
 }
 
+// ---------------- 2FA untuk peran berizin Ubah ----------------
+
+#[tokio::test]
+async fn demo_boleh_melonggarkan_2fa_peran_ubah_tetapi_publik_dan_saklar_memaksa() {
+    // Bawaan: Administrator diminta mendaftarkan 2FA.
+    let t = harness();
+    t.account("admin", "role-admin");
+    let r = t.post("/api/login", json!({"username": "admin", "password": "password-uji"}), None).await;
+    assert_eq!(r.body["status"], "2fa_setup_required", "{:?}", r.body);
+
+    // Server demo: masuk langsung, dan izin Ubah Ringkasan berlaku.
+    let t = harness_with(HttpConfig { relax_update_2fa: true, ..Default::default() });
+    t.account("admin", "role-admin");
+    let r = t.post("/api/login", json!({"username": "admin", "password": "password-uji"}), None).await;
+    assert_eq!(r.body["status"], "ok", "{:?}", r.body);
+    let ck = r.cookie().expect("cookie");
+    let put = t.call(Method::PUT, "/api/dashboard", Some(json!({ "layout": null })), Some(&ck), &[], LAN).await;
+    assert_eq!(put.status, StatusCode::OK, "{:?}", put.body);
+
+    // Saklar Wajib 2FA tetap memaksa, walau dilonggarkan.
+    t.st.set_share(true, false);
+    t.account("admin2", "role-admin");
+    let r = t.post("/api/login", json!({"username": "admin2", "password": "password-uji"}), None).await;
+    assert_eq!(r.body["status"], "2fa_setup_required", "saklar pemilik tetap memaksa: {:?}", r.body);
+}
+
 // ---------------- pembaruan aplikasi ----------------
 
 #[derive(Default)]
