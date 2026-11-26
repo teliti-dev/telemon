@@ -6,6 +6,7 @@ import type {
   AiDashboard,
   AiUiContext,
   ActiveExtension,
+  ExtensionStore,
   ExtensionAccess,
   ExtensionLevel,
   ExtensionInfo,
@@ -170,6 +171,10 @@ export interface TelemonApi {
   getExtensionAccess(id: string): Promise<ExtensionAccess>
   /** Tetapkan level dan aksi satu peran (izin Admin Ubah; aturan anti-kenaikan izin berlaku). */
   setExtensionAccess(id: string, roleId: string, access: { level: ExtensionLevel; actions: string[] }): Promise<void>
+  /** Katalog toko official (izin Admin Lihat); galat 501 `store_off` bila toko mati. */
+  getExtensionStore(): Promise<ExtensionStore>
+  /** Pasang dari toko; dependensi yang belum ada ikut terpasang lebih dulu. Mengembalikan semua yang terpasang. */
+  installFromStore(id: string): Promise<ExtensionInfo[]>
   /** Hapus extension; `deleteData` juga menghapus tabel dan catatan migrasinya (bawaan: data disimpan). */
   removeExtension(id: string, opts?: { deleteData?: boolean }): Promise<void>
   /** Antarmuka yang pernah terbaca pada satu router (termasuk `@pppoe`). */

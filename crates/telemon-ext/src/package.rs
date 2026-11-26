@@ -243,3 +243,20 @@ pub fn pack(files: &[(String, Vec<u8>)], secret_hex: Option<&str>) -> Result<Vec
     }
     Ok(out)
 }
+
+/// Tanda tangan Ed25519 (heksa) atas bytes apa pun (dipakai katalog toko).
+pub fn sign_bytes(secret_hex: &str, bytes: &[u8]) -> Result<String, String> {
+    let sk = SigningKey::from_bytes(&unhex::<32>(secret_hex).ok_or("Kunci privat harus 64 karakter heksa")?);
+    Ok(hex(&sk.sign(bytes).to_bytes()))
+}
+
+/// Periksa tanda tangan `sig_hex` atas `bytes` terhadap kunci publik `pub_hex`.
+pub fn verify_bytes(pub_hex: &str, bytes: &[u8], sig_hex: &str) -> bool {
+    let (Some(pk), Some(sg)) = (unhex::<32>(pub_hex).and_then(|b| VerifyingKey::from_bytes(&b).ok()), unhex::<64>(sig_hex.trim())) else { return false };
+    pk.verify(bytes, &Signature::from_bytes(&sg)).is_ok()
+}
+
+/// SHA-256 (heksa) bytes.
+pub fn sha256_hex(bytes: &[u8]) -> String {
+    hex(&Sha256::digest(bytes))
+}

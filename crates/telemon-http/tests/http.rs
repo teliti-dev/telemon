@@ -1784,7 +1784,7 @@ mod extensions {
 
     fn on(dir: &std::path::Path) -> HttpConfig {
         let keys = TrustedKeys { official: vec![public_key_hex(OFFICIAL).unwrap()], publishers: vec![public_key_hex(PUBLISHER).unwrap()], allow_unsigned: false };
-        HttpConfig { extensions: Some(telemon_http::ExtConfig { dir: dir.into(), keys }), ..Default::default() }
+        HttpConfig { extensions: Some(telemon_http::ExtConfig { dir: dir.into(), keys, store_url: Some("https://store.test/x/catalog.json".into()) }), ..Default::default() }
     }
 
     fn manifest(version: &str, extra_perm: &str) -> String {
@@ -2171,6 +2171,115 @@ mod extensions {
         assert!(rows.iter().filter(|r| r.entry.action == "extension.access").count() >= 4);
         t.call(Method::DELETE, &format!("/api/extensions/{id}"), None, Some(&a), &[], LAN).await;
         assert!(t.telemon.with_store(|s| s.ext_access_list(id).unwrap().is_empty()));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    struct FakeFetch(Mutex<std::collections::HashMap<String, Vec<u8>>>);
+
+    impl telemon_http::ExtFetch for FakeFetch {
+        fn get(&self, url: &str, max: usize) -> Result<Vec<u8>, String> {
+            let b = self.0.lock().unwrap().get(url).cloned().ok_or_else(|| format!("404 {url}"))?;
+            if b.len() > max { Err("terlalu besar".into()) } else { Ok(b) }
+        }
+    }
+
+    /// Katalog bertanda tangan dengan paket: (id, versi, tambahan manifest).
+    fn store(items: &[(&str, &str, &str)], sign_with: &str) -> FakeFetch {
+        let mut files = std::collections::HashMap::new();
+        let mut entries = Vec::new();
+        for (id, version, extra) in items {
+            let manifest = format!(r#"{{"id":"{id}","name":"{id}","version":"{version}","apiVersion":1,"publisher":"Teliti","ui":{{"entry":"ui/index.js"}}{extra}}}"#);
+            let bytes = pack(&[("manifest.json".into(), manifest.clone().into_bytes()), ("ui/index.js".into(), b"export default {}".to_vec())], Some(OFFICIAL)).unwrap();
+            let file = format!("{id}-{version}.tmx");
+            entries.push(format!(r#"{{"manifest":{manifest},"file":"{file}","sha256":"{}","size":{}}}"#, telemon_ext::sha256_hex(&bytes), bytes.len()));
+            files.insert(format!("https://store.test/x/{file}"), bytes);
+        }
+        let cat = format!(r#"{{"version":1,"generated":"2026-11-26","extensions":[{}]}}"#, entries.join(",")).into_bytes();
+        files.insert("https://store.test/x/catalog.json.sig".into(), telemon_ext::sign_bytes(sign_with, &cat).unwrap().into_bytes());
+        files.insert("https://store.test/x/catalog.json".into(), cat);
+        FakeFetch(Mutex::new(files))
+    }
+
+    #[tokio::test]
+    async fn toko_official_memasang_dependensi_lebih_dulu() {
+        let d = dir();
+        let t = harness_with(on(&d));
+        t.account("admin", "role-admin");
+        let c = t.login("admin").await;
+        // Tanpa pengunduh: toko 501.
+        let r = t.get("/api/extensions/store", Some(&c)).await;
+        assert_eq!((r.status, r.code()), (StatusCode::NOT_IMPLEMENTED, "store_off"));
+
+        let req_b = r#","requires":[{"id":"net.teliti.b","version":"^1.0.0"}]"#;
+        let req_c = r#","requires":[{"id":"net.teliti.c","version":"^1.0.0"}]"#;
+        t.st.set_ext_fetcher(Arc::new(store(&[("net.teliti.a", "1.0.0", &format!("{req_b}")), ("net.teliti.b", "1.2.0", req_c), ("net.teliti.c", "1.0.0", ""), ("net.teliti.alone", "1.0.0", "")], OFFICIAL)));
+        let list = t.get("/api/extensions/store", Some(&c)).await;
+        assert_eq!(list.status, StatusCode::OK, "{:?}", list.body);
+        let a = list.body["extensions"].as_array().unwrap().iter().find(|e| e["id"] == "net.teliti.a").unwrap();
+        assert_eq!(a["alsoInstalls"], json!(["net.teliti.c", "net.teliti.b"]), "urutan: dependensi dulu");
+
+        // Pasang A: B dan C ikut, urut, semuanya mati dan siap diatur.
+        let r = t.post("/api/extensions/store/install", json!({ "id": "net.teliti.a" }), Some(&c)).await;
+        assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+        let ids: Vec<&str> = r.body["installed"].as_array().unwrap().iter().map(|e| e["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, vec!["net.teliti.c", "net.teliti.b", "net.teliti.a"]);
+        let l = t.get("/api/extensions", Some(&c)).await.body;
+        assert_eq!(l["extensions"].as_array().unwrap().len(), 3);
+
+        // Sudah ada dan cocok: tidak dipasang ulang; daftar toko menandai yang terpasang.
+        let list = t.get("/api/extensions/store", Some(&c)).await.body;
+        let a = list["extensions"].as_array().unwrap().iter().find(|e| e["id"] == "net.teliti.a").unwrap();
+        assert_eq!((a["upToDate"].as_bool(), a["alsoInstalls"].clone()), (Some(true), json!([])));
+        let r = t.post("/api/extensions/store/install", json!({ "id": "net.teliti.alone" }), Some(&c)).await;
+        assert_eq!(r.body["installed"].as_array().unwrap().len(), 1);
+
+        // Id tak ada di katalog.
+        let r = t.post("/api/extensions/store/install", json!({ "id": "net.teliti.hantu" }), Some(&c)).await;
+        assert_eq!(r.status, StatusCode::NOT_FOUND);
+        // Peran tanpa Admin Ubah ditolak.
+        t.account("pantau", "role-monitor");
+        let p = t.login("pantau").await;
+        assert_eq!(t.post("/api/extensions/store/install", json!({ "id": "net.teliti.alone" }), Some(&p)).await.status, StatusCode::FORBIDDEN);
+        assert_eq!(t.get("/api/extensions/store", Some(&p)).await.status, StatusCode::FORBIDDEN);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[tokio::test]
+    async fn toko_menolak_katalog_dan_unduhan_yang_tidak_sah() {
+        let d = dir();
+        let t = harness_with(on(&d));
+        t.account("admin", "role-admin");
+        let c = t.login("admin").await;
+
+        // Katalog bertanda tangan kunci lain: ditolak.
+        let other = "0303030303030303030303030303030303030303030303030303030303030303";
+        t.st.set_ext_fetcher(Arc::new(store(&[("net.teliti.a", "1.0.0", "")], other)));
+        let r = t.get("/api/extensions/store", Some(&c)).await;
+        assert_eq!((r.status, r.code()), (StatusCode::BAD_GATEWAY, "store_unreachable"));
+        assert_eq!(t.post("/api/extensions/store/install", json!({ "id": "net.teliti.a" }), Some(&c)).await.status, StatusCode::BAD_GATEWAY);
+
+        // Unduhan diubah setelah katalog dibuat: SHA-256 tidak cocok, tidak ada yang terpasang.
+        let f = store(&[("net.teliti.a", "1.0.0", "")], OFFICIAL);
+        f.0.lock().unwrap().insert("https://store.test/x/net.teliti.a-1.0.0.tmx".into(), pkg_json("net.teliti.a", "1.0.1", ""));
+        t.st.set_ext_fetcher(Arc::new(f));
+        let r = t.post("/api/extensions/store/install", json!({ "id": "net.teliti.a" }), Some(&c)).await;
+        assert_eq!((r.status, r.code()), (StatusCode::BAD_GATEWAY, "store_corrupt"), "{:?}", r.body);
+        assert!(t.get("/api/extensions", Some(&c)).await.body["extensions"].as_array().unwrap().is_empty());
+
+        // Katalog menyebut Telemon yang tidak cocok: ditolak dengan alasan.
+        let f = store(&[("net.teliti.n", "1.0.0", r#","telemon":">=9.0.0""#)], OFFICIAL);
+        t.st.set_ext_fetcher(Arc::new(f));
+        let r = t.post("/api/extensions/store/install", json!({ "id": "net.teliti.n" }), Some(&c)).await;
+        assert_eq!((r.status, r.code()), (StatusCode::CONFLICT, "incompatible"));
+        let l = t.get("/api/extensions/store", Some(&c)).await.body;
+        assert!(l["extensions"][0]["problem"].as_str().unwrap().contains("9.0.0"));
+
+        // Dependensi hilang dari katalog: ditolak, tidak ada yang terpasang sebagian.
+        let f = store(&[("net.teliti.a", "1.0.0", r#","requires":[{"id":"net.teliti.b","version":"*"}]"#)], OFFICIAL);
+        t.st.set_ext_fetcher(Arc::new(f));
+        let r = t.post("/api/extensions/store/install", json!({ "id": "net.teliti.a" }), Some(&c)).await;
+        assert_eq!(r.status, StatusCode::CONFLICT);
+        assert!(t.get("/api/extensions", Some(&c)).await.body["extensions"].as_array().unwrap().is_empty());
         let _ = std::fs::remove_dir_all(&d);
     }
 

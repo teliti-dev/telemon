@@ -668,3 +668,26 @@ export interface ExtensionAccess {
   roles: ExtensionRoleAccess[]
   me: { level: ExtensionLevel; actions: string[] }
 }
+
+/** Satu entri toko extension official (katalog bertanda tangan). */
+export interface ExtensionStoreItem {
+  id: string
+  name: string
+  version: string
+  publisher: string
+  description: string
+  telemon?: string
+  requires: { id: string; version: string; optional: boolean }[]
+  size: number
+  installedVersion?: string
+  upToDate: boolean
+  /** Extension yang ikut terpasang (dependensi), berurutan. */
+  alsoInstalls: string[]
+  /** Alasan tidak bisa dipasang; kosong = bisa. */
+  problem?: string
+}
+
+export interface ExtensionStore {
+  generated: string
+  extensions: ExtensionStoreItem[]
+}

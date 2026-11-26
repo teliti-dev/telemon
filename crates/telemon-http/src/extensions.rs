@@ -22,7 +22,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use telemon_core::auth::{Level, Resource, Via};
 use telemon_core::{AuditEntry, AuditOutcome, Change, Connector, StoredExtension};
-use telemon_ext::{Dialect, Limits, Manifest, Package, Problem, Tier, check_install, dep_status, dependents_of, host_compatible, migration_sql, namespace, parse_migrations, plan_migrations, valid_id};
+use telemon_ext::{Catalog, Dialect, Limits, Manifest, Package, Problem, Tier, check_install, dep_status, dependents_of, host_compatible, migration_sql, open_catalog, namespace, parse_migrations, plan_migrations, valid_id};
 
 use crate::error::{ApiError, ApiResult};
 use crate::guard::Caller;
@@ -35,6 +35,8 @@ pub fn routes<C: Connector>() -> Router<St<C>> {
         .route("/api/extensions", get(list::<C>).post(install::<C>).layer(DefaultBodyLimit::max(Limits::default().max_package + 4096)))
         .route("/api/extensions/inspect", post(inspect::<C>).layer(DefaultBodyLimit::max(Limits::default().max_package + 4096)))
         .route("/api/extensions/active", get(active::<C>))
+        .route("/api/extensions/store", get(store_list::<C>))
+        .route("/api/extensions/store/install", post(store_install::<C>))
         .route("/api/extensions/{id}", axum::routing::patch(patch::<C>).delete(remove::<C>))
         .route("/api/extensions/{id}/access", get(access_get::<C>))
         .route("/api/extensions/{id}/access/{role}", axum::routing::put(access_put::<C>))
@@ -127,12 +129,17 @@ async fn inspect<C: Connector>(State(st): State<St<C>>, c: Caller, body: Bytes) 
 /// Pembaruan: status dan izin lama dipertahankan; izin baru mati sampai admin memutuskan.
 async fn install<C: Connector>(State(st): State<St<C>>, c: Caller, body: Bytes) -> ApiResult<Json<Value>> {
     manage(&st, &c, Level::Update)?;
-    let p = parse(&st, &body)?;
-    let dir = cfg(&st)?.dir.clone();
+    Ok(Json(do_install(&st, &c, &body)?))
+}
+
+/// Inti pemasangan, dipakai unggah berkas dan toko: verifikasi, kompatibilitas, migrasi, tulis berkas, simpan.
+fn do_install<C: Connector>(st: &St<C>, c: &Caller, body: &[u8]) -> ApiResult<Value> {
+    let p = parse(st, body)?;
+    let dir = cfg(st)?.dir.clone();
     let id = p.manifest.id.clone();
     let now = st.now();
     {
-        let rows: Vec<StoredExtension> = all_rows(&st)?.into_iter().filter(|r| r.id != id).collect();
+        let rows: Vec<StoredExtension> = all_rows(st)?.into_iter().filter(|r| r.id != id).collect();
         let problems = check_install(&p.manifest, &st.cfg.host_version, &versions(&rows), &manifests(&rows));
         if !problems.is_empty() {
             let msg = problems.iter().map(problem_text).collect::<Vec<_>>().join("; ");
@@ -142,9 +149,9 @@ async fn install<C: Connector>(State(st): State<St<C>>, c: Caller, body: Bytes) 
     let manifest = serde_json::to_string(&p.manifest).map_err(ApiError::internal)?;
     let prev = st.telemon.with_store(|s| s.ext_get(&id)).map_err(ApiError::internal)?;
     std::fs::create_dir_all(&dir).map_err(ApiError::internal)?;
-    run_migrations(&st, &dir, &p, &id, now)?;
+    run_migrations(st, &dir, &p, &id, now)?;
     let tmp = dir.join(format!(".{id}.tmx.part"));
-    std::fs::write(&tmp, &body).map_err(ApiError::internal)?;
+    std::fs::write(&tmp, body).map_err(ApiError::internal)?;
     std::fs::rename(&tmp, path_of(&dir, &id)).map_err(ApiError::internal)?;
     let tier = "official";
     st.telemon
@@ -171,8 +178,111 @@ async fn install<C: Connector>(State(st): State<St<C>>, c: Caller, body: Bytes) 
         }
     }
     let from = prev.as_ref().map(|e| e.version.clone());
-    audit(&st, &c, if prev.is_some() { "extension.update" } else { "extension.install" }, &id, format!("Pasang extension {} {}", p.manifest.name, p.manifest.version), vec![Change { field: "versi".into(), from, to: Some(p.manifest.version.clone()) }]);
-    Ok(Json(view(&st, &id)?))
+    audit(st, c, if prev.is_some() { "extension.update" } else { "extension.install" }, &id, format!("Pasang extension {} {}", p.manifest.name, p.manifest.version), vec![Change { field: "versi".into(), from, to: Some(p.manifest.version.clone()) }]);
+    view(st, &id)
+}
+
+// ---------------- toko official (ADR 0028) ----------------
+
+/// Pengunduh HTTPS untuk toko. Implementasi memastikan skema `https`, batas ukuran, dan waktu tunggu; dipasang
+/// aplikasi desktop atau server lewat `AppState::set_ext_fetcher`.
+pub trait ExtFetch: Send + Sync {
+    fn get(&self, url: &str, max_bytes: usize) -> Result<Vec<u8>, String>;
+}
+
+const MAX_CATALOG: usize = 2 << 20;
+
+fn store_deps<C: Connector>(st: &St<C>) -> ApiResult<(String, Arc<dyn ExtFetch>)> {
+    let url = cfg(st)?.store_url.clone().ok_or_else(|| ApiError::new(StatusCode::NOT_IMPLEMENTED, "store_off", "Toko extension mati di server ini"))?;
+    let f = st.ext_fetch.lock().expect("lock").clone().ok_or_else(|| ApiError::new(StatusCode::NOT_IMPLEMENTED, "store_off", "Toko extension belum tersedia (tanpa pengunduh)"))?;
+    Ok((url, f))
+}
+
+/// Ambil dan verifikasi katalog (tanda tangan terhadap kunci official). Blokir: jalankan dari `spawn_blocking`.
+fn fetch_catalog(url: &str, f: &dyn ExtFetch, official: &[String]) -> Result<Catalog, String> {
+    let bytes = f.get(url, MAX_CATALOG)?;
+    let sig = String::from_utf8(f.get(&format!("{url}.sig"), 1024)?).map_err(|_| "Tanda tangan katalog bukan teks".to_string())?;
+    open_catalog(&bytes, sig.trim(), official)
+}
+
+/// Alamat paket = folder katalog + nama berkas yang sudah divalidasi (hanya `[A-Za-z0-9._-]`).
+fn package_url(catalog_url: &str, file: &str) -> String {
+    let base = catalog_url.rsplit_once('/').map_or(catalog_url, |(b, _)| b);
+    format!("{base}/{file}")
+}
+
+async fn store_list<C: Connector>(State(st): State<St<C>>, c: Caller) -> ApiResult<Json<Value>> {
+    manage(&st, &c, Level::Read)?;
+    let (url, f) = store_deps(&st)?;
+    let official = cfg(&st)?.keys.official.clone();
+    let cat = tokio::task::spawn_blocking(move || fetch_catalog(&url, f.as_ref(), &official))
+        .await
+        .map_err(ApiError::internal)?
+        .map_err(|m| ApiError::new(StatusCode::BAD_GATEWAY, "store_unreachable", m))?;
+    let rows = all_rows(&st)?;
+    let installed = versions(&rows);
+    let items: Vec<Value> = cat
+        .extensions
+        .iter()
+        .map(|e| {
+            let m = &e.manifest;
+            let have = installed.iter().find(|(id, _)| *id == m.id).map(|(_, v)| v.clone());
+            let (will, problem) = match cat.plan(&m.id, &st.cfg.host_version, &installed) {
+                Ok(p) => (p.iter().map(|x| x.manifest.id.clone()).filter(|i| *i != m.id).collect::<Vec<_>>(), None),
+                Err(p) => (vec![], Some(problem_text(&p))),
+            };
+            json!({
+                "id": m.id, "name": m.name, "version": m.version, "publisher": m.publisher, "description": m.description,
+                "telemon": m.telemon, "requires": m.requires, "size": e.size, "installedVersion": have,
+                "upToDate": have.as_deref() == Some(m.version.as_str()),
+                "alsoInstalls": will, "problem": problem,
+            })
+        })
+        .collect();
+    Ok(Json(json!({ "generated": cat.generated, "extensions": items })))
+}
+
+#[derive(Deserialize)]
+struct StoreInstallReq {
+    id: String,
+}
+
+/// Pasang dari katalog: rencana (dependensi dulu), unduh tiap paket, cocokkan SHA-256 dan ukuran, lalu jalur
+/// pasang yang sama dengan unggah (tanda tangan paket, kompatibilitas, migrasi). Berhenti di langkah yang gagal;
+/// yang sudah terpasang sebelumnya tetap (tiap paket sah berdiri sendiri).
+async fn store_install<C: Connector>(State(st): State<St<C>>, c: Caller, Json(req): Json<StoreInstallReq>) -> ApiResult<Json<Value>> {
+    manage(&st, &c, Level::Update)?;
+    let (url, f) = store_deps(&st)?;
+    if !valid_id(&req.id) {
+        return Err(ApiError::not_found());
+    }
+    let official = cfg(&st)?.keys.official.clone();
+    let installed = versions(&all_rows(&st)?);
+    let host = st.cfg.host_version.clone();
+    let id = req.id.clone();
+    // Unduh semuanya dulu (di thread blokir), pasang sesudahnya.
+    let downloads: Vec<Vec<u8>> = tokio::task::spawn_blocking(move || -> Result<Vec<Vec<u8>>, (StatusCode, &'static str, String)> {
+        let cat = fetch_catalog(&url, f.as_ref(), &official).map_err(|m| (StatusCode::BAD_GATEWAY, "store_unreachable", m))?;
+        if cat.find(&id).is_none() {
+            return Err((StatusCode::NOT_FOUND, "not_found", "Extension tidak ada di katalog".into()));
+        }
+        let plan = cat.plan(&id, &host, &installed).map_err(|p| (StatusCode::CONFLICT, "incompatible", problem_text(&p)))?;
+        let mut out = Vec::new();
+        for e in plan {
+            let bytes = f.get(&package_url(&url, &e.file), e.size as usize + 1024).map_err(|m| (StatusCode::BAD_GATEWAY, "store_unreachable", m))?;
+            e.check_download(&bytes).map_err(|m| (StatusCode::BAD_GATEWAY, "store_corrupt", format!("{}: {m}", e.manifest.id)))?;
+            out.push(bytes);
+        }
+        Ok(out)
+    })
+    .await
+    .map_err(ApiError::internal)?
+    .map_err(|(s, code, m)| ApiError::new(s, code, m))?;
+    let mut done = Vec::new();
+    for bytes in &downloads {
+        done.push(do_install(&st, &c, bytes)?);
+    }
+    Ok(Json(json!({ "installed": done })))
 }
 
 // ---------------- akses per peran (ADR 0028) ----------------

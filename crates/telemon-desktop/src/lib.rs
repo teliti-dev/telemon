@@ -5,6 +5,7 @@
 //! Crate ini tidak bergantung pada Tauri sehingga seluruh alurnya teruji di mesin tanpa WebKitGTK.
 
 pub mod cloudflared;
+pub mod extstore;
 pub mod secrets;
 
 use std::net::SocketAddr;
@@ -120,6 +121,8 @@ impl Desktop {
         let state = AppState::new(telemon.clone(), auth, http_cfg);
         // AI chat: bawaan mati sampai pemilik menambah provider di Pengaturan (ADR 0007, 0024).
         state.enable_ai(Arc::new(HttpLlm::default()));
+        // Toko extension official (ADR 0028): pengunduh HTTPS; aktif hanya bila extension menyala.
+        state.set_ext_fetcher(Arc::new(extstore::HttpsFetcher::default()));
 
         match &cfg.tunnel {
             TunnelChoice::Official => {

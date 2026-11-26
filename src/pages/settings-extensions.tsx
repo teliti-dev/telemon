@@ -17,7 +17,7 @@ import { reloadExtensions } from "@/lib/extensions/loader"
 import { tk, useT } from "@/lib/i18n"
 import { useStore } from "@/lib/store-context"
 import { pathHref } from "@/lib/route"
-import type { ExtensionAccess, ExtensionInfo, ExtensionInspect, ExtensionLevel, ExtensionList, ExtensionRequirement } from "@/lib/types"
+import type { ExtensionStore, ExtensionAccess, ExtensionInfo, ExtensionInspect, ExtensionLevel, ExtensionList, ExtensionRequirement } from "@/lib/types"
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
@@ -373,6 +373,82 @@ function InstallDialog({ inspect, file, onClose, onInstalled }: { inspect: Exten
   )
 }
 
+/** Toko extension official: katalog bertanda tangan; dependensi ikut terpasang (ADR 0028). */
+function StoreSection({ locked, onInstalled }: { locked: boolean; onInstalled: (e: ExtensionInfo[]) => void }) {
+  const t = useT()
+  const { api } = useStore()
+  const [store, setStore] = React.useState<ExtensionStore | null>(null)
+  const [error, setError] = React.useState<{ code?: string; message: string } | null>(null)
+  const [busy, setBusy] = React.useState<string | null>(null)
+  const [tick, setTick] = React.useState(0)
+
+  React.useEffect(() => {
+    let cancelled = false
+    api
+      .getExtensionStore()
+      .then((s) => !cancelled && (setStore(s), setError(null)))
+      .catch((e) => !cancelled && setError({ code: (e as { code?: string }).code, message: errMsg(e) }))
+    return () => {
+      cancelled = true
+    }
+  }, [api, tick])
+
+  async function install(id: string) {
+    setBusy(id)
+    try {
+      const done = await api.installFromStore(id)
+      toast.success(t("{n} extension dipasang. Nyalakan untuk memakainya.", { n: done.length }))
+      onInstalled(done)
+      setTick((x) => x + 1)
+    } catch (e) {
+      toast.error(errMsg(e))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  if (error?.code === "store_off") return null
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t("Toko extension")}</CardTitle>
+        <CardDescription>{t("Extension official dari Teliti. Katalog dan paketnya bertanda tangan dan diperiksa sebelum dipasang.")}</CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        {error && (
+          <Alert variant="destructive">
+            <AlertTitle>{t("Toko tidak bisa dibuka")}</AlertTitle>
+            <AlertDescription>
+              <p>{error.message}</p>
+              <Button variant="outline" size="sm" className="mt-2" onClick={() => setTick((x) => x + 1)}>
+                {t("Coba lagi")}
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+        {!store && !error && <Skeleton className="h-16" />}
+        {store && store.extensions.length === 0 && <p className="text-sm text-muted-foreground">{t("Belum ada extension di toko.")}</p>}
+        {store?.extensions.map((e) => (
+          <div key={e.id} className="flex flex-wrap items-center gap-3 rounded-lg border p-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
+                {e.name} <span className="text-xs font-normal text-muted-foreground">v{e.version}</span>
+                {e.installedVersion && <Badge variant="secondary">{e.upToDate ? t("Versi terbaru terpasang") : t("Terpasang v{v}", { v: e.installedVersion })}</Badge>}
+              </div>
+              {e.description && <p className="text-xs text-muted-foreground">{e.description}</p>}
+              {e.alsoInstalls.length > 0 && <p className="text-xs text-muted-foreground">{t("Ikut dipasang: {list}", { list: e.alsoInstalls.join(", ") })}</p>}
+              {e.problem && <p className="text-xs text-destructive">{e.problem}</p>}
+            </div>
+            <Button size="sm" variant="outline" disabled={locked || !!busy || e.upToDate || !!e.problem} onClick={() => install(e.id)}>
+              {busy === e.id && <Loader2Icon className="animate-spin" />} {e.installedVersion ? t("Perbarui") : t("Pasang")}
+            </Button>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  )
+}
+
 /** Pengaturan > Extension (`#/pengaturan/extension`): pasang, aktifkan, dan atur izin extension (ADR 0028). */
 export function SettingsExtensionsPage() {
   const t = useT()
@@ -455,6 +531,7 @@ export function SettingsExtensionsPage() {
           <AlertDescription>{t("{reason}. Anda hanya bisa melihat extension.", { reason })}</AlertDescription>
         </Alert>
       )}
+      <StoreSection locked={locked} onInstalled={(es) => { es.forEach(upsert); load() }} />
       {list.extensions.length === 0 ? (
         <p className="text-sm text-muted-foreground">{t("Belum ada extension terpasang.")}</p>
       ) : (

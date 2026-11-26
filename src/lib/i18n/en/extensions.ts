@@ -58,4 +58,11 @@ export default {
   "Akses": "Access",
   "Halaman extension tidak ditemukan": "Extension page not found",
   "Extension mati, tidak terpasang, atau peran Anda tidak punya akses ke sana.": "The extension is off, not installed, or your role has no access to it.",
+  "{n} extension dipasang. Nyalakan untuk memakainya.": "{n} extension(s) installed. Turn them on to use them.",
+  "Toko extension": "Extension store",
+  "Extension official dari Teliti. Katalog dan paketnya bertanda tangan dan diperiksa sebelum dipasang.": "Official extensions from Teliti. The catalogue and packages are signed and checked before they are installed.",
+  "Toko tidak bisa dibuka": "The store could not be opened",
+  "Belum ada extension di toko.": "No extensions in the store yet.",
+  "Versi terbaru terpasang": "Latest version installed",
+  "Ikut dipasang: {list}": "Also installs: {list}",
 } as Record<string, string>

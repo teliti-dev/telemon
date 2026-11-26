@@ -38,7 +38,12 @@ pub struct HttpConfig {
 pub struct ExtConfig {
     pub dir: PathBuf,
     pub keys: telemon_ext::TrustedKeys,
+    /// Alamat `catalog.json` toko official; tanda tangannya di `<alamat>.sig`. `None` = toko mati.
+    pub store_url: Option<String>,
 }
+
+/// Katalog toko official bawaan: aset rilis terbaru repo extensions (alamat berkas dan tanda tangan di sebelahnya).
+pub const DEFAULT_STORE_URL: &str = "https://github.com/teliti-dev/telemon-extensions/releases/latest/download/catalog.json";
 
 /// Kunci penanda tangan official (heksa Ed25519). **Kosong sampai kunci Teliti dibuat** (disimpan
 /// seperti kunci updater, ADR 0023); sebelum itu extension official hanya bisa dipakai lewat
@@ -70,7 +75,13 @@ impl ExtConfig {
         }
         let allow_unsigned = matches!(var("TELEMON_EXTENSIONS_ALLOW_UNSIGNED").as_deref(), Some("1") | Some("true"));
         let dir = var("TELEMON_EXTENSIONS_DIR").filter(|d| !d.trim().is_empty()).map_or(default_dir, PathBuf::from);
-        Some(Self { dir, keys: telemon_ext::TrustedKeys { official, publishers: Vec::new(), allow_unsigned } })
+        // `TELEMON_EXTENSIONS_STORE_URL`: alamat katalog lain; kosong = toko mati.
+        let store_url = match var("TELEMON_EXTENSIONS_STORE_URL") {
+            Some(u) if u.trim().is_empty() => None,
+            Some(u) => Some(u.trim().to_string()),
+            None => Some(DEFAULT_STORE_URL.to_string()),
+        };
+        Some(Self { dir, keys: telemon_ext::TrustedKeys { official, publishers: Vec::new(), allow_unsigned }, store_url })
     }
 }
 
@@ -112,6 +123,8 @@ pub struct AppState<C: Connector> {
     pub(crate) lan_epoch: tokio::sync::watch::Sender<u64>,
     /// Paket extension yang sudah diverifikasi (id → versi dan isi).
     pub(crate) ext_cache: Mutex<HashMap<String, (String, Arc<telemon_ext::Package>)>>,
+    /// Pengunduh untuk toko extension (dipasang aplikasi desktop atau server); tanpa itu toko menjawab 501.
+    pub(crate) ext_fetch: Mutex<Option<Arc<dyn crate::extensions::ExtFetch>>>,
 }
 
 impl<C: Connector> AppState<C> {
@@ -121,7 +134,7 @@ impl<C: Connector> AppState<C> {
 
     pub fn with_clock(telemon: Arc<Telemon<C>>, auth: Arc<Auth>, cfg: HttpConfig, clock: Arc<dyn Fn() -> i64 + Send + Sync>) -> Arc<Self> {
         let limiter = RateLimiter::new(cfg.login_per_minute, 60_000);
-        let st = Arc::new(Self { telemon, auth, cfg, limiter, plans: PlanCache::default(), clock, share: Mutex::new((false, false)), lan: tokio::sync::Mutex::new(crate::share::Lan::default()), publik: tokio::sync::Mutex::new(crate::share::Publik::default()), tunnel: Mutex::new(None), update: crate::update::UpdateState::default(), ai: crate::ai::AiSlot::default(), ai_rate: RateLimiter::new(crate::ai::MAX_QUESTIONS_PER_MINUTE, 60_000), lan_epoch: tokio::sync::watch::channel(0).0, ext_cache: Mutex::new(HashMap::new()) });
+        let st = Arc::new(Self { telemon, auth, cfg, limiter, plans: PlanCache::default(), clock, share: Mutex::new((false, false)), lan: tokio::sync::Mutex::new(crate::share::Lan::default()), publik: tokio::sync::Mutex::new(crate::share::Publik::default()), tunnel: Mutex::new(None), update: crate::update::UpdateState::default(), ai: crate::ai::AiSlot::default(), ai_rate: RateLimiter::new(crate::ai::MAX_QUESTIONS_PER_MINUTE, 60_000), lan_epoch: tokio::sync::watch::channel(0).0, ext_cache: Mutex::new(HashMap::new()), ext_fetch: Mutex::new(None) });
         if let Ok(Some(v)) = st.telemon.with_store(|s| s.kv_get("share.require_2fa")) {
             st.share.lock().expect("lock").0 = v == "true";
         }
@@ -152,6 +165,11 @@ impl<C: Connector> AppState<C> {
         if let Ok(s) = self.telemon.with_store(|st| st.get_settings()) {
             self.apply_policy(&s);
         }
+    }
+
+    /// Pasang pengunduh HTTPS untuk toko extension (ADR 0028).
+    pub fn set_ext_fetcher(&self, f: Arc<dyn crate::extensions::ExtFetch>) {
+        *self.ext_fetch.lock().expect("lock") = Some(f);
     }
 
     pub fn now(&self) -> i64 {
@@ -266,5 +284,12 @@ mod ext_env_tests {
         assert!(!c.keys.allow_unsigned);
         assert!(cfg(true, &[("TELEMON_EXTENSIONS_ALLOW_UNSIGNED", "1")]).unwrap().keys.allow_unsigned);
         assert_eq!(cfg(true, &[]).unwrap().dir, PathBuf::from("/data/ext"));
+    }
+
+    #[test]
+    fn store_url_default_override_and_off() {
+        assert_eq!(cfg(true, &[]).unwrap().store_url.as_deref(), Some(DEFAULT_STORE_URL));
+        assert_eq!(cfg(true, &[("TELEMON_EXTENSIONS_STORE_URL", " https://x.test/c.json ")]).unwrap().store_url.as_deref(), Some("https://x.test/c.json"));
+        assert_eq!(cfg(true, &[("TELEMON_EXTENSIONS_STORE_URL", "")]).unwrap().store_url, None, "kosong = toko mati");
     }
 }

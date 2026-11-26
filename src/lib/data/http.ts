@@ -6,6 +6,7 @@ import type {
   AiDashboard,
   AiUiContext,
   ActiveExtension,
+  ExtensionStore,
   ExtensionAccess,
   ExtensionLevel,
   ExtensionInfo,
@@ -568,6 +569,13 @@ export class HttpApi implements TelemonApi {
   }
   async setExtensionAccess(id: string, roleId: string, access: { level: ExtensionLevel; actions: string[] }) {
     await this.req("PUT", `/api/extensions/${encodeURIComponent(id)}/access/${encodeURIComponent(roleId)}`, access)
+  }
+  getExtensionStore() {
+    return this.req<ExtensionStore>("GET", "/api/extensions/store")
+  }
+  async installFromStore(id: string) {
+    const r = await this.req<{ installed: ExtensionInfo[] }>("POST", "/api/extensions/store/install", { id })
+    return r.installed
   }
   async removeExtension(id: string, opts: { deleteData?: boolean } = {}) {
     await this.req("DELETE", `/api/extensions/${encodeURIComponent(id)}${opts.deleteData ? "?data=delete" : ""}`)
