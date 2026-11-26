@@ -6,6 +6,7 @@
 import type {
   AiBudgetInput,
   AiDashboard,
+  DashboardLayout,
   AiProvider,
   AiProviderInput,
   AiUsageDay,
@@ -1139,6 +1140,22 @@ export class MockApi implements TelemonApi {
     if (input.monthlyUsd !== null && (!(input.monthlyUsd > 0) || input.monthlyUsd > 100000)) throw new Error(t("Batas bulanan harus 0-100000"))
     if (!Number.isInteger(input.alertPercent) || input.alertPercent < 10 || input.alertPercent > 100) throw new Error(t("Peringatan harus 10-100%"))
     this.aiBudget = { ...input }
+  }
+
+  private dashboard: DashboardLayout | null = null
+
+  async getDashboard(): Promise<DashboardLayout | null> {
+    this.authorize("ringkasan", "read")
+    await delay(120)
+    return this.dashboard ? structuredClone(this.dashboard) : null
+  }
+
+  async saveDashboard(layout: DashboardLayout | null): Promise<DashboardLayout | null> {
+    this.authorize("ringkasan")
+    await delay(250)
+    if (layout && (layout.version !== 1 || layout.widgets.length > 60)) throw new Error(t("Tata letak tidak valid"))
+    this.dashboard = layout ? structuredClone(layout) : null
+    return this.dashboard ? structuredClone(this.dashboard) : null
   }
 
   async getSettings(): Promise<AppSettings> {

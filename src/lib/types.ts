@@ -446,6 +446,25 @@ export interface AiDashboard {
 export type AiBudgetInput = Pick<AiBudget, "monthlyUsd" | "alertPercent" | "hardStop">
 
 // ---- Pembaruan aplikasi (hanya aplikasi desktop; ADR 0023) ----
+// ---- Tata letak widget Ringkasan (satu untuk semua akun) ----
+export interface DashboardWidget {
+  /** Id unik di dalam tata letak. */
+  id: string
+  /** Jenis widget; daftar jenis ada di UI (components/dashboard/registry). */
+  type: string
+  x: number
+  y: number
+  w: number
+  h: number
+  /** Pengaturan per widget (mis. sumber data); bentuknya ditentukan jenisnya. */
+  config?: Record<string, unknown>
+}
+
+export interface DashboardLayout {
+  version: 1
+  widgets: DashboardWidget[]
+}
+
 export type UpdateChannel = "stable" | "rc"
 
 export interface UpdateStatus {

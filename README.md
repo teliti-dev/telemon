@@ -15,6 +15,7 @@ Pre-release (`v0.1.0-rc.x`). The core, server and UI are tested against a simula
 ## Features
 
 - **Multi-router monitoring.** Users with status (active, inactive, disabled, auth failed), live events, per-router health, filters and search.
+- **Widget overview.** The Overview page is a grid of widgets (counters, router cards, latest events, events per hour, users per profile and more). Accounts with the Overview *Edit* permission can drag, resize, add and remove widgets; the layout is shared by every account, and an empty layout falls back to the default. Editing is on screens medium and wider; phones show the widgets in one column.
 - **Desktop app** (Windows and Linux, Tauri v2) with a local SQLite database. No server to deploy.
 - **Share to a browser.** One switch turns the desktop app into a LAN server so you can open the same UI from a laptop or phone.
 - **Public access.** An optional Cloudflare Quick Tunnel exposes the server to the internet. Telemon downloads a pinned, checksum-verified `cloudflared` for you. While public access is on, two-factor authentication is forced and the tunnel turns off by itself after a timer.

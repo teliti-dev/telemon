@@ -45,7 +45,7 @@ export const DEFAULT_ROLES: DefaultRole[] = [
     id: "role-admin",
     name: "Administrator",
     description: tk("Semua menu, termasuk Admin dan Pengaturan; boleh mengubah semuanya."),
-    permissions: { ringkasan: "read", user: "update", profile: "update", event: "read", router: "update", admin: "update", pengaturan: "update", ai: "read" },
+    permissions: { ringkasan: "update", user: "update", profile: "update", event: "read", router: "update", admin: "update", pengaturan: "update", ai: "read" },
   },
   {
     id: "role-operator",
