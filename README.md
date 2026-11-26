@@ -12,14 +12,14 @@ Telemon reads each router over the RouterOS API and shows who is connected, who 
 
 ## Status
 
-Pre-release (`v0.1.0-rc.x`). The core, server and UI are tested against a simulated RouterOS. **It has not been run against a real MikroTik router yet (this includes bandwidth charts, Router health and the SSH terminal).** The Linux `.deb` has been smoke-tested in a clean Ubuntu 24.04 container (installs, starts, serves the UI in the real webview); the Windows build has been tried on a real PC by the maintainer and works; a real desktop keyring on Linux has not been tried. The macOS build crashes at launch on at least one Apple Silicon Mac (under investigation). Treat it as a release candidate and keep write access off until you have tried it on a lab router.
+Pre-release (`v0.1.0-rc.x`). The core, server and UI are tested against a simulated RouterOS. **It has not been run against a real MikroTik router yet (this includes bandwidth charts, Router health and the SSH terminal).** The Linux `.deb` has been smoke-tested in a clean Ubuntu 24.04 container (installs, starts, serves the UI in the real webview); the Windows build has been tried on a real PC by the maintainer and works; a real desktop keyring on Linux has not been tried. macOS is not built for now (an earlier macOS build crashed at launch on at least one Apple Silicon Mac). Treat it as a release candidate and keep write access off until you have tried it on a lab router.
 
 ## Features
 
 - **Multi-router monitoring.** Users with status (active, inactive, disabled, auth failed), live events, per-router health, filters and search.
 - **Widget overview.** The Overview page is a grid of widgets (counters, router cards, latest events, events per hour, users per profile and more). Accounts with the Overview *Edit* permission can drag, resize, add and remove widgets; the layout is shared by every account, and an empty layout falls back to the default. Editing is on screens medium and wider; phones show the widgets in one column.
 - **Bandwidth charts.** Telemon reads each router's interface counters on an interval you set (default 60 s, kept 7 days) and turns them into rates. Three widgets use it: a chart per router and interface, the total across all routers' PPPoE sessions, and the average per active user. Pick the router, interface and range in the widget's settings. PPPoE sessions are summed into one `@pppoe` series per router, so totals and per-user averages need no per-session history. The first sample appears one interval after a router is added.
-- **Desktop app** (Windows, Linux and macOS, Tauri v2) with a local SQLite database. No server to deploy.
+- **Desktop app** (Windows and Linux, Tauri v2; macOS is not built for now) with a local SQLite database. No server to deploy.
 - **Share to a browser.** One switch turns the desktop app into a LAN server so you can open the same UI from a laptop or phone.
 - **Public access.** An optional Cloudflare Quick Tunnel exposes the server to the internet. Telemon downloads a pinned, checksum-verified `cloudflared` for you. While public access is on, two-factor authentication is forced and the tunnel turns off by itself after a timer.
 - **Accounts and roles** for browser access: login with TOTP two-factor authentication and recovery codes, custom roles with per-menu permissions (no access, view, edit), and protection against privilege escalation. The desktop app itself needs no login.
@@ -65,9 +65,8 @@ Download the file for your system from the [Releases](https://github.com/teliti-
 | Windows | `Telemon_<version>_x64-setup.exe` | In app |
 | Linux | `Telemon_<version>_amd64.AppImage` | In app |
 | Debian, Ubuntu | `Telemon_<version>_amd64.deb` | Notified only; install the new `.deb` yourself |
-| macOS 11+ (Apple Silicon and Intel) | `Telemon_<version>_universal.dmg` | In app |
 
-The Windows installer is not code-signed yet, so SmartScreen will warn on first run. The macOS app is signed ad-hoc but not notarized (no Apple Developer account yet): on first launch, right-click the app and choose **Open**, or run `xattr -cr /Applications/Telemon.app`. The macOS build has been compiled and packaged by CI but not yet run on a Mac. On macOS the automatic `cloudflared` download for public access is not available yet; LAN sharing works. Release files carry a minisign signature (`.sig`) that the in-app updater verifies.
+The Windows installer is not code-signed yet, so SmartScreen will warn on first run. **macOS is not built or published** for now (the release workflow no longer produces a macOS app); the macOS-specific code stays in the repository. Release files carry a minisign signature (`.sig`) that the in-app updater verifies.
 
 Pre-releases are on the test channel. Stable releases will use the stable channel; there is none yet.
 
@@ -119,7 +118,7 @@ Layout: `src/` React UI (Vite, TypeScript, shadcn/ui), `crates/telemon-core` Rou
 
 ## Releasing
 
-Create a GitHub Release with a tag `vX.Y.Z`. `.github/workflows/release.yml` builds Linux (`.deb`, `.AppImage`), Windows (NSIS `.exe`, cross-compiled on Linux) and macOS (universal `.dmg`, on a macOS runner), signs the updater artifacts, and uploads them with `SHA256SUMS.txt` and `latest.json`. Prereleases are published to the `channel-rc` test channel.
+Create a GitHub Release with a tag `vX.Y.Z`. `.github/workflows/release.yml` builds Linux (`.deb`, `.AppImage`), Windows (NSIS `.exe`, cross-compiled on Linux), signs the updater artifacts, and uploads them with `SHA256SUMS.txt` and `latest.json`. Prereleases are published to the `channel-rc` test channel.
 
 ## Design notes
 
