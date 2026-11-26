@@ -4,6 +4,7 @@ import ai from "./ai"
 import aidash from "./aidash"
 import auth from "./auth"
 import common from "./common"
+import dashboard from "./dashboard"
 import data from "./data"
 import events from "./events"
 import lists from "./lists"
@@ -20,6 +21,7 @@ import users from "./users"
  */
 export const EN: Record<string, string> = {
   ...common,
+  ...dashboard,
   ...shell,
   ...auth,
   ...users,

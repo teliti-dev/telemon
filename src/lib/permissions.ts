@@ -5,7 +5,7 @@ import type { Level, Permissions, Resource } from "./types"
 
 /** Menu yang izinnya bisa diatur per peran, berurutan seperti di menu utama. */
 export const RESOURCES: { key: Resource; label: string; levels: Level[]; hint: string }[] = [
-  { key: "ringkasan", label: tk("Ringkasan"), levels: ["none", "read"], hint: tk("Angka dan kartu ringkasan") },
+  { key: "ringkasan", label: tk("Ringkasan"), levels: ["none", "read", "update"], hint: tk("Widget Ringkasan. Ubah: atur tata letak widget untuk semua akun") },
   { key: "user", label: tk("Users"), levels: ["none", "read", "update"], hint: tk("Ubah: tambah, edit, hapus (soft), pulihkan, catatan") },
   { key: "profile", label: tk("Profil PPP"), levels: ["none", "read", "update"], hint: tk("Profil PPP di router (rate limit, pool). Ubah: tambah, edit, hapus (soft), pulihkan") },
   { key: "event", label: tk("Event"), levels: ["none", "read"], hint: tk("Feed dan riwayat event PPPoE") },

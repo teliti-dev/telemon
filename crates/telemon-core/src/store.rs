@@ -1143,6 +1143,11 @@ impl Store {
         Ok(())
     }
 
+    pub fn kv_del(&mut self, key: &str) -> Result<()> {
+        self.conn.execute("DELETE FROM settings WHERE k = ?1", [key])?;
+        Ok(())
+    }
+
     /// Jumlah baris untuk kartu Penyimpanan: (event, user, user terhapus, profile terhapus).
     pub fn storage_counts(&self) -> Result<(u64, u64, u64, u64)> {
         Ok((

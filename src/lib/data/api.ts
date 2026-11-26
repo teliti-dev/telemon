@@ -4,6 +4,7 @@ import type {
   AiChatSummary,
   AiBudgetInput,
   AiDashboard,
+  DashboardLayout,
   AiMessage,
   AiProvider,
   AiProviderInput,
@@ -140,6 +141,10 @@ export interface TelemonApi {
   updateRole(id: string, input: RoleInput): Promise<Role>
   deleteRole(id: string): Promise<void>
   // Pengaturan (hanya aplikasi desktop)
+  /** Tata letak widget Ringkasan yang tersimpan (global); null = belum diatur, pakai susunan bawaan. */
+  getDashboard(): Promise<DashboardLayout | null>
+  /** Simpan tata letak untuk semua akun (izin Ubah Ringkasan); null = kembali ke susunan bawaan. */
+  saveDashboard(layout: DashboardLayout | null): Promise<DashboardLayout | null>
   getSettings(): Promise<AppSettings>
   saveSettings(settings: AppSettings): Promise<AppSettings>
   // Dasbor AI. Kunci API write-only; server hanya mengembalikan petunjuk kunci.

@@ -1,5 +1,5 @@
 export default {
-  "Angka dan kartu ringkasan": "Overview numbers and cards",
+  "Widget Ringkasan. Ubah: atur tata letak widget untuk semua akun": "Overview widgets. Update: arrange the widget layout for every account",
   "Ubah: tambah, edit, hapus (soft), pulihkan, catatan": "Edit: add, edit, delete (soft), restore, notes",
   "Profil PPP di router (rate limit, pool). Ubah: tambah, edit, hapus (soft), pulihkan": "PPP profiles on the router (rate limit, pool). Edit: add, edit, delete (soft), restore",
   "Feed dan riwayat event PPPoE": "PPPoE event feed and history",

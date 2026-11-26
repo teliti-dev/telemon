@@ -3,6 +3,7 @@
 
 mod ai;
 mod api;
+mod dashboard;
 mod dto;
 mod error;
 mod guard;

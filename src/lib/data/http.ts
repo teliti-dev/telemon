@@ -4,6 +4,7 @@ import type {
   AiChat,
   AiChatSummary,
   AiDashboard,
+  DashboardLayout,
   AiMessage,
   AiProvider,
   AiProviderInput,
@@ -525,6 +526,14 @@ export class HttpApi implements TelemonApi {
 
   // ---------------- pengaturan dan penyimpanan ----------------
 
+  async getDashboard() {
+    const r = await this.req<{ layout?: DashboardLayout | null }>("GET", "/api/dashboard", undefined, { keepNulls: true })
+    return r.layout ?? null
+  }
+  async saveDashboard(layout: DashboardLayout | null) {
+    const r = await this.req<{ layout?: DashboardLayout | null }>("PUT", "/api/dashboard", { layout }, { keepNulls: true })
+    return r.layout ?? null
+  }
   getSettings() {
     // null berarti "selamanya": jangan dibuang.
     return this.req<AppSettings>("GET", "/api/settings", undefined, { keepNulls: true })
