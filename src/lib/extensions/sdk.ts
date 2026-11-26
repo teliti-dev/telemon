@@ -55,6 +55,14 @@ export interface ExtensionSdk {
   accessLevel: "none" | "read" | "update"
   /** Apakah peran akun ini boleh melakukan aksi yang dideklarasikan manifest (`actions[]`). */
   can(actionId: string): boolean
+  /**
+   * Rute API backend extension ini (`/api/ext/<id><path>`), memakai sesi pengguna. Mengembalikan `body` jawaban
+   * backend; status bukan 2xx melempar Error dengan pesan dari server.
+   */
+  api: {
+    get<T = unknown>(path: string): Promise<T>
+    post<T = unknown>(path: string, body?: unknown): Promise<T>
+  }
   registerWidget(def: ExtWidgetDef): void
   registerPage(def: ExtPageDef): void
 }

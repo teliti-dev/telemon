@@ -195,6 +195,73 @@ function AccessDialog({ ext, locked, onClose }: { ext: ExtensionInfo | null; loc
   )
 }
 
+/** Backend WASM: rute, worker (status dan jalankan sekarang), dan log. */
+function BackendInfo({ ext, locked, onChanged }: { ext: ExtensionInfo; locked: boolean; onChanged: (e: ExtensionInfo) => void }) {
+  const t = useT()
+  const { api } = useStore()
+  const [busy, setBusy] = React.useState<string | null>(null)
+  const [log, setLog] = React.useState<string[] | null>(null)
+
+  async function run(worker: string) {
+    setBusy(worker)
+    try {
+      const r = await api.runExtensionWorker(ext.id, worker)
+      onChanged({ ...ext, workers: r.workers })
+      if (r.ok) toast.success(t("Worker dijalankan"))
+      else toast.error(r.error ?? t("Worker gagal"))
+    } catch (e) {
+      toast.error(errMsg(e))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <div className="grid gap-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-sm font-medium">{t("Backend")}</div>
+        <Button variant="outline" size="sm" onClick={() => api.getExtensionLogs(ext.id).then(setLog).catch((e) => toast.error(errMsg(e)))}>
+          {t("Log")}
+        </Button>
+      </div>
+      {ext.routes.length > 0 && (
+        <ul className="text-xs text-muted-foreground">
+          {ext.routes.map((r) => (
+            <li key={r.id}>
+              <code>
+                {r.method} /api/ext/{ext.id}
+                {r.path}
+              </code>
+              {r.action ? ` · ${r.action}` : ""}
+            </li>
+          ))}
+        </ul>
+      )}
+      {ext.workers.map((w) => (
+        <div key={w.id} className="flex flex-wrap items-center gap-2 rounded-lg border p-2 text-xs">
+          <code>{w.id}</code>
+          <span className="text-muted-foreground">{t("tiap {n} dtk", { n: w.everySeconds })}</span>
+          {w.state.paused && <Badge variant="destructive">{t("Dijeda")}</Badge>}
+          {w.state.lastOk === true && <Badge variant="secondary">{t("Terakhir berhasil")}</Badge>}
+          {w.state.lastOk === false && <Badge variant="destructive">{t("Terakhir gagal")}</Badge>}
+          {w.state.lastError && <span className="text-destructive">{w.state.lastError}</span>}
+          <Button className="ml-auto" variant="outline" size="sm" disabled={locked || busy === w.id} onClick={() => run(w.id)}>
+            {busy === w.id && <Loader2Icon className="animate-spin" />} {t("Jalankan sekarang")}
+          </Button>
+        </div>
+      ))}
+      <Dialog open={!!log} onOpenChange={(o) => !o && setLog(null)}>
+        <DialogContent className="max-h-[80svh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{t("Log {name}", { name: ext.name })}</DialogTitle>
+          </DialogHeader>
+          <pre className="max-h-[55svh] overflow-auto rounded-md bg-muted p-3 text-xs whitespace-pre-wrap">{log && log.length > 0 ? log.join("\n") : t("Belum ada log.")}</pre>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
 function ExtensionCard({ ext, locked, onChanged, onRemove, onAccess }: { ext: ExtensionInfo; locked: boolean; onChanged: (e: ExtensionInfo) => void; onRemove: () => void; onAccess: () => void }) {
   const t = useT()
   const { api } = useStore()
@@ -262,6 +329,7 @@ function ExtensionCard({ ext, locked, onChanged, onRemove, onAccess }: { ext: Ex
         {ext.dependents.length > 0 && (
           <p className="text-xs text-muted-foreground">{t("Dibutuhkan oleh: {list}", { list: ext.dependents.join(", ") })}</p>
         )}
+        {ext.hasBackend && <BackendInfo ext={ext} locked={locked} onChanged={onChanged} />}
         {ext.widgets.length > 0 && (
           <p className="text-xs text-muted-foreground">
             {t("Menambah widget Ringkasan")}: {ext.widgets.map((w) => w.title).join(", ")}

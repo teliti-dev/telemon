@@ -372,6 +372,9 @@ async fn main() -> std::io::Result<()> {
     let st = AppState::new(telemon.clone(), auth, cfg);
     // AI untuk mencoba UI tanpa kunci API: model offline berbasis kata kunci yang memakai alat baca asli.
     let ai = st.enable_ai(Arc::new(demo_llm::DemoLlm));
+    if st.cfg.extensions.is_some() {
+        telemon_http::spawn_scheduler(st.clone());
+    }
     ai.save_provider(None, telemon_ai::AiProviderInput { name: "Demo (offline)".into(), kind: telemon_ai::ProviderKind::Openai, model: "demo-offline".into(), base_url: None, api_key: Some("demo-tidak-dipakai".into()), price_in_per_mtok: Some(1.0), price_out_per_mtok: Some(2.0) }).expect("provider demo");
 
     // Dunia tiruan berubah tiap 2 detik.

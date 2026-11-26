@@ -123,6 +123,10 @@ impl Desktop {
         state.enable_ai(Arc::new(HttpLlm::default()));
         // Toko extension official (ADR 0028): pengunduh HTTPS; aktif hanya bila extension menyala.
         state.set_ext_fetcher(Arc::new(extstore::HttpsFetcher::default()));
+        // Worker terjadwal extension (ADR 0028): penjadwal latar; tanpa extension aktif tidak melakukan apa-apa.
+        if state.cfg.extensions.is_some() {
+            telemon_http::spawn_scheduler(state.clone());
+        }
 
         match &cfg.tunnel {
             TunnelChoice::Official => {

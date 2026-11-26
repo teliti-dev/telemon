@@ -43,11 +43,11 @@ pub fn routes<C: Connector>() -> Router<St<C>> {
         .route("/ext/{id}/{*path}", get(file::<C>))
 }
 
-fn cfg<C: Connector>(st: &St<C>) -> Result<&ExtConfig, ApiError> {
+pub(crate) fn cfg<C: Connector>(st: &St<C>) -> Result<&ExtConfig, ApiError> {
     st.cfg.extensions.as_ref().ok_or_else(|| ApiError::new(StatusCode::NOT_IMPLEMENTED, "extensions_off", "Extension mati di server ini (TELEMON_EXTENSIONS=1 untuk menyalakan)"))
 }
 
-fn manage<C: Connector>(st: &St<C>, c: &Caller, level: Level) -> ApiResult<()> {
+pub(crate) fn manage<C: Connector>(st: &St<C>, c: &Caller, level: Level) -> ApiResult<()> {
     st.auth.authorize(Some(&c.session), Resource::Admin, level).map_err(ApiError::from)?;
     if level == Level::Update && c.session.via == Via::Publik {
         return Err(ApiError::forbidden("Extension tidak bisa dikelola lewat akses Publik"));
@@ -55,7 +55,7 @@ fn manage<C: Connector>(st: &St<C>, c: &Caller, level: Level) -> ApiResult<()> {
     Ok(())
 }
 
-fn e<T, E: std::fmt::Display>(r: Result<T, E>) -> Result<T, String> {
+pub(crate) fn e<T, E: std::fmt::Display>(r: Result<T, E>) -> Result<T, String> {
     r.map_err(|x| x.to_string())
 }
 
@@ -78,20 +78,20 @@ fn versions(rows: &[StoredExtension]) -> Vec<(String, String)> {
 }
 
 /// Syarat wajib yang belum terpenuhi untuk dimuat: tidak terpasang, mati, atau versinya tidak cocok.
-fn blocked_by(m: &Manifest, rows: &[StoredExtension]) -> Vec<String> {
+pub(crate) fn blocked_by(m: &Manifest, rows: &[StoredExtension]) -> Vec<String> {
     let active: Vec<(String, String)> = rows.iter().filter(|r| r.enabled).map(|r| (r.id.clone(), r.version.clone())).collect();
     dep_status(m, &active).into_iter().filter(|d| !d.optional && d.state != "ok").map(|d| d.id).collect()
 }
 
-fn all_rows<C: Connector>(st: &St<C>) -> ApiResult<Vec<StoredExtension>> {
+pub(crate) fn all_rows<C: Connector>(st: &St<C>) -> ApiResult<Vec<StoredExtension>> {
     st.telemon.with_store(|s| s.ext_list()).map_err(ApiError::internal)
 }
 
-fn path_of(dir: &std::path::Path, id: &str) -> PathBuf {
+pub(crate) fn path_of(dir: &std::path::Path, id: &str) -> PathBuf {
     dir.join(format!("{id}.tmx"))
 }
 
-fn audit<C: Connector>(st: &St<C>, c: &Caller, action: &str, id: &str, title: String, changes: Vec<Change>) {
+pub(crate) fn audit<C: Connector>(st: &St<C>, c: &Caller, action: &str, id: &str, title: String, changes: Vec<Change>) {
     let e = AuditEntry { at_ms: st.now(), actor: c.session.username.clone(), router_id: String::new(), action: action.into(), target: id.into(), title, changes, outcome: AuditOutcome::Ok };
     let _ = st.telemon.with_store(|s| s.record_audit(&e));
 }
@@ -135,6 +135,10 @@ async fn install<C: Connector>(State(st): State<St<C>>, c: Caller, body: Bytes) 
 /// Inti pemasangan, dipakai unggah berkas dan toko: verifikasi, kompatibilitas, migrasi, tulis berkas, simpan.
 fn do_install<C: Connector>(st: &St<C>, c: &Caller, body: &[u8]) -> ApiResult<Value> {
     let p = parse(st, body)?;
+    if let Some(b) = &p.manifest.backend {
+        let wasm = p.file(&b.entry).ok_or_else(|| ApiError::bad("backend.wasm tidak ada"))?;
+        telemon_ext::Sandbox::new(wasm).map_err(|x| ApiError::bad(x.to_string()))?;
+    }
     let dir = cfg(st)?.dir.clone();
     let id = p.manifest.id.clone();
     let now = st.now();
@@ -167,6 +171,9 @@ fn do_install<C: Connector>(st: &St<C>, c: &Caller, body: &[u8]) -> ApiResult<Va
         })
         .map_err(ApiError::internal)?;
     st.ext_cache.lock().expect("lock").remove(&id);
+    st.ext_wasm.lock().expect("lock").remove(&id);
+    // Versi baru: worker mulai bersih (tidak lagi dijeda oleh versi lama).
+    st.ext_workers.lock().expect("lock").retain(|k, _| !k.starts_with(&format!("{id}/")));
     // Pasang baru: peran yang boleh mengubah menu Admin mendapat akses penuh; peran lain tanpa akses
     // sampai admin mengaturnya di halaman Akses.
     if prev.is_none()
@@ -287,7 +294,7 @@ async fn store_install<C: Connector>(State(st): State<St<C>>, c: Caller, Json(re
 
 // ---------------- akses per peran (ADR 0028) ----------------
 
-fn lvl(s: &str) -> u8 {
+pub(crate) fn lvl(s: &str) -> u8 {
     match s {
         "update" => 2,
         "read" => 1,
@@ -295,7 +302,7 @@ fn lvl(s: &str) -> u8 {
     }
 }
 
-fn lvl_name(n: u8) -> &'static str {
+pub(crate) fn lvl_name(n: u8) -> &'static str {
     match n {
         2 => "update",
         1 => "read",
@@ -305,7 +312,7 @@ fn lvl_name(n: u8) -> &'static str {
 
 /// Akses efektif pemanggil pada satu extension: pemilik desktop = penuh; akun = baris perannya (tanpa baris =
 /// tanpa akses). Aksi efektif = aksi yang diberikan dan dideklarasikan, yang level minimalnya tidak melebihi level peran.
-fn effective<C: Connector>(st: &St<C>, c: &Caller, id: &str, m: &Manifest) -> (u8, Vec<String>) {
+pub(crate) fn effective<C: Connector>(st: &St<C>, c: &Caller, id: &str, m: &Manifest) -> (u8, Vec<String>) {
     if c.desktop {
         return (2, m.actions.iter().map(|a| a.id.clone()).collect());
     }
@@ -316,7 +323,7 @@ fn effective<C: Connector>(st: &St<C>, c: &Caller, id: &str, m: &Manifest) -> (u
     (l, actions)
 }
 
-fn manifest_of(row: &StoredExtension) -> ApiResult<Manifest> {
+pub(crate) fn manifest_of(row: &StoredExtension) -> ApiResult<Manifest> {
     serde_json::from_str(&row.manifest).map_err(ApiError::internal)
 }
 
@@ -426,7 +433,7 @@ fn run_migrations<C: Connector>(st: &St<C>, dir: &std::path::Path, p: &Package, 
 }
 
 /// Status: `disabled` (mati), `limited` (izin wajib dimatikan), `ok`.
-fn status(e: &StoredExtension, m: &Manifest, perms: &[(String, bool)], blocked: &[String], host: &str) -> &'static str {
+pub(crate) fn status(e: &StoredExtension, m: &Manifest, perms: &[(String, bool)], blocked: &[String], host: &str) -> &'static str {
     if !e.enabled {
         return "disabled";
     }
@@ -441,7 +448,7 @@ fn status(e: &StoredExtension, m: &Manifest, perms: &[(String, bool)], blocked: 
     if m.permissions.iter().any(|d| d.required && !granted(&d.id)) { "limited" } else { "ok" }
 }
 
-fn item(e: &StoredExtension, perms: &[(String, bool)], all: &[StoredExtension], host: &str, migrated: usize) -> Value {
+fn item<C: Connector>(st: &St<C>, e: &StoredExtension, perms: &[(String, bool)], all: &[StoredExtension], host: &str, migrated: usize) -> Value {
     let m: Option<Manifest> = serde_json::from_str(&e.manifest).ok();
     let Some(m) = m else {
         return json!({ "id": e.id, "version": e.version, "tier": e.tier, "enabled": e.enabled, "status": "broken" });
@@ -454,7 +461,7 @@ fn item(e: &StoredExtension, perms: &[(String, bool)], all: &[StoredExtension], 
         "id": e.id, "name": m.name, "version": e.version, "publisher": m.publisher, "description": m.description,
         "tier": e.tier, "signed": e.signed, "enabled": e.enabled, "status": status(e, &m, perms, &blocked, host),
         "hasData": migrated > 0, "telemon": m.telemon, "requires": dep_status(&m, &versions(&others)), "blockedBy": blocked, "dependents": dependents,
-        "widgets": m.contributes.widgets, "pages": m.contributes.pages, "actions": m.actions, "permissions": permissions, "installedAt": e.installed_at, "updatedAt": e.updated_at,
+        "widgets": m.contributes.widgets, "pages": m.contributes.pages, "actions": m.actions, "routes": m.contributes.routes, "hasBackend": m.backend.is_some(), "workers": crate::extbackend::worker_view(st, &m), "permissions": permissions, "installedAt": e.installed_at, "updatedAt": e.updated_at,
     })
 }
 
@@ -466,7 +473,7 @@ fn view<C: Connector>(st: &St<C>, id: &str) -> ApiResult<Value> {
     let e = e.ok_or_else(ApiError::not_found)?;
     let all = all_rows(st)?;
     let migrated = st.telemon.with_store(|s| s.ext_applied_migrations(id)).map_err(ApiError::internal)?.len();
-    Ok(item(&e, &perms, &all, &st.cfg.host_version, migrated))
+    Ok(item(st, &e, &perms, &all, &st.cfg.host_version, migrated))
 }
 
 async fn list<C: Connector>(State(st): State<St<C>>, c: Caller) -> ApiResult<Json<Value>> {
@@ -490,7 +497,7 @@ async fn list<C: Connector>(State(st): State<St<C>>, c: Caller) -> ApiResult<Jso
         .iter()
         .map(|(e, p)| {
             let migrated = st.telemon.with_store(|s| s.ext_applied_migrations(&e.id)).map(|v| v.len()).unwrap_or(0);
-            item(e, p, &all, &st.cfg.host_version, migrated)
+            item(&st, e, p, &all, &st.cfg.host_version, migrated)
         })
         .collect();
     Ok(Json(json!({ "available": true, "extensions": extensions })))
@@ -604,6 +611,8 @@ async fn remove<C: Connector>(State(st): State<St<C>>, c: Caller, Path(id): Path
         .map_err(ApiError::internal)?;
     let _ = std::fs::remove_file(path_of(&dir, &id));
     st.ext_cache.lock().expect("lock").remove(&id);
+    st.ext_wasm.lock().expect("lock").remove(&id);
+    st.ext_workers.lock().expect("lock").retain(|k, _| !k.starts_with(&format!("{id}/")));
     let mut changes = vec![Change { field: "versi".into(), from: Some(cur.version), to: None }];
     if drop_data {
         changes.push(Change { field: "data".into(), from: Some(format!("{dropped} tabel")), to: None });

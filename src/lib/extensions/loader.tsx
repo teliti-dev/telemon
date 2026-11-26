@@ -16,6 +16,26 @@ function Failed({ name }: { name: string }) {
   return <p className="p-3 text-sm text-muted-foreground">{t("Extension {name} gagal ditampilkan", { name })}</p>
 }
 
+function extApi(extId: string) {
+  async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
+    const res = await fetch(`/api/ext/${encodeURIComponent(extId)}${path}`, {
+      method,
+      credentials: "same-origin",
+      headers: body === undefined ? {} : { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+    let data: unknown = null
+    try {
+      data = await res.json()
+    } catch {
+      /* badan kosong */
+    }
+    if (!res.ok) throw new Error((data as { error?: { message?: string } } | null)?.error?.message ?? `HTTP ${res.status}`)
+    return data as T
+  }
+  return { get: <T,>(p: string) => call<T>("GET", p), post: <T,>(p: string, b?: unknown) => call<T>("POST", p, b) }
+}
+
 /** Aktifkan satu extension: impor modulnya dan kumpulkan widget yang didaftarkannya. */
 async function activateOne(ext: ActiveExtension): Promise<{ defs: WidgetDef[]; pages: ExtPageEntry[] }> {
   const mod = (await import(/* @vite-ignore */ ext.entry)) as { default?: ExtensionModule } & Partial<ExtensionModule>
@@ -31,6 +51,7 @@ async function activateOne(ext: ActiveExtension): Promise<{ defs: WidgetDef[]; p
     hasPermission: (id) => ext.permissions.includes(id),
     accessLevel: ext.access.level,
     can: (id) => ext.access.actions.includes(id),
+    api: extApi(ext.id),
     registerWidget: (d) => registered.push(d),
     registerPage: (d) => registeredPages.push(d),
   })

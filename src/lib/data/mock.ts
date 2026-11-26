@@ -9,6 +9,7 @@ import type {
   AiUiContext,
   ActiveExtension,
   ExtensionStore,
+  ExtensionWorker,
   ExtensionAccess,
   ExtensionInfo,
   ExtensionInspect,
@@ -1238,6 +1239,12 @@ export class MockApi implements TelemonApi {
     return this.noExtensions()
   }
   async installFromStore(): Promise<ExtensionInfo[]> {
+    return this.noExtensions()
+  }
+  async runExtensionWorker(): Promise<{ ok: boolean; error?: string; workers: ExtensionWorker[] }> {
+    return this.noExtensions()
+  }
+  async getExtensionLogs(): Promise<string[]> {
     return this.noExtensions()
   }
   async getExtensionAccess(): Promise<ExtensionAccess> {

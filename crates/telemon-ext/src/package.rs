@@ -187,6 +187,11 @@ impl Package {
         let manifest: Manifest = serde_json::from_slice(&raw).map_err(|e| PackageError::Manifest(e.to_string()))?;
         manifest.validate().map_err(PackageError::Manifest)?;
         crate::migrate::parse_all(&manifest.id, &files).map_err(PackageError::Manifest)?;
+        if let Some(b) = &manifest.backend {
+            if !files.iter().any(|(p, _)| *p == b.entry) {
+                return Err(PackageError::Manifest(format!("{} tidak ada di paket", b.entry)));
+            }
+        }
         if let Some(ui) = &manifest.ui {
             if !files.iter().any(|(p, _)| *p == ui.entry) {
                 return Err(PackageError::Manifest(format!("{} tidak ada di paket", ui.entry)));

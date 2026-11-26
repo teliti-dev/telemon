@@ -40,6 +40,8 @@ pub struct ExtConfig {
     pub keys: telemon_ext::TrustedKeys,
     /// Alamat `catalog.json` toko official; tanda tangannya di `<alamat>.sig`. `None` = toko mati.
     pub store_url: Option<String>,
+    /// Bahan bakar (CPU) per pemanggilan backend; 0 = bawaan runtime.
+    pub fuel: u64,
 }
 
 /// Katalog toko official bawaan: aset rilis terbaru repo extensions (alamat berkas dan tanda tangan di sebelahnya).
@@ -81,7 +83,7 @@ impl ExtConfig {
             Some(u) => Some(u.trim().to_string()),
             None => Some(DEFAULT_STORE_URL.to_string()),
         };
-        Some(Self { dir, keys: telemon_ext::TrustedKeys { official, publishers: Vec::new(), allow_unsigned }, store_url })
+        Some(Self { dir, keys: telemon_ext::TrustedKeys { official, publishers: Vec::new(), allow_unsigned }, store_url, fuel: 0 })
     }
 }
 
@@ -125,6 +127,12 @@ pub struct AppState<C: Connector> {
     pub(crate) ext_cache: Mutex<HashMap<String, (String, Arc<telemon_ext::Package>)>>,
     /// Pengunduh untuk toko extension (dipasang aplikasi desktop atau server); tanpa itu toko menjawab 501.
     pub(crate) ext_fetch: Mutex<Option<Arc<dyn crate::extensions::ExtFetch>>>,
+    /// Modul WASM terkompilasi per extension (id → versi, modul).
+    pub(crate) ext_wasm: Mutex<HashMap<String, (String, Arc<telemon_ext::Sandbox>)>>,
+    /// Log terakhir per extension (operasi host `log` dan galat worker); dibaca lewat `/api/extensions/{id}/logs`.
+    pub(crate) ext_logs: Mutex<HashMap<String, std::collections::VecDeque<String>>>,
+    /// Keadaan worker terjadwal: kunci `<extension>/<worker>`.
+    pub(crate) ext_workers: Mutex<HashMap<String, crate::extbackend::WorkerState>>,
 }
 
 impl<C: Connector> AppState<C> {
@@ -134,7 +142,7 @@ impl<C: Connector> AppState<C> {
 
     pub fn with_clock(telemon: Arc<Telemon<C>>, auth: Arc<Auth>, cfg: HttpConfig, clock: Arc<dyn Fn() -> i64 + Send + Sync>) -> Arc<Self> {
         let limiter = RateLimiter::new(cfg.login_per_minute, 60_000);
-        let st = Arc::new(Self { telemon, auth, cfg, limiter, plans: PlanCache::default(), clock, share: Mutex::new((false, false)), lan: tokio::sync::Mutex::new(crate::share::Lan::default()), publik: tokio::sync::Mutex::new(crate::share::Publik::default()), tunnel: Mutex::new(None), update: crate::update::UpdateState::default(), ai: crate::ai::AiSlot::default(), ai_rate: RateLimiter::new(crate::ai::MAX_QUESTIONS_PER_MINUTE, 60_000), lan_epoch: tokio::sync::watch::channel(0).0, ext_cache: Mutex::new(HashMap::new()), ext_fetch: Mutex::new(None) });
+        let st = Arc::new(Self { telemon, auth, cfg, limiter, plans: PlanCache::default(), clock, share: Mutex::new((false, false)), lan: tokio::sync::Mutex::new(crate::share::Lan::default()), publik: tokio::sync::Mutex::new(crate::share::Publik::default()), tunnel: Mutex::new(None), update: crate::update::UpdateState::default(), ai: crate::ai::AiSlot::default(), ai_rate: RateLimiter::new(crate::ai::MAX_QUESTIONS_PER_MINUTE, 60_000), lan_epoch: tokio::sync::watch::channel(0).0, ext_cache: Mutex::new(HashMap::new()), ext_fetch: Mutex::new(None), ext_wasm: Mutex::new(HashMap::new()), ext_logs: Mutex::new(HashMap::new()), ext_workers: Mutex::new(HashMap::new()) });
         if let Ok(Some(v)) = st.telemon.with_store(|s| s.kv_get("share.require_2fa")) {
             st.share.lock().expect("lock").0 = v == "true";
         }
@@ -165,6 +173,11 @@ impl<C: Connector> AppState<C> {
         if let Ok(s) = self.telemon.with_store(|st| st.get_settings()) {
             self.apply_policy(&s);
         }
+    }
+
+    /// Keadaan worker (untuk tes dan tampilan): `<extension>/<worker>`.
+    pub fn worker_state(&self, key: &str) -> crate::extbackend::WorkerState {
+        self.ext_workers.lock().expect("lock").get(key).cloned().unwrap_or_default()
     }
 
     /// Pasang pengunduh HTTPS untuk toko extension (ADR 0028).

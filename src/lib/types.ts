@@ -568,6 +568,12 @@ export interface ExtensionRequirement {
   installed?: string
 }
 
+export interface ExtensionWorker {
+  id: string
+  everySeconds: number
+  state: { nextRun: number; lastRun?: number; lastOk?: boolean; lastError?: string; failures: number; paused: boolean }
+}
+
 export interface ExtensionInfo {
   id: string
   name: string
@@ -591,6 +597,9 @@ export interface ExtensionInfo {
   dependents: string[]
   /** Punya data sendiri (migrasi database sudah terapan). */
   hasData: boolean
+  hasBackend: boolean
+  routes: { id: string; method: string; path: string; level: string; action?: string }[]
+  workers: ExtensionWorker[]
   installedAt: number
   updatedAt: number
 }

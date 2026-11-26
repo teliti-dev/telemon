@@ -19,6 +19,9 @@ pub struct Manifest {
     pub description: String,
     #[serde(default)]
     pub ui: Option<UiDecl>,
+    /// Backend WASM (ADR 0028): modul di paket yang menjawab rute API dan menjalankan worker.
+    #[serde(default)]
+    pub backend: Option<BackendDecl>,
     #[serde(default)]
     pub contributes: Contributes,
     #[serde(default)]
@@ -83,9 +86,46 @@ pub struct UiDecl {
     pub entry: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BackendDecl {
+    /// Berkas `.wasm` di akar paket, mis. `backend.wasm`.
+    pub entry: String,
+}
+
+/// Rute API extension: `/api/ext/<id><path>`; pencocokan persis (tanpa parameter jalur pada versi ini).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RouteDecl {
+    pub id: String,
+    /// GET, POST, PUT, atau DELETE.
+    pub method: String,
+    /// Diawali `/`, huruf kecil, angka, `-`, `_`, `/` (maks 80).
+    pub path: String,
+    /// Level menu minimal peran: `read` (bawaan) atau `update` (update tidak lewat akses Publik).
+    #[serde(default = "read_level")]
+    pub level: String,
+    /// Aksi yang dideklarasikan di `actions[]` dan harus diberikan ke peran pemanggil.
+    #[serde(default)]
+    pub action: Option<String>,
+}
+
+/// Worker terjadwal: pemanggilan WASM singkat tiap `everySeconds`; dijeda otomatis setelah gagal berulang.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkerDecl {
+    pub id: String,
+    /// 10 sampai 86400.
+    pub every_seconds: u64,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Contributes {
+    #[serde(default)]
+    pub routes: Vec<RouteDecl>,
+    #[serde(default)]
+    pub workers: Vec<WorkerDecl>,
     #[serde(default)]
     pub widgets: Vec<WidgetDecl>,
     #[serde(default)]
@@ -172,6 +212,42 @@ impl Manifest {
         }
         if (!self.contributes.widgets.is_empty() || !self.contributes.pages.is_empty()) && self.ui.is_none() {
             return Err("Widget dan halaman butuh ui.entry".into());
+        }
+        if let Some(b) = &self.backend {
+            if b.entry != "backend.wasm" {
+                return Err("backend.entry harus backend.wasm di akar paket".into());
+            }
+        }
+        if (!self.contributes.routes.is_empty() || !self.contributes.workers.is_empty()) && self.backend.is_none() {
+            return Err("Rute dan worker butuh backend".into());
+        }
+        if self.contributes.routes.len() > 50 || self.contributes.workers.len() > 10 {
+            return Err("Terlalu banyak rute atau worker".into());
+        }
+        let mut seen = std::collections::HashSet::new();
+        for r in &self.contributes.routes {
+            let path_ok = r.path.starts_with('/') && r.path.len() <= 80 && !r.path.contains("//") && r.path.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '-' | '_' | '/'));
+            if !valid_id(&r.id) || r.id.contains('.') || !path_ok || !matches!(r.method.as_str(), "GET" | "POST" | "PUT" | "DELETE") || !matches!(r.level.as_str(), "read" | "update") {
+                return Err(format!("Rute tidak valid: {}", r.id));
+            }
+            if r.method != "GET" && r.level != "update" {
+                return Err(format!("Rute {} mengubah data: level harus update", r.id));
+            }
+            if let Some(a) = &r.action {
+                let decl = self.actions.iter().find(|d| d.id == *a).ok_or_else(|| format!("Rute {}: aksi {a} tidak dideklarasikan", r.id))?;
+                if decl.level == "update" && r.level != "update" {
+                    return Err(format!("Rute {}: aksi {a} butuh level update", r.id));
+                }
+            }
+            if !seen.insert((r.method.clone(), r.path.clone())) || !seen.insert((r.id.clone(), String::new())) {
+                return Err(format!("Rute ganda: {}", r.id));
+            }
+        }
+        let mut seen = std::collections::HashSet::new();
+        for w in &self.contributes.workers {
+            if !valid_id(&w.id) || w.id.contains('.') || !(10..=86_400).contains(&w.every_seconds) || !seen.insert(w.id.clone()) {
+                return Err(format!("Worker tidak valid: {}", w.id));
+            }
         }
         if self.contributes.pages.len() > 20 || self.actions.len() > 40 {
             return Err("Terlalu banyak halaman atau aksi".into());

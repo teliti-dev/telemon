@@ -7,6 +7,7 @@ import type {
   AiUiContext,
   ActiveExtension,
   ExtensionStore,
+  ExtensionWorker,
   ExtensionAccess,
   ExtensionLevel,
   ExtensionInfo,
@@ -175,6 +176,10 @@ export interface TelemonApi {
   getExtensionStore(): Promise<ExtensionStore>
   /** Pasang dari toko; dependensi yang belum ada ikut terpasang lebih dulu. Mengembalikan semua yang terpasang. */
   installFromStore(id: string): Promise<ExtensionInfo[]>
+  /** Jalankan satu worker sekarang (izin Admin Ubah); membuka jeda otomatis. */
+  runExtensionWorker(id: string, worker: string): Promise<{ ok: boolean; error?: string; workers: ExtensionWorker[] }>
+  /** Log terakhir backend extension (izin Admin Lihat). */
+  getExtensionLogs(id: string): Promise<string[]>
   /** Hapus extension; `deleteData` juga menghapus tabel dan catatan migrasinya (bawaan: data disimpan). */
   removeExtension(id: string, opts?: { deleteData?: boolean }): Promise<void>
   /** Antarmuka yang pernah terbaca pada satu router (termasuk `@pppoe`). */

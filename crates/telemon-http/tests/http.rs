@@ -143,6 +143,10 @@ impl Resp {
 }
 
 impl T {
+    fn st_workers(&self, key: &str) -> telemon_http::WorkerState {
+        self.st.worker_state(key)
+    }
+
     async fn call(&self, method: Method, uri: &str, body: Option<Value>, cookie: Option<&str>, extra: &[(&str, &str)], peer: &str) -> Resp {
         let mut b = Request::builder().method(method).uri(uri);
         if body.is_some() {
@@ -1784,7 +1788,7 @@ mod extensions {
 
     fn on(dir: &std::path::Path) -> HttpConfig {
         let keys = TrustedKeys { official: vec![public_key_hex(OFFICIAL).unwrap()], publishers: vec![public_key_hex(PUBLISHER).unwrap()], allow_unsigned: false };
-        HttpConfig { extensions: Some(telemon_http::ExtConfig { dir: dir.into(), keys, store_url: Some("https://store.test/x/catalog.json".into()) }), ..Default::default() }
+        HttpConfig { extensions: Some(telemon_http::ExtConfig { dir: dir.into(), keys, store_url: Some("https://store.test/x/catalog.json".into()), fuel: 3_000_000 }), ..Default::default() }
     }
 
     fn manifest(version: &str, extra_perm: &str) -> String {
@@ -2280,6 +2284,268 @@ mod extensions {
         let r = t.post("/api/extensions/store/install", json!({ "id": "net.teliti.a" }), Some(&c)).await;
         assert_eq!(r.status, StatusCode::CONFLICT);
         assert!(t.get("/api/extensions", Some(&c)).await.body["extensions"].as_array().unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    // ---------------- backend WASM (ADR 0028) ----------------
+
+    fn wat_str(s: &str) -> String {
+        s.replace('\\', "\\\\").replace('"', "\\\"")
+    }
+
+    /// Modul yang memanggil satu operasi host dengan masukan tetap dan menjawab `{"status":200,"body":<jawaban host>}`.
+    fn guest(op: &str, input: &str) -> Vec<u8> {
+        wat::parse_str(format!(
+            r#"(module
+  (import "telemon" "call" (func $call (param i32 i32 i32 i32 i32 i32) (result i32)))
+  (memory (export "memory") 2)
+  (global $bump (mut i32) (i32.const 65536))
+  (data (i32.const 0) "{op}")
+  (data (i32.const 100) "{input}")
+  (data (i32.const 2048) "{{\"status\":200,\"body\":")
+  (func (export "telemon_alloc") (param $n i32) (result i32)
+    (local $p i32) (local.set $p (global.get $bump)) (global.set $bump (i32.add (global.get $bump) (local.get $n))) (local.get $p))
+  (func (export "telemon_handle") (param $ptr i32) (param $len i32) (result i64)
+    (local $n i32)
+    (local.set $n (call $call (i32.const 0) (i32.const {oplen}) (i32.const 100) (i32.const {inlen}) (i32.const 2069) (i32.const 60000)))
+    (i32.store8 (i32.add (i32.const 2069) (local.get $n)) (i32.const 125))
+    (i64.or (i64.shl (i64.const 2048) (i64.const 32)) (i64.extend_i32_u (i32.add (local.get $n) (i32.const 22))))))"#,
+            op = wat_str(op),
+            input = wat_str(input),
+            oplen = op.len(),
+            inlen = input.len()
+        ))
+        .unwrap()
+    }
+
+    fn guest_raw(body: &str) -> Vec<u8> {
+        wat::parse_str(format!(
+            r#"(module
+  (import "telemon" "call" (func $call (param i32 i32 i32 i32 i32 i32) (result i32)))
+  (memory (export "memory") 2)
+  (func (export "telemon_alloc") (param i32) (result i32) (i32.const 65536))
+  (func (export "telemon_handle") (param i32 i32) (result i64) {body}))"#
+        ))
+        .unwrap()
+    }
+
+    fn pkg_backend(id: &str, extra: &str, wasm: Vec<u8>, files: &[(&str, &str)]) -> Vec<u8> {
+        let m = format!(r#"{{"id":"{id}","name":"{id}","version":"1.0.0","apiVersion":1,"publisher":"Teliti","backend":{{"entry":"backend.wasm"}}{extra}}}"#);
+        let mut f: Vec<(String, Vec<u8>)> = vec![("manifest.json".into(), m.into_bytes()), ("backend.wasm".into(), wasm)];
+        for (p, b) in files {
+            f.push((p.to_string(), b.as_bytes().to_vec()));
+        }
+        pack(&f, Some(OFFICIAL)).unwrap()
+    }
+
+    async fn setup(t: &T, c: &str, id: &str, extra: &str, wasm: Vec<u8>, files: &[(&str, &str)]) {
+        let r = install(t, pkg_backend(id, extra, wasm, files), c).await;
+        assert_eq!(r.status, StatusCode::OK, "{id}: {:?}", r.body);
+        patch(t, id, json!({ "enabled": true }), c).await;
+    }
+
+    const GO: &str = r#","contributes":{"routes":[{"id":"go","method":"GET","path":"/go"}]}"#;
+
+    #[tokio::test]
+    async fn backend_kv_dan_rute_dengan_akses_dan_aksi() {
+        let d = dir();
+        let t = harness_with(on(&d));
+        t.account("admin", "role-admin");
+        t.account("pantau", "role-monitor");
+        let (a, p) = (t.login("admin").await, t.login("pantau").await);
+        let id = "net.teliti.kv";
+        let extra = r#","actions":[{"id":"write","label":"Tulis","level":"update"}],"contributes":{"routes":[
+            {"id":"go","method":"GET","path":"/go"},
+            {"id":"save","method":"POST","path":"/save","level":"update","action":"write"}]}"#;
+        setup(&t, &a, id, extra, guest("kv.set", r#"{"key":"a","value":"1"}"#), &[]).await;
+
+        let r = t.get(&format!("/api/ext/{id}/go"), Some(&a)).await;
+        assert_eq!((r.status, r.body.clone()), (StatusCode::OK, json!({ "ok": null })), "{:?}", r.body);
+        assert_eq!(t.telemon.with_store(|s| s.ext_kv_get(id, "a").unwrap()).as_deref(), Some("1"), "modul menulis lewat host API");
+
+        // Rute tak dikenal, metode salah, dan jalur lain: 404.
+        assert_eq!(t.get(&format!("/api/ext/{id}/tidak-ada"), Some(&a)).await.status, StatusCode::NOT_FOUND);
+        assert_eq!(t.call(Method::POST, &format!("/api/ext/{id}/go"), Some(json!({})), Some(&a), &[], LAN).await.status, StatusCode::NOT_FOUND);
+        assert_eq!(t.get("/api/ext/net.teliti.hantu/go", Some(&a)).await.status, StatusCode::NOT_FOUND);
+        assert_eq!(t.get(&format!("/api/ext/{id}/go"), None).await.status, StatusCode::UNAUTHORIZED);
+
+        // Peran tanpa akses ke extension: ditolak; dengan Lihat boleh GET; rute update butuh Ubah dan aksi.
+        assert_eq!(t.get(&format!("/api/ext/{id}/go"), Some(&p)).await.status, StatusCode::FORBIDDEN);
+        t.call(Method::PUT, &format!("/api/extensions/{id}/access/role-monitor"), Some(json!({ "level": "read" })), Some(&a), &[], LAN).await;
+        assert_eq!(t.get(&format!("/api/ext/{id}/go"), Some(&p)).await.status, StatusCode::OK);
+        let post = |ck: &str, extra: &[(&str, &str)], peer: &str| {
+            let ck = ck.to_string();
+            let extra: Vec<(String, String)> = extra.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect();
+            let peer = peer.to_string();
+            let t = &t;
+            async move {
+                let ex: Vec<(&str, &str)> = extra.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
+                t.call(Method::POST, &format!("/api/ext/{id}/save"), Some(json!({ "x": 1 })), Some(&ck), &ex, &peer).await
+            }
+        };
+        assert_eq!(post(&p, &[], LAN).await.status, StatusCode::FORBIDDEN, "level Lihat tidak cukup untuk rute update");
+        t.call(Method::PUT, &format!("/api/extensions/{id}/access/role-monitor"), Some(json!({ "level": "update", "actions": [] })), Some(&a), &[], LAN).await;
+        assert_eq!(post(&p, &[], LAN).await.status, StatusCode::FORBIDDEN, "tanpa aksi write");
+        t.call(Method::PUT, &format!("/api/extensions/{id}/access/role-monitor"), Some(json!({ "level": "update", "actions": ["write"] })), Some(&a), &[], LAN).await;
+        assert_eq!(post(&p, &[], LAN).await.status, StatusCode::OK);
+        // Lewat akses Publik rute update ditolak walau punya aksi.
+        assert_eq!(post(&a, &[("cf-connecting-ip", "203.0.113.9")], LOOP).await.status, StatusCode::FORBIDDEN);
+        // Panggilan update tercatat; yang dimatikan tidak melayani.
+        let rows = t.telemon.with_store(|s| s.list_audit(&telemon_core::AuditQuery::default()).unwrap());
+        assert!(rows.iter().any(|r| r.entry.action == "extension.call" && r.entry.actor == "pantau"));
+        patch(&t, id, json!({ "enabled": false }), &a).await;
+        assert_eq!(t.get(&format!("/api/ext/{id}/go"), Some(&a)).await.status, StatusCode::NOT_FOUND);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[tokio::test]
+    async fn host_api_menegakkan_izin_extension_dan_peran_pengguna() {
+        let d = dir();
+        let t = harness_with(on(&d));
+        t.account("admin", "role-admin");
+        let a = t.login("admin").await;
+        let id = "net.teliti.ev";
+        let extra = r#","permissions":[{"id":"data.events"},{"id":"data.routers","sensitive":true}],"contributes":{"routes":[{"id":"go","method":"GET","path":"/go"}]}"#;
+        setup(&t, &a, id, extra, guest("events.list", r#"{"limit":5}"#), &[]).await;
+        let go = |ck: &str| {
+            let ck = ck.to_string();
+            let t = &t;
+            async move { t.get(&format!("/api/ext/{id}/go"), Some(&ck)).await }
+        };
+        // Toggle events menyala bawaan: jawaban `ok` (daftar kosong).
+        assert_eq!(go(&a).await.body, json!({ "ok": [] }));
+        // Toggle dimatikan: modul menerima permission_denied, tidak ada data.
+        patch(&t, id, json!({ "perms": { "data.events": false } }), &a).await;
+        assert_eq!(go(&a).await.body["error"]["code"], "permission_denied");
+        patch(&t, id, json!({ "perms": { "data.events": true } }), &a).await;
+        assert_eq!(go(&a).await.body, json!({ "ok": [] }));
+        // Peran punya akses ke extension tetapi tidak punya izin Event: modul ditolak walau toggle menyala.
+        let role = t.auth.create_role(None, &RoleInput { name: "tanpa-event".into(), description: String::new(), permissions: Permissions::default().with(Resource::Ringkasan, Level::Read) }).unwrap();
+        t.account("buta", &role.id);
+        let b = t.login("buta").await;
+        t.call(Method::PUT, &format!("/api/extensions/{id}/access/{}", role.id), Some(json!({ "level": "read" })), Some(&a), &[], LAN).await;
+        assert_eq!(go(&b).await.body["error"]["code"], "permission_denied");
+
+        // Router: izin sensitif mati bawaan, daftar putih jalur, kata sandi tidak pernah keluar.
+        let rid = t.router(false);
+        let print = |path: &str| guest("router.print", &format!(r#"{{"router":"{rid}","path":"{path}"}}"#));
+        setup(&t, &a, "net.teliti.rt", r#","permissions":[{"id":"data.routers","sensitive":true}],"contributes":{"routes":[{"id":"go","method":"GET","path":"/go"}]}"#, print("/system/resource"), &[]).await;
+        let rt = |ck: &str| {
+            let ck = ck.to_string();
+            let t = &t;
+            async move { t.get("/api/ext/net.teliti.rt/go", Some(&ck)).await }
+        };
+        assert_eq!(rt(&a).await.body["error"]["code"], "permission_denied", "izin sensitif mulai mati");
+        patch(&t, "net.teliti.rt", json!({ "perms": { "data.routers": true } }), &a).await;
+        let r = rt(&a).await;
+        assert_eq!(r.body["ok"][0]["board-name"], "RB4011", "{:?}", r.body);
+        setup(&t, &a, "net.teliti.rt2", r#","permissions":[{"id":"data.routers","sensitive":true}],"contributes":{"routes":[{"id":"go","method":"GET","path":"/go"}]}"#, print("/ppp/secret"), &[]).await;
+        patch(&t, "net.teliti.rt2", json!({ "perms": { "data.routers": true } }), &a).await;
+        let r = t.get("/api/ext/net.teliti.rt2/go", Some(&a)).await;
+        assert_eq!(r.body["error"]["code"], "path_not_allowed", "kata sandi pelanggan tidak bisa dibaca: {:?}", r.body);
+        assert!(!r.body.to_string().contains("rahasia123"));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[tokio::test]
+    async fn host_api_sql_dan_batas_namespace() {
+        let d = dir();
+        let t = harness_with(on(&d));
+        t.account("admin", "role-admin");
+        let a = t.login("admin").await;
+        let mig = r#"{"ops":[{"op":"create_table","table":"x_net_teliti_sql__notes","columns":[{"name":"id","type":"integer","primaryKey":true,"autoIncrement":true},{"name":"text","type":"text"}]}]}"#;
+        // Tulis lalu baca lewat dua extension berbagi namespace? Tidak: tiap extension punya namespace sendiri.
+        setup(&t, &a, "net.teliti.sql", GO, guest("db.exec", r#"{"sql":"INSERT INTO x_net_teliti_sql__notes (text) VALUES (?1)","params":["halo"]}"#), &[("migrations/0001-init.json", mig)]).await;
+        let r = t.get("/api/ext/net.teliti.sql/go", Some(&a)).await;
+        assert_eq!(r.body, json!({ "ok": { "changes": 1 } }), "{:?}", r.body);
+        let rows = t.telemon.with_store(|s| s.ext_db_query("x_net_teliti_sql__", "SELECT text FROM x_net_teliti_sql__notes", &[], 10).unwrap());
+        assert_eq!(rows.rows[0][0], telemon_core::DbValue::Text("halo".into()));
+        // Mencoba membaca tabel inti: ditolak oleh authorizer.
+        setup(&t, &a, "net.teliti.evil", GO, guest("db.query", r#"{"sql":"SELECT * FROM accounts"}"#), &[]).await;
+        let r = t.get("/api/ext/net.teliti.evil/go", Some(&a)).await;
+        assert_eq!(r.body["error"]["code"], "db", "{:?}", r.body);
+        // Tabel milik extension lain juga tidak terbaca.
+        setup(&t, &a, "net.teliti.evil2", GO, guest("db.query", r#"{"sql":"SELECT * FROM x_net_teliti_sql__notes"}"#), &[]).await;
+        assert_eq!(t.get("/api/ext/net.teliti.evil2/go", Some(&a)).await.body["error"]["code"], "db");
+        // Operasi host tak dikenal.
+        setup(&t, &a, "net.teliti.unk", GO, guest("fs.read", r#"{}"#), &[]).await;
+        assert_eq!(t.get("/api/ext/net.teliti.unk/go", Some(&a)).await.body["error"]["code"], "unknown_op");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[tokio::test]
+    async fn backend_yang_rusak_tidak_menjatuhkan_server() {
+        let d = dir();
+        let t = harness_with(on(&d));
+        t.account("admin", "role-admin");
+        let a = t.login("admin").await;
+        // Trap: 502 dan baris log; loop tanpa akhir: 504 (habis bahan bakar); jawaban bukan JSON: 502.
+        setup(&t, &a, "net.teliti.trap", GO, guest_raw("unreachable"), &[]).await;
+        let r = t.get("/api/ext/net.teliti.trap/go", Some(&a)).await;
+        assert_eq!((r.status, r.code()), (StatusCode::BAD_GATEWAY, "backend_error"));
+        let logs = t.get("/api/extensions/net.teliti.trap/logs", Some(&a)).await.body;
+        assert!(logs["lines"][0].as_str().unwrap().contains("galat backend"), "{logs:?}");
+        setup(&t, &a, "net.teliti.loop", GO, guest_raw("(loop $l (br $l)) (i64.const 0)"), &[]).await;
+        let r = t.get("/api/ext/net.teliti.loop/go", Some(&a)).await;
+        assert_eq!((r.status, r.code()), (StatusCode::GATEWAY_TIMEOUT, "backend_timeout"));
+        setup(&t, &a, "net.teliti.junk", GO, guest_raw("(i64.or (i64.shl (i64.const 100) (i64.const 32)) (i64.const 4))"), &[]).await;
+        assert_eq!(t.get("/api/ext/net.teliti.junk/go", Some(&a)).await.status, StatusCode::BAD_GATEWAY);
+        // Server tetap melayani.
+        assert_eq!(t.get("/api/extensions", Some(&a)).await.status, StatusCode::OK);
+        // Modul tidak valid atau memakai impor terlarang ditolak saat pasang.
+        let bad = pkg_backend("net.teliti.bad", "", b"bukan wasm".to_vec(), &[]);
+        assert_eq!(install(&t, bad, &a).await.status, StatusCode::BAD_REQUEST);
+        let wasi = wat::parse_str(r#"(module (import "wasi_snapshot_preview1" "fd_write" (func (param i32 i32 i32 i32) (result i32))) (memory (export "memory") 1) (func (export "telemon_alloc") (param i32) (result i32) (i32.const 0)) (func (export "telemon_handle") (param i32 i32) (result i64) (i64.const 0)))"#).unwrap();
+        assert_eq!(install(&t, pkg_backend("net.teliti.wasi", "", wasi, &[]), &a).await.status, StatusCode::BAD_REQUEST);
+        // Rute atau worker tanpa backend ditolak di manifest.
+        let m = r#"{"id":"net.teliti.nob","name":"n","version":"1.0.0","apiVersion":1,"publisher":"T","contributes":{"routes":[{"id":"go","method":"GET","path":"/go"}]}}"#;
+        let nob = pack(&[("manifest.json".into(), m.as_bytes().to_vec())], Some(OFFICIAL)).unwrap();
+        assert_eq!(install(&t, nob, &a).await.status, StatusCode::BAD_REQUEST);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[tokio::test]
+    async fn worker_terjadwal_berjalan_dijeda_dan_dibuka_manual() {
+        let d = dir();
+        let t = harness_with(on(&d));
+        t.account("admin", "role-admin");
+        let a = t.login("admin").await;
+        let wk = r#","contributes":{"workers":[{"id":"tick","everySeconds":10}]}"#;
+        setup(&t, &a, "net.teliti.wk", wk, guest("kv.set", r#"{"key":"ran","value":"yes"}"#), &[]).await;
+        let state = |t: &T| t.st_workers("net.teliti.wk/tick");
+        telemon_http::run_due_workers(&t.st).await;
+        assert_eq!(t.telemon.with_store(|s| s.ext_kv_get("net.teliti.wk", "ran").unwrap()).as_deref(), Some("yes"), "worker menjalankan modul");
+        let first = state(&t).last_run;
+        // Belum jatuh tempo: tidak berjalan lagi. Setelah 10 detik: berjalan.
+        telemon_http::run_due_workers(&t.st).await;
+        assert_eq!(state(&t).last_run, first);
+        t.clock.fetch_add(10_000, Ordering::SeqCst);
+        telemon_http::run_due_workers(&t.st).await;
+        assert_ne!(state(&t).last_run, first);
+        assert_eq!(t.get("/api/extensions", Some(&a)).await.body["extensions"][0]["workers"][0]["state"]["lastOk"], true);
+
+        // Worker yang gagal terus dijeda setelah 5 kali; menjalankan manual membuka jeda.
+        setup(&t, &a, "net.teliti.bad", wk, guest_raw("unreachable"), &[]).await;
+        for _ in 0..8 {
+            t.clock.fetch_add(70_000, Ordering::SeqCst);
+            telemon_http::run_due_workers(&t.st).await;
+        }
+        let s = t.st_workers("net.teliti.bad/tick");
+        assert!(s.paused && s.failures == 5 && s.last_ok == Some(false), "{s:?}");
+        let logs = t.get("/api/extensions/net.teliti.bad/logs", Some(&a)).await.body;
+        assert!(logs["lines"].as_array().map_or(0, |l| l.len()) >= 5, "{logs:?}");
+        let r = t.call(Method::POST, "/api/extensions/net.teliti.bad/workers/tick/run", Some(json!({})), Some(&a), &[], LAN).await;
+        assert_eq!((r.status, r.body["ok"].as_bool()), (StatusCode::OK, Some(false)));
+        assert!(!t.st_workers("net.teliti.bad/tick").paused || t.st_workers("net.teliti.bad/tick").failures == 1, "jeda dibuka lalu hitung ulang");
+        // Worker extension yang dimatikan tidak berjalan; peran tanpa Ubah tidak boleh memicu.
+        patch(&t, "net.teliti.wk", json!({ "enabled": false }), &a).await;
+        let before = state(&t).last_run;
+        t.clock.fetch_add(60_000, Ordering::SeqCst);
+        telemon_http::run_due_workers(&t.st).await;
+        assert_eq!(state(&t).last_run, before);
+        t.account("pantau", "role-monitor");
+        let p = t.login("pantau").await;
+        assert_eq!(t.call(Method::POST, "/api/extensions/net.teliti.wk/workers/tick/run", Some(json!({})), Some(&p), &[], LAN).await.status, StatusCode::FORBIDDEN);
         let _ = std::fs::remove_dir_all(&d);
     }
 
