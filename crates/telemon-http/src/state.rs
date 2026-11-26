@@ -24,6 +24,8 @@ pub struct HttpConfig {
     pub max_body: usize,
     /// Jalur berkas basis data untuk kartu Penyimpanan (hanya ditampilkan).
     pub db_path: String,
+    /// **Hanya server demo:** peran berizin Ubah boleh masuk tanpa 2FA. Saklar Wajib 2FA dan akses Publik tetap memaksa.
+    pub relax_update_2fa: bool,
 }
 
 impl Default for HttpConfig {
@@ -36,6 +38,7 @@ impl Default for HttpConfig {
             plan_ttl: Duration::from_secs(600),
             max_body: 64 * 1024,
             db_path: String::new(),
+            relax_update_2fa: false,
         }
     }
 }
@@ -90,7 +93,7 @@ impl<C: Connector> AppState<C> {
 
     pub(crate) fn apply_policy(&self, s: &telemon_core::Settings) {
         let (require_2fa, public_on) = *self.share.lock().expect("lock");
-        self.auth.set_policy(s.auth_policy(telemon_core::auth::AuthPolicy { require_2fa, public_on, ..Default::default() }));
+        self.auth.set_policy(s.auth_policy(telemon_core::auth::AuthPolicy { require_2fa, public_on, update_roles_need_2fa: !self.cfg.relax_update_2fa, ..Default::default() }));
     }
 
     /// Status Berbagi dari aplikasi desktop: saklar "Wajib 2FA" dan akses Publik aktif.
