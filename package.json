@@ -2,6 +2,7 @@
   "name": "telemon",
   "private": true,
   "version": "0.1.0",
+  "description": "Monitor PPPoE users and events across MikroTik routers, from a desktop app or any browser.",
   "author": "Teliti (https://teliti.net/)",
   "homepage": "https://teliti.net/",
   "license": "AGPL-3.0-only",

@@ -283,6 +283,10 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
         run: python3 .github/scripts/set-version.py "$VERSION"
 
+      # Teks halaman lisensi installer harus sama dengan LICENSE + pemberitahuan (scripts/make-installer-license.py).
+      - name: Teks lisensi installer
+        run: python3 scripts/make-installer-license.py --check
+
       - name: Build
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}

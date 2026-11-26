@@ -1,7 +1,7 @@
 [package]
 name = "telemon"
 version = "0.1.0"
-description = "Monitoring PPPoE multi-Mikrotik"
+description = "Telemon desktop app: monitor PPPoE users and events across MikroTik routers"
 authors = ["Teliti"]
 license = "AGPL-3.0-only"
 repository = "https://github.com/teliti-dev/telemon"
