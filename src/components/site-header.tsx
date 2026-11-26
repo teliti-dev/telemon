@@ -15,7 +15,7 @@ import { PAGE_CONTAINER } from "@/lib/layout"
 import { href, navigate, navigatePath, useRoute } from "@/lib/route"
 import { useStore } from "@/lib/store-context"
 import { cn } from "@/lib/utils"
-import { initFrameless, useFrameless, winStartDragging, winToggleMaximize } from "@/lib/window"
+import { MAC_TRAFFIC_LIGHTS, initFrameless, useFrameless, useMacOverlay, winStartDragging, winToggleMaximize } from "@/lib/window"
 
 /**
  * Dua bagian yang langsung menjadi anak kolom halaman (bukan dibungkus satu header),
@@ -32,10 +32,13 @@ export function SiteHeader({ title }: { title: string }) {
   const items = useNavItems()
   const firstEnd = items.findIndex((i) => i.end)
   const frameless = useFrameless()
+  const mac = useMacOverlay()
+  // Header menjadi bilah judul (Windows tanpa bilah bawaan, atau macOS Overlay): bisa diseret dan selalu terlihat.
+  const titlebar = frameless || mac
   React.useEffect(initFrameless, [])
 
   // Tanpa bilah bawaan, area kosong header menjadi tempat menyeret jendela (klik ganda = maksimalkan).
-  const dragProps = frameless
+  const dragProps = titlebar
     ? {
         onMouseDown: (e: React.MouseEvent) => {
           if (e.button !== 0 || e.detail > 1) return
@@ -56,10 +59,11 @@ export function SiteHeader({ title }: { title: string }) {
         className={cn(
           "sticky top-0 z-30 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80",
           // Tanpa bilah bawaan baris ini juga menampung tombol jendela, jadi harus tetap terlihat saat menggulir.
-          !frameless && "md:static md:border-b-0 md:bg-background md:backdrop-blur-none"
+          !titlebar && "md:static md:border-b-0 md:bg-background md:backdrop-blur-none"
         )}
       >
-        <div className={cn("flex items-stretch", frameless ? "h-12 md:h-14" : "")}>
+        <div className={cn("flex items-stretch", titlebar ? "h-12 md:h-14" : "")}>
+        {mac && <div aria-hidden className="shrink-0" style={{ width: MAC_TRAFFIC_LIGHTS }} />}
         <div className={cn(PAGE_CONTAINER, "flex h-12 min-w-0 items-center gap-2 md:h-14")}>
           <a
             href={href("ringkasan")}
@@ -111,11 +115,12 @@ export function SiteHeader({ title }: { title: string }) {
             <AccountMenu />
           </div>
         </div>
+        {mac && <div aria-hidden className="shrink-0" style={{ width: MAC_TRAFFIC_LIGHTS }} />}
         {frameless && <WindowControls />}
         </div>
       </div>
 
-      <div className={cn("sticky z-20 hidden border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:block", frameless ? "top-14" : "top-0")}>
+      <div className={cn("sticky z-20 hidden border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:block", titlebar ? "top-14" : "top-0")}>
         <nav aria-label={t("Menu utama")} className={cn(PAGE_CONTAINER, "-mb-px flex h-9 items-end gap-0.5")}>
           {items.map((item, index) => {
             const active = isNavActive(item.page, page)
