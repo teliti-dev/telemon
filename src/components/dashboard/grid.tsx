@@ -67,7 +67,7 @@ export function DashboardGrid({ widgets, editing, onChange, onRemove, onConfigur
   }
 
   return (
-    <div ref={containerRef} className="w-full">
+    <div ref={containerRef} className={cn("w-full", !editing && "dashboard-grid-static")}>
       {mounted && (
         <AutoHeightProvider value={report}>
         <ReactGridLayout

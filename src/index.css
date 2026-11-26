@@ -148,3 +148,9 @@
     @apply font-sans;
     }
 }
+/* Grid Overview: tanpa transisi di luar mode ubah. Bawaan react-grid-layout menganimasikan lebar dan posisi tiap
+   widget saat halaman dibuka (lebar kontainer baru terukur), terlihat sebagai geseran dari kanan ke kiri. */
+.dashboard-grid-static .react-grid-layout,
+.dashboard-grid-static .react-grid-item {
+  transition: none !important;
+}
