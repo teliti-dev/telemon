@@ -1,6 +1,7 @@
 import * as React from "react"
-import { EyeIcon, EyeOffIcon, Loader2Icon, LockKeyholeIcon, MonitorIcon, ZapIcon } from "lucide-react"
+import { EyeIcon, EyeOffIcon, Loader2Icon, LockKeyholeIcon, MonitorIcon } from "lucide-react"
 
+import { TelemonLogo } from "@/components/telemon-logo"
 import { RecoveryCodes } from "@/components/recovery-codes"
 import { AppearanceDrawer } from "@/components/appearance-drawer"
 import { TotpSetup } from "@/components/totp-setup"
@@ -94,9 +95,7 @@ export function LoginPage({ onAuthed }: { onAuthed: (s: SessionInfo) => void }) 
 
       <div className="grid w-full max-w-sm gap-4">
         <div className="grid justify-items-center gap-2 text-center">
-          <div className="flex size-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
-            <ZapIcon className="size-5" />
-          </div>
+          <TelemonLogo className="size-14 drop-shadow-sm" />
           <div>
             <div className="text-lg font-semibold">Telemon</div>
             <div className="text-sm text-muted-foreground">{t("Monitoring PPPoE multi-Mikrotik")}</div>

@@ -5,3 +5,7 @@ Telemon is licensed under the GNU Affero General Public License v3.0 only (see L
 Source code: https://github.com/teliti-dev/telemon
 
 Redistributions and modified versions must keep this notice.
+
+The Telemon icon (public/telemon.svg and the generated icons in src-tauri/icons) is derived from "Pet Supplies"
+on SVG Repo (https://www.svgrepo.com/svg/547758/pet-supplies/, SVG Repo License, no attribution required): recoloured to
+the Telemon brand blue, with a pulse line and a Live dot added.

@@ -1,8 +1,9 @@
 import * as React from "react"
-import { ChevronDownIcon, GlobeIcon, PuzzleIcon, SettingsIcon, SparklesIcon, WifiIcon, ZapIcon } from "lucide-react"
+import { ChevronDownIcon, GlobeIcon, PuzzleIcon, SettingsIcon, SparklesIcon, WifiIcon } from "lucide-react"
 
 import { AccountMenu } from "@/components/account-menu"
 import { AppearanceDrawer } from "@/components/appearance-drawer"
+import { TelemonLogo } from "@/components/telemon-logo"
 import { WindowControls } from "@/components/window-controls"
 import { isNavActive, type NavItem } from "@/components/nav-items"
 import { Badge } from "@/components/ui/badge"
@@ -65,9 +66,7 @@ export function SiteHeader({ title }: { title: string }) {
             aria-label={t("Telemon, ke Ringkasan")}
             className="flex shrink-0 items-center gap-2 rounded-md font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
           >
-            <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <ZapIcon className="size-4" />
-            </span>
+            <TelemonLogo />
             <span className="hidden sm:inline">Telemon</span>
           </a>
 
