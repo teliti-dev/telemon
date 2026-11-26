@@ -1,0 +1,15 @@
+[package]
+name = "telemon-ssh"
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-only"
+description = "Klien SSH Telemon: sesi PTY ke router dengan penyematan kunci host (ADR 0029)"
+
+[dependencies]
+# Backend kripto `ring`, sama dengan sisanya: tanpa OpenSSL dan aws-lc (ADR 0010).
+russh = { version = "0.65.4", default-features = false, features = ["ring"] }
+tokio = { version = "1.54.1", features = ["rt", "macros", "time", "sync", "net"] }
+
+[dev-dependencies]
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "time", "sync", "net"] }
+rand = { version = "0.10", features = ["thread_rng"] }

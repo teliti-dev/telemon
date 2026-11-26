@@ -66,6 +66,7 @@ pub fn routes<C: Connector>() -> Router<Arc<AppState<C>>> {
         .merge(crate::traffic::routes::<C>())
         .merge(crate::extensions::routes::<C>())
         .merge(crate::extbackend::routes::<C>())
+        .merge(crate::sshterm::routes::<C>())
         .route("/api/settings", get(settings_get::<C>).put(settings_put::<C>))
         .route("/api/storage", get(storage_get::<C>))
         .route("/api/storage/purge", post(storage_purge::<C>))

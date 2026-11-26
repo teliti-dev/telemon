@@ -133,6 +133,8 @@ pub struct AppState<C: Connector> {
     pub(crate) ext_logs: Mutex<HashMap<String, std::collections::VecDeque<String>>>,
     /// Keadaan worker terjadwal: kunci `<extension>/<worker>`.
     pub(crate) ext_workers: Mutex<HashMap<String, crate::extbackend::WorkerState>>,
+    /// Sesi SSH terbuka: per akun dan total (ADR 0029).
+    pub(crate) ssh_active: Mutex<(HashMap<String, usize>, usize)>,
 }
 
 impl<C: Connector> AppState<C> {
@@ -142,7 +144,7 @@ impl<C: Connector> AppState<C> {
 
     pub fn with_clock(telemon: Arc<Telemon<C>>, auth: Arc<Auth>, cfg: HttpConfig, clock: Arc<dyn Fn() -> i64 + Send + Sync>) -> Arc<Self> {
         let limiter = RateLimiter::new(cfg.login_per_minute, 60_000);
-        let st = Arc::new(Self { telemon, auth, cfg, limiter, plans: PlanCache::default(), clock, share: Mutex::new((false, false)), lan: tokio::sync::Mutex::new(crate::share::Lan::default()), publik: tokio::sync::Mutex::new(crate::share::Publik::default()), tunnel: Mutex::new(None), update: crate::update::UpdateState::default(), ai: crate::ai::AiSlot::default(), ai_rate: RateLimiter::new(crate::ai::MAX_QUESTIONS_PER_MINUTE, 60_000), lan_epoch: tokio::sync::watch::channel(0).0, ext_cache: Mutex::new(HashMap::new()), ext_fetch: Mutex::new(None), ext_wasm: Mutex::new(HashMap::new()), ext_logs: Mutex::new(HashMap::new()), ext_workers: Mutex::new(HashMap::new()) });
+        let st = Arc::new(Self { telemon, auth, cfg, limiter, plans: PlanCache::default(), clock, share: Mutex::new((false, false)), lan: tokio::sync::Mutex::new(crate::share::Lan::default()), publik: tokio::sync::Mutex::new(crate::share::Publik::default()), tunnel: Mutex::new(None), update: crate::update::UpdateState::default(), ai: crate::ai::AiSlot::default(), ai_rate: RateLimiter::new(crate::ai::MAX_QUESTIONS_PER_MINUTE, 60_000), lan_epoch: tokio::sync::watch::channel(0).0, ext_cache: Mutex::new(HashMap::new()), ext_fetch: Mutex::new(None), ext_wasm: Mutex::new(HashMap::new()), ext_logs: Mutex::new(HashMap::new()), ext_workers: Mutex::new(HashMap::new()), ssh_active: Mutex::new((HashMap::new(), 0)) });
         if let Ok(Some(v)) = st.telemon.with_store(|s| s.kv_get("share.require_2fa")) {
             st.share.lock().expect("lock").0 = v == "true";
         }
