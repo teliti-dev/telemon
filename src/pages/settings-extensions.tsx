@@ -223,19 +223,21 @@ export function SettingsExtensionsPage() {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="mr-auto">
-          <h2 className="text-lg font-semibold">{t("Extension")}</h2>
-          <p className="text-sm text-muted-foreground">{t("Tambahan fitur dari pihak Teliti. Hanya extension official yang bisa dipasang pada versi ini.")}</p>
-        </div>
-        <div className="relative min-w-0 flex-1 sm:w-64 sm:flex-none">
+      <div>
+        <h2 className="text-lg font-semibold">{t("Extension")}</h2>
+        <p className="text-sm text-muted-foreground">{t("Tambahan fitur dari pihak Teliti. Hanya extension official yang bisa dipasang pada versi ini.")}</p>
+      </div>
+      {/* Toolbar selebar halaman seperti Users: cari melebar, tampilan dan tombol Pasang di ujung kanan. */}
+      <div className="flex items-center gap-2">
+        <div className="relative min-w-0 flex-1">
           <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("Cari extension…")} aria-label={t("Cari extension")} className="pl-8" />
         </div>
         {viewToggle}
         <input ref={input} type="file" accept=".tmx" className="hidden" onChange={(e) => pick(e.target.files?.[0])} />
-        <Button disabled={locked} title={reason ?? undefined} onClick={() => setChoosing(true)}>
-          <PlusIcon /> {t("Pasang extension")}
+        <Button className="shrink-0" disabled={locked} title={reason ?? undefined} onClick={() => setChoosing(true)}>
+          <PlusIcon /> <span className="hidden sm:inline">{t("Pasang extension")}</span>
+          <span className="sr-only sm:hidden">{t("Pasang extension")}</span>
         </Button>
       </div>
       {reason && (
@@ -249,7 +251,7 @@ export function SettingsExtensionsPage() {
       ) : filtered.length === 0 ? (
         <Card className="items-center py-12 text-sm text-muted-foreground">{t("Tidak ada extension yang cocok.")}</Card>
       ) : view === "grid" ? (
-        <ul className="grid grid-cols-1 gap-2 min-[560px]:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+        <ul className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2 lg:grid-cols-3">
           {filtered.map((e) => (
             <li key={e.id} className="min-w-0">
               <div className={cn("relative flex h-full flex-col gap-1.5 rounded-xl border border-l-4 bg-card p-3 transition-colors hover:bg-muted/40 focus-within:ring-3 focus-within:ring-ring/50", e.enabled && e.status === "ok" ? "border-l-brand" : "border-l-border")}>

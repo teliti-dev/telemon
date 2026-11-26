@@ -305,7 +305,7 @@ export function ExtensionStorePage() {
           </AlertDescription>
         </Alert>
       ) : !store ? (
-        <div className="grid grid-cols-1 gap-2 min-[560px]:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2 lg:grid-cols-3">
           <Skeleton className="h-28" />
           <Skeleton className="h-28" />
           <Skeleton className="h-28" />
@@ -313,7 +313,7 @@ export function ExtensionStorePage() {
       ) : list.length === 0 ? (
         <Card className="items-center py-12 text-sm text-muted-foreground">{store.extensions.length === 0 ? t("Belum ada extension di toko.") : t("Tidak ada extension yang cocok.")}</Card>
       ) : (
-        <ul className="grid grid-cols-1 gap-2 min-[560px]:grid-cols-2 lg:grid-cols-3">
+        <ul className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2 lg:grid-cols-3">
           {list.map((e) => (
             <li key={e.id} className="min-w-0">
               <button

@@ -222,6 +222,25 @@ async fn kesehatan_404_json_dan_header_keamanan() {
 }
 
 #[tokio::test]
+async fn halaman_ui_divalidasi_ulang_agar_tidak_menampilkan_versi_lama() {
+    let dir = std::env::temp_dir().join(format!("telemon-ui-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("assets")).unwrap();
+    std::fs::write(dir.join("index.html"), "<html></html>").unwrap();
+    std::fs::write(dir.join("assets/app-abc123.js"), "x").unwrap();
+    let t = harness_with(HttpConfig { static_dir: Some(dir.clone()), ..Default::default() });
+    let page = t.get("/", None).await;
+    assert_eq!(page.headers[header::CACHE_CONTROL], "no-cache", "index.html harus selalu divalidasi ulang");
+    assert!(page.headers.get(header::CONTENT_SECURITY_POLICY).is_some());
+    // Rute SPA yang jatuh ke index.html juga.
+    assert_eq!(t.get("/pengaturan/extension", None).await.headers[header::CACHE_CONTROL], "no-cache");
+    // Aset bernama hash tidak diberi no-cache dan tetap mendapat CSP.
+    let asset = t.get("/assets/app-abc123.js", None).await;
+    assert!(asset.headers.get(header::CACHE_CONTROL).is_none());
+    assert!(asset.headers.get(header::CONTENT_SECURITY_POLICY).is_some());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
 async fn badan_terlalu_besar_dan_json_rusak_ditolak() {
     let t = harness();
     let big = json!({"username": "a", "password": "x".repeat(70_000)});
