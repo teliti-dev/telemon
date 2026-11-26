@@ -114,7 +114,9 @@ impl Desktop {
 
         let telemon = Arc::new(Telemon::new(store, cfg.secrets.clone(), NetConnector, settings.runtime_config()));
         let auth = Arc::new(Auth::new(telemon.store(), HashParams::default()).map_err(|e| StartError::Storage(e.to_string()))?);
-        let http_cfg = HttpConfig { static_dir: cfg.static_dir, db_path: cfg.db_path.display().to_string(), ..Default::default() };
+        let ext_dir = cfg.db_path.parent().map_or_else(|| PathBuf::from("extensions"), |d| d.join("extensions"));
+        // Extension (ADR 0028): aktif bawaan di desktop; `TELEMON_EXTENSIONS=0` mematikan.
+        let http_cfg = HttpConfig { static_dir: cfg.static_dir, db_path: cfg.db_path.display().to_string(), extensions: telemon_http::ExtConfig::from_env(ext_dir, true), ..Default::default() };
         let state = AppState::new(telemon.clone(), auth, http_cfg);
         // AI chat: bawaan mati sampai pemilik menambah provider di Pengaturan (ADR 0007, 0024).
         state.enable_ai(Arc::new(HttpLlm::default()));

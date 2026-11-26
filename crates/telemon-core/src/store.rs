@@ -216,6 +216,24 @@ CREATE TABLE traffic_ifaces (
   last_seen INTEGER NOT NULL,
   PRIMARY KEY (router_id, name)
 );
+", "
+CREATE TABLE extensions (
+  id TEXT PRIMARY KEY,
+  version TEXT NOT NULL,
+  tier TEXT NOT NULL,
+  key_id TEXT,
+  signed INTEGER NOT NULL,
+  manifest TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 0,
+  installed_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE extension_perms (
+  ext_id TEXT NOT NULL,
+  perm TEXT NOT NULL,
+  granted INTEGER NOT NULL,
+  PRIMARY KEY (ext_id, perm)
+);
 "];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -329,6 +347,21 @@ pub struct AuditEntry {
     pub title: String,
     pub changes: Vec<Change>,
     pub outcome: AuditOutcome,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredExtension {
+    pub id: String,
+    pub version: String,
+    /// `official` atau `public`.
+    pub tier: String,
+    pub key_id: Option<String>,
+    pub signed: bool,
+    /// Manifest asli (JSON); diurai oleh `telemon-ext`.
+    pub manifest: String,
+    pub enabled: bool,
+    pub installed_at: i64,
+    pub updated_at: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1065,6 +1098,68 @@ impl Store {
         tx.commit()?;
         self.vault = Some(new);
         Ok(())
+    }
+
+    // ---------------- extension (ADR 0028) ----------------
+
+    /// Pasang atau perbarui. Pembaruan mempertahankan `enabled` dan izin yang sudah diputuskan;
+    /// izin baru ditambahkan lewat `ext_set_perm` oleh pemanggil.
+    #[allow(clippy::too_many_arguments)]
+    pub fn ext_upsert(&mut self, id: &str, version: &str, tier: &str, key_id: Option<&str>, signed: bool, manifest: &str, now: i64) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO extensions (id, version, tier, key_id, signed, manifest, enabled, installed_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,0,?7,?7)
+             ON CONFLICT(id) DO UPDATE SET version=?2, tier=?3, key_id=?4, signed=?5, manifest=?6, updated_at=?7",
+            params![id, version, tier, key_id, signed as i64, manifest, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn ext_list(&self) -> Result<Vec<StoredExtension>> {
+        let mut st = self.conn.prepare("SELECT id, version, tier, key_id, signed, manifest, enabled, installed_at, updated_at FROM extensions ORDER BY id")?;
+        let rows = st.query_map([], |r| {
+            Ok(StoredExtension {
+                id: r.get(0)?,
+                version: r.get(1)?,
+                tier: r.get(2)?,
+                key_id: r.get(3)?,
+                signed: r.get::<_, i64>(4)? != 0,
+                manifest: r.get(5)?,
+                enabled: r.get::<_, i64>(6)? != 0,
+                installed_at: r.get(7)?,
+                updated_at: r.get(8)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn ext_get(&self, id: &str) -> Result<Option<StoredExtension>> {
+        Ok(self.ext_list()?.into_iter().find(|e| e.id == id))
+    }
+
+    /// `false` bila id tidak ada.
+    pub fn ext_set_enabled(&mut self, id: &str, enabled: bool, now: i64) -> Result<bool> {
+        Ok(self.conn.execute("UPDATE extensions SET enabled=?2, updated_at=?3 WHERE id=?1", params![id, enabled as i64, now])? > 0)
+    }
+
+    pub fn ext_set_perm(&mut self, id: &str, perm: &str, granted: bool) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO extension_perms (ext_id, perm, granted) VALUES (?1,?2,?3) ON CONFLICT(ext_id, perm) DO UPDATE SET granted=?3",
+            params![id, perm, granted as i64],
+        )?;
+        Ok(())
+    }
+
+    /// Izin yang sudah diputuskan (izin tanpa baris = belum diputuskan = mati).
+    pub fn ext_perms(&self, id: &str) -> Result<Vec<(String, bool)>> {
+        let mut st = self.conn.prepare("SELECT perm, granted FROM extension_perms WHERE ext_id=?1 ORDER BY perm")?;
+        let rows = st.query_map(params![id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? != 0)))?;
+        rows.collect()
+    }
+
+    /// Hapus extension dan semua izinnya.
+    pub fn ext_delete(&mut self, id: &str) -> Result<bool> {
+        self.conn.execute("DELETE FROM extension_perms WHERE ext_id=?1", params![id])?;
+        Ok(self.conn.execute("DELETE FROM extensions WHERE id=?1", params![id])? > 0)
     }
 
     // ---------------- riwayat perubahan ----------------
@@ -1908,5 +2003,29 @@ mod tests {
         let c = s.event_counts_by_router(base, base + 3 * hour).unwrap();
         let cnt = |r: &str, k: &str| c.iter().find(|(a, b, _)| a == r && b == k).map(|x| x.2).unwrap_or(0);
         assert_eq!((cnt("r1", "auth_failed"), cnt("r1", "router_down"), cnt("r2", "auth_failed"), cnt("r2", "router_down")), (3, 1, 1, 0));
+    }
+}
+
+#[cfg(test)]
+mod ext_tests {
+    use super::*;
+
+    #[test]
+    fn extension_rows_keep_state_across_updates_and_delete_cleanly() {
+        let mut s = Store::open_in_memory().unwrap();
+        s.ext_upsert("net.t.a", "1.0.0", "official", Some("k"), true, "{}", 10).unwrap();
+        assert!(!s.ext_get("net.t.a").unwrap().unwrap().enabled, "pasang = mati");
+        s.ext_set_perm("net.t.a", "data.events", true).unwrap();
+        assert!(s.ext_set_enabled("net.t.a", true, 11).unwrap());
+        assert!(!s.ext_set_enabled("tidak.ada", true, 11).unwrap());
+        // Pembaruan versi mempertahankan enabled dan izin.
+        s.ext_upsert("net.t.a", "1.1.0", "official", Some("k"), true, "{}", 20).unwrap();
+        let e = s.ext_get("net.t.a").unwrap().unwrap();
+        assert_eq!((e.version.as_str(), e.enabled, e.installed_at, e.updated_at), ("1.1.0", true, 10, 20));
+        assert_eq!(s.ext_perms("net.t.a").unwrap(), vec![("data.events".to_string(), true)]);
+        s.ext_set_perm("net.t.a", "data.events", false).unwrap();
+        assert_eq!(s.ext_perms("net.t.a").unwrap(), vec![("data.events".to_string(), false)]);
+        assert!(s.ext_delete("net.t.a").unwrap());
+        assert!(s.ext_list().unwrap().is_empty() && s.ext_perms("net.t.a").unwrap().is_empty());
     }
 }

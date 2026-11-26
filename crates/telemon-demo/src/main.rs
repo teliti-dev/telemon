@@ -367,7 +367,7 @@ async fn main() -> std::io::Result<()> {
         auth.create_account(None, &NewAccount { username: user.into(), display_name: name.into(), password: "demo-telemon".into(), role_id: role }).expect("akun");
     }
 
-    let cfg = HttpConfig { static_dir: (!static_dir.is_empty()).then(|| static_dir.clone().into()), db_path: "(memori, demo)".into(), relax_update_2fa: true, ..Default::default() };
+    let cfg = HttpConfig { static_dir: (!static_dir.is_empty()).then(|| static_dir.clone().into()), db_path: "(memori, demo)".into(), relax_update_2fa: true, extensions: telemon_http::ExtConfig::from_env(std::env::temp_dir().join("telemon-demo-extensions"), true), ..Default::default() };
     eprintln!("[demo] menyiapkan server");
     let st = AppState::new(telemon.clone(), auth, cfg);
     // AI untuk mencoba UI tanpa kunci API: model offline berbasis kata kunci yang memakai alat baca asli.

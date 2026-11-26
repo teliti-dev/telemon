@@ -1,6 +1,7 @@
 import * as React from "react"
 
 import { WIDGET_BY_TYPE } from "@/components/dashboard/registry"
+import { useExtensionState } from "@/lib/extensions/registry"
 import { DEFAULT_WIDGETS, onDashboardChanged } from "@/lib/dashboard"
 import { useStore } from "@/lib/store-context"
 import type { DashboardWidget } from "@/lib/types"
@@ -18,11 +19,14 @@ export function useDashboard() {
   const { api } = useStore()
   const [widgets, setWidgets] = React.useState<DashboardWidget[] | null>(null)
   const [custom, setCustom] = React.useState(false)
+  // Widget extension terdaftar setelah extension dimuat: tunggu, lalu muat ulang bila daftarnya berubah.
+  const ext = useExtensionState()
 
   // `version` naik saat tata letak berubah dari tempat lain (usulan AI diterapkan): muat ulang.
   const [version, setVersion] = React.useState(0)
   React.useEffect(() => onDashboardChanged(() => setVersion((v) => v + 1)), [])
   React.useEffect(() => {
+    if (!ext.ready) return
     let cancelled = false
     api
       .getDashboard()
@@ -39,7 +43,7 @@ export function useDashboard() {
     return () => {
       cancelled = true
     }
-  }, [api, version])
+  }, [api, version, ext.ready, ext.version])
 
   /** Simpan untuk semua akun. Melempar galat dari server bila ditolak. */
   const save = React.useCallback(

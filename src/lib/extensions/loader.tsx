@@ -1,0 +1,95 @@
+import * as React from "react"
+
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { ExtensionBoundary } from "@/components/extension-boundary"
+import type { WidgetDef } from "@/components/dashboard/widget-types"
+import { useStore } from "@/lib/store-context"
+import { useT } from "@/lib/i18n"
+import type { ActiveExtension } from "@/lib/types"
+import { EXTENSION_API_VERSION, type ExtWidgetDef, type ExtensionModule } from "./sdk"
+import { PuzzleIcon, extWidgetType, markExtensionsReady, setExtensionWidgets } from "./registry"
+
+const DEFAULT_SIZE = { w: 8, h: 60, minW: 4, minH: 24 }
+
+function Failed({ name }: { name: string }) {
+  const t = useT()
+  return <p className="p-3 text-sm text-muted-foreground">{t("Extension {name} gagal ditampilkan", { name })}</p>
+}
+
+/** Aktifkan satu extension: impor modulnya dan kumpulkan widget yang didaftarkannya. */
+async function activateOne(ext: ActiveExtension): Promise<WidgetDef[]> {
+  const mod = (await import(/* @vite-ignore */ ext.entry)) as { default?: ExtensionModule } & Partial<ExtensionModule>
+  const activate = mod.default?.activate ?? mod.activate
+  if (typeof activate !== "function") throw new Error("no activate()") // i18n-ignore: galat pengembang, hanya di konsol
+  const registered: ExtWidgetDef[] = []
+  await activate({
+    apiVersion: EXTENSION_API_VERSION,
+    extension: { id: ext.id, version: ext.version },
+    React,
+    ui: { Card, CardHeader, CardTitle, CardContent },
+    hasPermission: (id) => ext.permissions.includes(id),
+    registerWidget: (d) => registered.push(d),
+  })
+  const defs: WidgetDef[] = []
+  for (const decl of ext.widgets) {
+    const r = registered.find((x) => x.type === decl.type)
+    if (!r) continue // hanya jenis yang dideklarasikan manifest dan didaftarkan modul
+    const size = { ...DEFAULT_SIZE, ...r.size }
+    const Inner = r.Component
+    defs.push({
+      type: extWidgetType(ext.id, decl.type),
+      title: decl.title,
+      description: decl.description || ext.name,
+      icon: PuzzleIcon,
+      w: size.w,
+      h: size.h,
+      minW: size.minW,
+      minH: size.minH,
+      resizable: true,
+      Component: ({ widget }) => (
+        <ExtensionBoundary name={ext.name} fallback={(n) => <Failed name={n} />}>
+          <Inner config={widget.config ?? {}} widgetId={widget.id} />
+        </ExtensionBoundary>
+      ),
+    })
+  }
+  return defs
+}
+
+let loading: Promise<void> | null = null
+let reloadRequested = false
+
+/** Muat ulang semua extension aktif (dipanggil saat mulai dan setelah pengaturan Extension berubah). */
+export function reloadExtensions(load: () => Promise<ActiveExtension[]>): Promise<void> {
+  if (loading) {
+    reloadRequested = true
+    return loading
+  }
+  loading = (async () => {
+    do {
+      reloadRequested = false
+      const list = await load().catch(() => [] as ActiveExtension[])
+      const defs: WidgetDef[] = []
+      for (const ext of list) {
+        try {
+          defs.push(...(await activateOne(ext)))
+        } catch (e) {
+          console.error(`Extension ${ext.id} gagal dimuat`, e)
+        }
+      }
+      setExtensionWidgets(defs)
+    } while (reloadRequested)
+  })().finally(() => {
+    loading = null
+  })
+  return loading
+}
+
+/** Memuat extension aktif sekali saat aplikasi mulai (di dalam StoreProvider). */
+export function ExtensionsLoader() {
+  const { api } = useStore()
+  React.useEffect(() => {
+    reloadExtensions(() => api.getActiveExtensions()).catch(() => markExtensionsReady())
+  }, [api])
+  return null
+}

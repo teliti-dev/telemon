@@ -5,6 +5,10 @@ import type {
   AiBudgetInput,
   AiDashboard,
   AiUiContext,
+  ActiveExtension,
+  ExtensionInfo,
+  ExtensionInspect,
+  ExtensionList,
   DashboardLayout,
   TrafficInterfaces,
   TrafficQuery,
@@ -149,6 +153,18 @@ export interface TelemonApi {
   getDashboard(): Promise<DashboardLayout | null>
   /** Simpan tata letak untuk semua akun (izin Ubah Ringkasan); null = kembali ke susunan bawaan. */
   saveDashboard(layout: DashboardLayout | null): Promise<DashboardLayout | null>
+  // Extension (ADR 0028)
+  /** Daftar extension terpasang (izin Admin Lihat). `available: false` = mati di server ini. */
+  getExtensions(): Promise<ExtensionList>
+  /** Extension aktif yang dimuat UI (semua akun yang masuk). */
+  getActiveExtensions(): Promise<ActiveExtension[]>
+  /** Periksa isi berkas .tmx tanpa memasang. */
+  inspectExtension(file: Blob): Promise<ExtensionInspect>
+  /** Pasang atau perbarui dari berkas .tmx; hasilnya mati sampai diaktifkan. */
+  installExtension(file: Blob): Promise<ExtensionInfo>
+  /** Nyalakan/matikan dan ubah izin satu extension. */
+  updateExtension(id: string, patch: { enabled?: boolean; perms?: Record<string, boolean> }): Promise<ExtensionInfo>
+  removeExtension(id: string): Promise<void>
   /** Antarmuka yang pernah terbaca pada satu router (termasuk `@pppoe`). */
   getTrafficInterfaces(routerId: string): Promise<TrafficInterfaces>
   /** Deret waktu laju bandwidth; `router: "all"` hanya untuk `@pppoe`. */

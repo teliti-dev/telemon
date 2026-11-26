@@ -9,6 +9,7 @@ import common from "./common"
 import dashboard from "./dashboard"
 import data from "./data"
 import events from "./events"
+import extensions from "./extensions"
 import lists from "./lists"
 import profiles from "./profiles"
 import routers from "./routers"
@@ -30,6 +31,7 @@ export const EN: Record<string, string> = {
   ...auth,
   ...users,
   ...events,
+  ...extensions,
   ...lists,
   ...profiles,
   ...routers,

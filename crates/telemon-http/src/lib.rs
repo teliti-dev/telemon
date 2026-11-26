@@ -6,6 +6,7 @@ mod api;
 mod dashboard;
 mod dto;
 mod error;
+mod extensions;
 mod guard;
 mod share;
 mod state;
@@ -30,7 +31,7 @@ pub use error::ApiError;
 pub use guard::{COOKIE, DESKTOP_COOKIE, client_info, origin_ok};
 pub use share::{DEFAULT_LAN_PORT, Tunnel};
 pub use update::{KEEP_BACKUPS, UpdateInfo, Updater, prune_backups};
-pub use state::{AppState, HttpConfig, PlanCache, RateLimiter};
+pub use state::{AppState, ExtConfig, HttpConfig, PlanCache, RateLimiter};
 
 /// Router axum lengkap (API + UI) untuk akses jarak jauh (LAN/Publik; login akun).
 /// Sambungkan dengan `into_make_service_with_connect_info::<SocketAddr>()`.

@@ -5,6 +5,10 @@ import type {
   AiChatSummary,
   AiDashboard,
   AiUiContext,
+  ActiveExtension,
+  ExtensionInfo,
+  ExtensionInspect,
+  ExtensionList,
   DashboardLayout,
   TrafficInterfaces,
   TrafficQuery,
@@ -119,9 +123,13 @@ export class HttpApi implements TelemonApi {
 
   // ---------------- dasar ----------------
 
-  private async req<T>(method: string, path: string, body?: unknown, opts: { auth?: boolean; keepNulls?: boolean } = {}): Promise<T> {
+  private async req<T>(method: string, path: string, body?: unknown, opts: { auth?: boolean; keepNulls?: boolean; raw?: Blob } = {}): Promise<T> {
     const init: RequestInit = { method, headers: body === undefined ? {} : { "Content-Type": "application/json" }, credentials: "same-origin" }
     if (body !== undefined) init.body = JSON.stringify(body)
+    if (opts.raw) {
+      init.headers = { "Content-Type": "application/octet-stream" }
+      init.body = opts.raw
+    }
     const res = await this.f(this.base + path, init)
     if (res.status === 204) return undefined as T
     let data: unknown = null
@@ -536,6 +544,25 @@ export class HttpApi implements TelemonApi {
   getTrafficSeries(q: TrafficQuery) {
     const qs = new URLSearchParams({ router: q.router, iface: q.iface, range: q.range })
     return this.req<TrafficSeries>("GET", `/api/traffic/series?${qs}`)
+  }
+  getExtensions() {
+    return this.req<ExtensionList>("GET", "/api/extensions")
+  }
+  async getActiveExtensions() {
+    const r = await this.req<{ extensions: ActiveExtension[] }>("GET", "/api/extensions/active")
+    return r.extensions
+  }
+  inspectExtension(file: Blob) {
+    return this.req<ExtensionInspect>("POST", "/api/extensions/inspect", undefined, { raw: file })
+  }
+  installExtension(file: Blob) {
+    return this.req<ExtensionInfo>("POST", "/api/extensions", undefined, { raw: file })
+  }
+  updateExtension(id: string, patch: { enabled?: boolean; perms?: Record<string, boolean> }) {
+    return this.req<ExtensionInfo>("PATCH", `/api/extensions/${encodeURIComponent(id)}`, patch)
+  }
+  async removeExtension(id: string) {
+    await this.req("DELETE", `/api/extensions/${encodeURIComponent(id)}`)
   }
   async getDashboard() {
     const r = await this.req<{ layout?: DashboardLayout | null }>("GET", "/api/dashboard", undefined, { keepNulls: true })

@@ -543,3 +543,88 @@ export interface UpdateStatus {
   available?: { version: string; notes?: string; date?: string }
   error?: string
 }
+
+// ---- Extension (ADR 0028) ----
+export interface ExtensionPermission {
+  id: string
+  required: boolean
+  sensitive: boolean
+  description: string
+  granted: boolean
+}
+
+export interface ExtensionWidgetDecl {
+  type: string
+  title: string
+  description: string
+}
+
+export interface ExtensionRequirement {
+  id: string
+  /** Rentang versi yang dibutuhkan, mis. ^1.2.0. */
+  needs: string
+  optional: boolean
+  state: "ok" | "missing" | "incompatible"
+  installed?: string
+}
+
+export interface ExtensionInfo {
+  id: string
+  name: string
+  version: string
+  publisher: string
+  description: string
+  tier: "official" | "public"
+  signed: boolean
+  enabled: boolean
+  /** disabled (mati), limited (izin wajib dimatikan), ok, broken (manifest rusak). */
+  status: "disabled" | "limited" | "incompatible" | "ok" | "broken"
+  widgets: ExtensionWidgetDecl[]
+  permissions: ExtensionPermission[]
+  /** Rentang versi Telemon yang didukung (kosong = tidak dibatasi). */
+  telemon?: string
+  requires: ExtensionRequirement[]
+  /** Syarat wajib yang belum terpenuhi (id extension): tidak dimuat. */
+  blockedBy: string[]
+  /** Extension lain yang membutuhkan ini. */
+  dependents: string[]
+  installedAt: number
+  updatedAt: number
+}
+
+export interface ExtensionList {
+  /** false = extension mati di server ini (belum dinyalakan lewat TELEMON_EXTENSIONS). */
+  available: boolean
+  extensions: ExtensionInfo[]
+}
+
+/** Isi paket sebelum dipasang (hasil periksa). */
+export interface ExtensionPackageSummary {
+  id: string
+  name: string
+  version: string
+  publisher: string
+  description: string
+  tier: "official" | "public"
+  signed: boolean
+  widgets: ExtensionWidgetDecl[]
+  permissions: Omit<ExtensionPermission, "granted">[]
+}
+
+export interface ExtensionInspect {
+  package: ExtensionPackageSummary
+  installedVersion?: string
+  requires: ExtensionRequirement[]
+  /** Penjelasan masalah kompatibilitas; kosong = boleh dipasang. */
+  problemTexts: string[]
+}
+
+/** Extension aktif yang dimuat UI. */
+export interface ActiveExtension {
+  id: string
+  name: string
+  version: string
+  entry: string
+  widgets: ExtensionWidgetDecl[]
+  permissions: string[]
+}

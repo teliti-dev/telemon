@@ -7,6 +7,10 @@ import type {
   AiBudgetInput,
   AiDashboard,
   AiUiContext,
+  ActiveExtension,
+  ExtensionInfo,
+  ExtensionInspect,
+  ExtensionList,
   DashboardLayout,
   TrafficInterfaces,
   TrafficPoint,
@@ -1207,6 +1211,29 @@ export class MockApi implements TelemonApi {
       }
     }
     return { points, from, to, bucketSeconds: Math.round(bucket / 1000), intervalSeconds, enabled }
+  }
+
+  // Extension: data contoh tidak memuat extension (butuh server, ADR 0028).
+  async getExtensions(): Promise<ExtensionList> {
+    return { available: false, extensions: [] }
+  }
+  async getActiveExtensions(): Promise<ActiveExtension[]> {
+    return []
+  }
+  private noExtensions(): never {
+    throw new Error(t("Extension tidak tersedia pada data contoh"))
+  }
+  async inspectExtension(): Promise<ExtensionInspect> {
+    return this.noExtensions()
+  }
+  async installExtension(): Promise<ExtensionInfo> {
+    return this.noExtensions()
+  }
+  async updateExtension(): Promise<ExtensionInfo> {
+    return this.noExtensions()
+  }
+  async removeExtension(): Promise<void> {
+    return this.noExtensions()
   }
 
   async getDashboard(): Promise<DashboardLayout | null> {
