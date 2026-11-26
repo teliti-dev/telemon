@@ -2670,6 +2670,8 @@ mod extensions {
         t.call(Method::PUT, &format!("/api/routers/{rid}/ssh"), Some(json!({ "port": port })), Some(&a), &[], LAN).await;
         let g = t.get(&format!("/api/routers/{rid}/ssh"), Some(&a)).await;
         assert_eq!((g.status, g.body["presented"].as_str(), g.body["pinned"].is_null()), (StatusCode::OK, Some(fp.as_str()), true), "{:?}", g.body);
+        let other = t.get(&format!("/api/routers/{rid}/ssh?port=1"), Some(&a)).await;
+        assert_eq!((other.status, other.body["presented"].is_null(), other.body["error"].is_string(), other.body["savedPort"].as_u64()), (StatusCode::OK, true, true, Some(port as u64)), "port lain diperiksa tanpa mengubah yang tersimpan");
         assert_eq!(t.get(&format!("/api/routers/{rid}/ssh"), Some(&p)).await.status, StatusCode::FORBIDDEN, "peran tanpa Router Ubah");
         let bad = t.call(Method::PUT, &format!("/api/routers/{rid}/ssh"), Some(json!({ "fingerprint": "SHA256:salah" })), Some(&a), &[], LAN).await;
         assert_eq!((bad.status, bad.code()), (StatusCode::CONFLICT, "ssh_host_key_changed"));

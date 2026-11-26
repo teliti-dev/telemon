@@ -58,11 +58,18 @@ fn router_host<C: Connector>(st: &St<C>, id: &str) -> ApiResult<(String, u16, Op
     Ok((rec.host, port, pin, rec.name))
 }
 
-async fn pin_get<C: Connector>(State(st): State<St<C>>, c: Caller, Path(id): Path<String>) -> ApiResult<Json<Value>> {
+#[derive(Deserialize)]
+struct PortQ {
+    /// Port lain untuk diperiksa sebelum disematkan (bawaan: port tersimpan).
+    port: Option<u16>,
+}
+
+async fn pin_get<C: Connector>(State(st): State<St<C>>, c: Caller, Path(id): Path<String>, Query(q): Query<PortQ>) -> ApiResult<Json<Value>> {
     st.auth.authorize(Some(&c.session), Resource::Router, Level::Update).map_err(ApiError::from)?;
-    let (host, port, pin, _) = router_host(&st, &id)?;
+    let (host, saved_port, pin, _) = router_host(&st, &id)?;
+    let port = q.port.filter(|p| *p > 0).unwrap_or(saved_port);
     let presented = telemon_ssh::host_key_fingerprint(&host, port).await;
-    Ok(Json(json!({ "port": port, "pinned": pin, "presented": presented.as_ref().ok(), "error": presented.err().map(|e| e.to_string()) })))
+    Ok(Json(json!({ "port": port, "savedPort": saved_port, "pinned": pin, "presented": presented.as_ref().ok(), "error": presented.err().map(|e| e.to_string()) })))
 }
 
 #[derive(Deserialize)]
