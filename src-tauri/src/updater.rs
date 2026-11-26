@@ -35,11 +35,18 @@ impl Updater for TauriUpdater {
   }
 
   fn check(&self, channel: &str) -> Pin<Box<dyn Future<Output = Result<Option<UpdateInfo>, String>> + Send + '_>> {
-    let url = if channel == "rc" { RC } else { STABLE };
+    let is_rc = channel == "rc";
+    let url = if is_rc { RC } else { STABLE };
     Box::pin(async move {
       let url: url::Url = url.parse().map_err(|e: url::ParseError| e.to_string())?;
       let updater = self.app.updater_builder().endpoints(vec![url]).map_err(|e| e.to_string())?.build().map_err(|e| e.to_string())?;
-      let found = updater.check().await.map_err(|e| e.to_string())?;
+      let found = match updater.check().await {
+        Ok(f) => f,
+        // GitHub `latest` tidak pernah menunjuk pra-rilis: selama belum ada rilis stabil, manifest kanal stabil
+        // memang 404. Itu berarti "belum ada pembaruan stabil", bukan galat.
+        Err(tauri_plugin_updater::Error::ReleaseNotFound) if !is_rc => None,
+        Err(e) => return Err(e.to_string()),
+      };
       let info = found.as_ref().map(|u| UpdateInfo { version: u.version.clone(), notes: u.body.clone(), date: u.date.map(|d| d.to_string()) });
       *self.found.lock().await = found;
       Ok(info)
