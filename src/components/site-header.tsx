@@ -129,16 +129,25 @@ export function SiteHeader({ title }: { title: string }) {
             {items.map((item, index) => {
               const active = isNavActive(item.page, page)
               const n = badges[item.page]
+              // Desktop: kotak Cari tepat di kiri kelompok Berbagi/Admin/Pengaturan/Tentang (rata kanan bersama kelompok itu).
+              const search = isDesktop && index === firstEnd ? <SearchSlot key="search" /> : null
               if (item.page === "pengaturan") {
-                return <SettingsMenu key={item.page} item={item} active={active} first={index === firstEnd} />
+                return (
+                  <React.Fragment key={item.page}>
+                    {search}
+                    <SettingsMenu item={item} active={active} first={index === firstEnd && !isDesktop} />
+                  </React.Fragment>
+                )
               }
               return (
+                <React.Fragment key={item.page}>
+                {search}
                 <a
                   key={item.page}
                   href={href(item.page)}
                   aria-current={active ? "page" : undefined}
                   title={t(item.label /* i18n-ignore: kunci tk */)}
-                  className={cn(navClass(active), index === firstEnd && "ml-auto")}
+                  className={cn(navClass(active), index === firstEnd && !isDesktop && "ml-auto")}
                 >
                   <item.icon className="size-4" />
                   <span className={labelClass}>{t(item.label /* i18n-ignore: kunci tk */)}</span>
@@ -151,13 +160,23 @@ export function SiteHeader({ title }: { title: string }) {
                     </span>
                   ) : null}
                 </a>
+                </React.Fragment>
               )
             })}
+            {isDesktop && firstEnd === -1 && <SearchSlot />}
           </nav>
-          {isDesktop && <SearchTrigger />}
         </div>
       </div>
     </>
+  )
+}
+
+/** Kotak Cari di baris menu desktop; `ml-auto` mendorongnya (dan kelompok kanan di sebelahnya) ke kanan. */
+function SearchSlot() {
+  return (
+    <span className="ml-auto mr-1 flex h-9 items-center self-center pb-px">
+      <SearchTrigger />
+    </span>
   )
 }
 
@@ -176,8 +195,8 @@ function LivePill() {
   )
 }
 
-/** Di lebar md (960 sampai 1023 px) label menu disembunyikan (hanya ikon dengan tooltip) supaya kotak Cari muat. */
-const labelClass = "max-lg:hidden"
+/** Di bawah lebar xl (1280 px) label menu disembunyikan (hanya ikon dengan tooltip) supaya kotak Cari muat. */
+const labelClass = "max-xl:hidden"
 
 const navClass = (active: boolean) =>
   cn(
