@@ -46,4 +46,5 @@ export default {
   "Membutuhkan": "Requires",
   "Tidak bisa dipasang": "Cannot be installed",
   "Versi Telemon ini di luar rentang yang didukung extension ({range}), jadi tidak dimuat. Perbarui extension.": "This Telemon version is outside the range the extension supports ({range}), so it is not loaded. Update the extension.",
+  "Hapus juga data extension ini (tabel di database). Tanpa centang, data disimpan dan dipakai lagi bila dipasang ulang.": "Also delete this extension's data (database tables). Unchecked, the data is kept and reused if it is installed again.",
 } as Record<string, string>

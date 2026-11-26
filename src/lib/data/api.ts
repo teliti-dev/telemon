@@ -164,7 +164,8 @@ export interface TelemonApi {
   installExtension(file: Blob): Promise<ExtensionInfo>
   /** Nyalakan/matikan dan ubah izin satu extension. */
   updateExtension(id: string, patch: { enabled?: boolean; perms?: Record<string, boolean> }): Promise<ExtensionInfo>
-  removeExtension(id: string): Promise<void>
+  /** Hapus extension; `deleteData` juga menghapus tabel dan catatan migrasinya (bawaan: data disimpan). */
+  removeExtension(id: string, opts?: { deleteData?: boolean }): Promise<void>
   /** Antarmuka yang pernah terbaca pada satu router (termasuk `@pppoe`). */
   getTrafficInterfaces(routerId: string): Promise<TrafficInterfaces>
   /** Deret waktu laju bandwidth; `router: "all"` hanya untuk `@pppoe`. */

@@ -2013,6 +2013,86 @@ mod extensions {
         let _ = std::fs::remove_dir_all(&d);
     }
 
+    fn pkg_migr(version: &str, migrations: &[(&str, &str)]) -> Vec<u8> {
+        let m = format!(r#"{{"id":"net.teliti.data","name":"Data","version":"{version}","apiVersion":1,"publisher":"Teliti"}}"#);
+        let mut files: Vec<(String, Vec<u8>)> = vec![("manifest.json".into(), m.into_bytes())];
+        for (n, body) in migrations {
+            files.push((format!("migrations/{n}"), body.as_bytes().to_vec()));
+        }
+        pack(&files, Some(OFFICIAL)).unwrap()
+    }
+
+    const M1: &str = r#"{"ops":[{"op":"create_table","table":"x_net_teliti_data__items","columns":[{"name":"id","type":"integer","primaryKey":true,"autoIncrement":true},{"name":"label","type":"text","notNull":true}]}]}"#;
+    const M2: &str = r#"{"ops":[{"op":"add_column","table":"x_net_teliti_data__items","column":{"name":"size","type":"integer","default":0}}]}"#;
+
+    #[tokio::test]
+    async fn migrasi_database_extension() {
+        let d = dir();
+        let t = harness_with(on(&d));
+        t.account("admin", "role-admin");
+        let c = t.login("admin").await;
+        let id = "net.teliti.data";
+        let tables = |t: &T| t.telemon.with_store(|s| s.ext_table_names("x_net_teliti_data__").unwrap());
+        let cols = |t: &T| t.telemon.with_store(|s| s.ext_table_names("x_net_teliti_data__").unwrap().len());
+
+        // Pasang: tabel dibuat, catatan migrasi ada, cadangan dibuat sebelum migrasi.
+        let r = install(&t, pkg_migr("1.0.0", &[("0001-init.json", M1)]), &c).await;
+        assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+        assert_eq!((tables(&t), r.body["hasData"].as_bool()), (vec!["x_net_teliti_data__items".to_string()], Some(true)));
+        let backups: Vec<_> = std::fs::read_dir(d.join("backups")).unwrap().collect();
+        assert_eq!(backups.len(), 1, "satu cadangan sebelum migrasi");
+
+        // Isi data, lalu perbarui dengan migrasi baru: data tetap, kolom bertambah.
+        t.telemon.with_store(|s| s.ext_apply_migrations(id, 1, &[]).unwrap());
+        let rows_before = t.telemon.with_store(|s| s.ext_applied_migrations(id).unwrap().len());
+        assert_eq!(rows_before, 1);
+        let r = install(&t, pkg_migr("1.1.0", &[("0001-init.json", M1), ("0002-size.json", M2)]), &c).await;
+        assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+        assert_eq!(t.telemon.with_store(|s| s.ext_applied_migrations(id).unwrap().len()), 2);
+        // Pasang ulang versi yang sama: tidak ada migrasi baru, tidak ada cadangan baru.
+        let n = std::fs::read_dir(d.join("backups")).unwrap().count();
+        install(&t, pkg_migr("1.1.0", &[("0001-init.json", M1), ("0002-size.json", M2)]), &c).await;
+        assert_eq!(std::fs::read_dir(d.join("backups")).unwrap().count(), n);
+
+        // Migrasi terapan diedit: ditolak. Paket lebih lama daripada data: ditolak. Tak ada yang berubah.
+        let edited = M1.replace("label", "title");
+        let r = install(&t, pkg_migr("1.2.0", &[("0001-init.json", &edited), ("0002-size.json", M2)]), &c).await;
+        assert_eq!((r.status, r.code()), (StatusCode::CONFLICT, "migration_conflict"));
+        assert!(r.body["error"]["message"].as_str().unwrap().contains("berubah"));
+        let r = install(&t, pkg_migr("1.0.0", &[("0001-init.json", M1)]), &c).await;
+        assert_eq!((r.status, r.code()), (StatusCode::CONFLICT, "migration_conflict"), "penurunan versi data");
+        let ver = t.get("/api/extensions", Some(&c)).await.body["extensions"][0]["version"].clone();
+        assert_eq!(ver, "1.1.0", "versi tidak berubah oleh pemasangan yang ditolak");
+
+        // Migrasi yang melanggar namespace ditolak sebelum menyentuh apa pun (di tingkat paket).
+        let evil = r#"{"ops":[{"op":"drop_table","table":"accounts"}]}"#;
+        let r = install(&t, pkg_migr("1.3.0", &[("0001-init.json", M1), ("0002-size.json", M2), ("0003-evil.json", evil)]), &c).await;
+        assert_eq!(r.status, StatusCode::BAD_REQUEST);
+        assert!(t.telemon.with_store(|s| s.ext_list().is_ok()));
+
+        // Migrasi yang gagal di database (kolom sudah ada): dibatalkan, tabel baru ikut batal, versi tetap.
+        let dup = r#"{"ops":[{"op":"create_table","table":"x_net_teliti_data__more","columns":[{"name":"id","type":"integer"}]},{"op":"add_column","table":"x_net_teliti_data__items","column":{"name":"size","type":"integer","default":0}}]}"#;
+        let r = install(&t, pkg_migr("1.3.0", &[("0001-init.json", M1), ("0002-size.json", M2), ("0003-dup.json", dup)]), &c).await;
+        assert_eq!((r.status, r.code()), (StatusCode::UNPROCESSABLE_ENTITY, "migration_failed"), "{:?}", r.body);
+        assert_eq!(cols(&t), 1, "tabel more tidak tersisa");
+        assert_eq!(t.get("/api/extensions", Some(&c)).await.body["extensions"][0]["version"], "1.1.0");
+
+        // Hapus tanpa data: tabel dan catatan tetap; pasang ulang tidak menjalankan migrasi lagi.
+        let r = t.call(Method::DELETE, &format!("/api/extensions/{id}"), None, Some(&c), &[], LAN).await;
+        assert_eq!((r.status, r.body["dataDeleted"].as_bool()), (StatusCode::OK, Some(false)));
+        assert_eq!(tables(&t).len(), 1);
+        let r = install(&t, pkg_migr("1.1.0", &[("0001-init.json", M1), ("0002-size.json", M2)]), &c).await;
+        assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+        assert_eq!(t.telemon.with_store(|s| s.ext_applied_migrations(id).unwrap().len()), 2);
+
+        // Hapus dengan data: tabel dan catatan hilang; tabel inti utuh.
+        let r = t.call(Method::DELETE, &format!("/api/extensions/{id}?data=delete"), None, Some(&c), &[], LAN).await;
+        assert_eq!((r.status, r.body["dataDeleted"].as_bool(), r.body["tablesDropped"].as_u64()), (StatusCode::OK, Some(true), Some(1)));
+        assert!(tables(&t).is_empty());
+        assert!(t.telemon.with_store(|s| s.ext_applied_migrations(id).unwrap().is_empty()));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
     #[tokio::test]
     async fn izin_akun_dan_akses_publik() {
         let d = dir();

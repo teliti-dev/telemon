@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::body::Body;
-use axum::extract::{DefaultBodyLimit, Path, State};
+use axum::extract::{DefaultBodyLimit, Path, Query, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::Response;
 use axum::routing::{get, post};
@@ -22,7 +22,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use telemon_core::auth::{Level, Resource, Via};
 use telemon_core::{AuditEntry, AuditOutcome, Change, Connector, StoredExtension};
-use telemon_ext::{Limits, Manifest, Package, Problem, Tier, check_install, dep_status, dependents_of, host_compatible, valid_id};
+use telemon_ext::{Dialect, Limits, Manifest, Package, Problem, Tier, check_install, dep_status, dependents_of, host_compatible, migration_sql, namespace, parse_migrations, plan_migrations, valid_id};
 
 use crate::error::{ApiError, ApiResult};
 use crate::guard::Caller;
@@ -140,6 +140,7 @@ async fn install<C: Connector>(State(st): State<St<C>>, c: Caller, body: Bytes) 
     let manifest = serde_json::to_string(&p.manifest).map_err(ApiError::internal)?;
     let prev = st.telemon.with_store(|s| s.ext_get(&id)).map_err(ApiError::internal)?;
     std::fs::create_dir_all(&dir).map_err(ApiError::internal)?;
+    run_migrations(&st, &dir, &p, &id, now)?;
     let tmp = dir.join(format!(".{id}.tmx.part"));
     std::fs::write(&tmp, &body).map_err(ApiError::internal)?;
     std::fs::rename(&tmp, path_of(&dir, &id)).map_err(ApiError::internal)?;
@@ -162,6 +163,28 @@ async fn install<C: Connector>(State(st): State<St<C>>, c: Caller, body: Bytes) 
     Ok(Json(view(&st, &id)?))
 }
 
+/// Terapkan migrasi database paket yang belum terapan (ADR 0028). Urutan: periksa rencana (migrasi yang sudah
+/// terapan tidak boleh berubah, data tidak boleh lebih baru daripada paket), cadangkan basis data, lalu jalankan
+/// semuanya dalam satu transaksi. Gagal = tidak ada perubahan dan pemasangan dibatalkan.
+fn run_migrations<C: Connector>(st: &St<C>, dir: &std::path::Path, p: &Package, id: &str, now: i64) -> ApiResult<()> {
+    let all = parse_migrations(id, &p.files).map_err(|e| ApiError::new(StatusCode::CONFLICT, "migration_conflict", e))?;
+    let applied = st.telemon.with_store(|s| s.ext_applied_migrations(id)).map_err(ApiError::internal)?;
+    let pending = plan_migrations(&applied, &all).map_err(|e| ApiError::new(StatusCode::CONFLICT, "migration_conflict", e))?;
+    if pending.is_empty() {
+        return Ok(());
+    }
+    let items: Vec<(u32, String, String, Vec<String>)> = pending.iter().map(|m| (m.version, m.name.clone(), m.checksum.clone(), migration_sql(m, Dialect::Sqlite))).collect();
+    let backups = dir.join("backups");
+    std::fs::create_dir_all(&backups).map_err(ApiError::internal)?;
+    let dest = backups.join(format!("before-{id}-{}-{now}.db", p.manifest.version));
+    st.telemon
+        .with_store(|s| -> Result<(), String> {
+            e(s.backup_to(&dest))?;
+            e(s.ext_apply_migrations(id, now, &items))
+        })
+        .map_err(|m| ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "migration_failed", format!("Migrasi database gagal dan dibatalkan (cadangan: {}): {m}", dest.display())))
+}
+
 /// Status: `disabled` (mati), `limited` (izin wajib dimatikan), `ok`.
 fn status(e: &StoredExtension, m: &Manifest, perms: &[(String, bool)], blocked: &[String], host: &str) -> &'static str {
     if !e.enabled {
@@ -178,7 +201,7 @@ fn status(e: &StoredExtension, m: &Manifest, perms: &[(String, bool)], blocked: 
     if m.permissions.iter().any(|d| d.required && !granted(&d.id)) { "limited" } else { "ok" }
 }
 
-fn item(e: &StoredExtension, perms: &[(String, bool)], all: &[StoredExtension], host: &str) -> Value {
+fn item(e: &StoredExtension, perms: &[(String, bool)], all: &[StoredExtension], host: &str, migrated: usize) -> Value {
     let m: Option<Manifest> = serde_json::from_str(&e.manifest).ok();
     let Some(m) = m else {
         return json!({ "id": e.id, "version": e.version, "tier": e.tier, "enabled": e.enabled, "status": "broken" });
@@ -190,7 +213,7 @@ fn item(e: &StoredExtension, perms: &[(String, bool)], all: &[StoredExtension], 
     json!({
         "id": e.id, "name": m.name, "version": e.version, "publisher": m.publisher, "description": m.description,
         "tier": e.tier, "signed": e.signed, "enabled": e.enabled, "status": status(e, &m, perms, &blocked, host),
-        "telemon": m.telemon, "requires": dep_status(&m, &versions(&others)), "blockedBy": blocked, "dependents": dependents,
+        "hasData": migrated > 0, "telemon": m.telemon, "requires": dep_status(&m, &versions(&others)), "blockedBy": blocked, "dependents": dependents,
         "widgets": m.contributes.widgets, "permissions": permissions, "installedAt": e.installed_at, "updatedAt": e.updated_at,
     })
 }
@@ -202,7 +225,8 @@ fn view<C: Connector>(st: &St<C>, id: &str) -> ApiResult<Value> {
         .map_err(ApiError::internal)?;
     let e = e.ok_or_else(ApiError::not_found)?;
     let all = all_rows(st)?;
-    Ok(item(&e, &perms, &all, &st.cfg.host_version))
+    let migrated = st.telemon.with_store(|s| s.ext_applied_migrations(id)).map_err(ApiError::internal)?.len();
+    Ok(item(&e, &perms, &all, &st.cfg.host_version, migrated))
 }
 
 async fn list<C: Connector>(State(st): State<St<C>>, c: Caller) -> ApiResult<Json<Value>> {
@@ -222,7 +246,13 @@ async fn list<C: Connector>(State(st): State<St<C>>, c: Caller) -> ApiResult<Jso
         })
         .map_err(ApiError::internal)?;
     let all: Vec<StoredExtension> = rows.iter().map(|(e, _)| e.clone()).collect();
-    let extensions: Vec<Value> = rows.iter().map(|(e, p)| item(e, p, &all, &st.cfg.host_version)).collect();
+    let extensions: Vec<Value> = rows
+        .iter()
+        .map(|(e, p)| {
+            let migrated = st.telemon.with_store(|s| s.ext_applied_migrations(&e.id)).map(|v| v.len()).unwrap_or(0);
+            item(e, p, &all, &st.cfg.host_version, migrated)
+        })
+        .collect();
     Ok(Json(json!({ "available": true, "extensions": extensions })))
 }
 
@@ -302,7 +332,13 @@ async fn patch<C: Connector>(State(st): State<St<C>>, c: Caller, Path(id): Path<
     Ok(Json(view(&st, &id)?))
 }
 
-async fn remove<C: Connector>(State(st): State<St<C>>, c: Caller, Path(id): Path<String>) -> ApiResult<Json<Value>> {
+#[derive(Deserialize)]
+struct RemoveQ {
+    /// `delete` = hapus juga tabel dan catatan migrasi extension; selain itu data disimpan (bawaan).
+    data: Option<String>,
+}
+
+async fn remove<C: Connector>(State(st): State<St<C>>, c: Caller, Path(id): Path<String>, Query(q): Query<RemoveQ>) -> ApiResult<Json<Value>> {
     manage(&st, &c, Level::Update)?;
     let dir = cfg(&st)?.dir.clone();
     if !valid_id(&id) {
@@ -314,11 +350,22 @@ async fn remove<C: Connector>(State(st): State<St<C>>, c: Caller, Path(id): Path
     if !dep.is_empty() {
         return Err(ApiError::new(StatusCode::CONFLICT, "has_dependents", format!("Masih dibutuhkan oleh: {}. Hapus extension itu dulu.", dep.join(", "))));
     }
-    st.telemon.with_store(|s| s.ext_delete(&id)).map_err(ApiError::internal)?;
+    let drop_data = q.data.as_deref() == Some("delete");
+    let dropped = st
+        .telemon
+        .with_store(|s| -> Result<usize, String> {
+            e(s.ext_delete(&id))?;
+            if drop_data { e(s.ext_drop_data(&id, &namespace(&id))) } else { Ok(0) }
+        })
+        .map_err(ApiError::internal)?;
     let _ = std::fs::remove_file(path_of(&dir, &id));
     st.ext_cache.lock().expect("lock").remove(&id);
-    audit(&st, &c, "extension.uninstall", &id, format!("Hapus extension {}", id), vec![Change { field: "versi".into(), from: Some(cur.version), to: None }]);
-    Ok(Json(json!({ "removed": true })))
+    let mut changes = vec![Change { field: "versi".into(), from: Some(cur.version), to: None }];
+    if drop_data {
+        changes.push(Change { field: "data".into(), from: Some(format!("{dropped} tabel")), to: None });
+    }
+    audit(&st, &c, "extension.uninstall", &id, format!("Hapus extension {}", id), changes);
+    Ok(Json(json!({ "removed": true, "dataDeleted": drop_data, "tablesDropped": dropped })))
 }
 
 /// Muat paket dari disk dan verifikasi ulang (cache per versi).

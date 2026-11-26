@@ -7,6 +7,8 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
@@ -253,6 +255,7 @@ export function SettingsExtensionsPage() {
   const [inspect, setInspect] = React.useState<ExtensionInspect | null>(null)
   const [file, setFile] = React.useState<File | null>(null)
   const [removing, setRemoving] = React.useState<ExtensionInfo | null>(null)
+  const [deleteData, setDeleteData] = React.useState(false)
   const input = React.useRef<HTMLInputElement>(null)
 
   const load = React.useCallback(() => {
@@ -344,12 +347,29 @@ export function SettingsExtensionsPage() {
         open={!!removing}
         onOpenChange={(o) => !o && setRemoving(null)}
         title={t("Hapus extension?")}
-        description={removing ? t("{name} dan pengaturannya dihapus. Widget-nya hilang dari Ringkasan.", { name: removing.name }) : ""}
+        description={
+          removing ? (
+            <div className="grid gap-3">
+              <p>{t("{name} dan pengaturannya dihapus. Widget-nya hilang dari Ringkasan.", { name: removing.name })}</p>
+              {removing.hasData && (
+                <div className="flex items-start gap-2">
+                  <Checkbox id="ext-del-data" checked={deleteData} onCheckedChange={(v) => setDeleteData(v === true)} />
+                  <Label htmlFor="ext-del-data" className="text-sm font-normal">
+                    {t("Hapus juga data extension ini (tabel di database). Tanpa centang, data disimpan dan dipakai lagi bila dipasang ulang.")}
+                  </Label>
+                </div>
+              )}
+            </div>
+          ) : (
+            ""
+          )
+        }
         confirmLabel={t("Hapus")}
         destructive
         onConfirm={async () => {
           if (!removing) return
-          await api.removeExtension(removing.id)
+          await api.removeExtension(removing.id, { deleteData: removing.hasData && deleteData })
+          setDeleteData(false)
           setList((l) => (l ? { ...l, extensions: l.extensions.filter((x) => x.id !== removing.id) } : l))
           await reloadExtensions(() => api.getActiveExtensions())
         }}

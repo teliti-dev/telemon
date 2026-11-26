@@ -588,6 +588,8 @@ export interface ExtensionInfo {
   blockedBy: string[]
   /** Extension lain yang membutuhkan ini. */
   dependents: string[]
+  /** Punya data sendiri (migrasi database sudah terapan). */
+  hasData: boolean
   installedAt: number
   updatedAt: number
 }

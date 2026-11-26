@@ -234,6 +234,15 @@ CREATE TABLE extension_perms (
   granted INTEGER NOT NULL,
   PRIMARY KEY (ext_id, perm)
 );
+", "
+CREATE TABLE extension_migrations (
+  ext_id TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  checksum TEXT NOT NULL,
+  applied_at INTEGER NOT NULL,
+  PRIMARY KEY (ext_id, version)
+);
 "];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -1162,6 +1171,48 @@ impl Store {
         Ok(self.conn.execute("DELETE FROM extensions WHERE id=?1", params![id])? > 0)
     }
 
+    /// Migrasi extension yang sudah terapan: (versi, checksum), urut versi.
+    pub fn ext_applied_migrations(&self, id: &str) -> Result<Vec<(u32, String)>> {
+        let mut st = self.conn.prepare("SELECT version, checksum FROM extension_migrations WHERE ext_id=?1 ORDER BY version")?;
+        let rows = st.query_map(params![id], |r| Ok((r.get::<_, i64>(0)? as u32, r.get::<_, String>(1)?)))?;
+        rows.collect()
+    }
+
+    /// Terapkan migrasi `(versi, nama, checksum, pernyataan SQL)` dalam **satu transaksi**: gagal di mana pun
+    /// berarti tidak ada yang berubah. SQL berasal dari `telemon-ext` yang sudah memvalidasi namespace.
+    pub fn ext_apply_migrations(&mut self, id: &str, now: i64, items: &[(u32, String, String, Vec<String>)]) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        for (version, name, checksum, sql) in items {
+            for stmt in sql {
+                tx.execute_batch(stmt)?;
+            }
+            tx.execute("INSERT INTO extension_migrations (ext_id, version, name, checksum, applied_at) VALUES (?1,?2,?3,?4,?5)", params![id, *version as i64, name, checksum, now])?;
+        }
+        tx.commit()
+    }
+
+    /// Tabel milik extension (berawalan `ns`, mis. `x_net_teliti_backup__`).
+    pub fn ext_table_names(&self, ns: &str) -> Result<Vec<String>> {
+        let mut st = self.conn.prepare("SELECT name FROM sqlite_master WHERE type='table' AND substr(name, 1, length(?1)) = ?1 ORDER BY name")?;
+        let rows = st.query_map(params![ns], |r| r.get::<_, String>(0))?;
+        rows.collect()
+    }
+
+    /// Hapus semua tabel extension dan catatan migrasinya. `ns` harus berbentuk `x_...__`.
+    pub fn ext_drop_data(&mut self, id: &str, ns: &str) -> Result<usize> {
+        if !(ns.starts_with("x_") && ns.ends_with("__") && ns.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')) {
+            return Err(rusqlite::Error::InvalidParameterName(format!("namespace tidak valid: {ns}")));
+        }
+        let tables = self.ext_table_names(ns)?;
+        let tx = self.conn.transaction()?;
+        for t in &tables {
+            tx.execute_batch(&format!("DROP TABLE IF EXISTS {t}"))?;
+        }
+        tx.execute("DELETE FROM extension_migrations WHERE ext_id=?1", params![id])?;
+        tx.commit()?;
+        Ok(tables.len())
+    }
+
     // ---------------- riwayat perubahan ----------------
 
     pub fn record_audit(&mut self, e: &AuditEntry) -> Result<i64> {
@@ -2027,5 +2078,27 @@ mod ext_tests {
         assert_eq!(s.ext_perms("net.t.a").unwrap(), vec![("data.events".to_string(), false)]);
         assert!(s.ext_delete("net.t.a").unwrap());
         assert!(s.ext_list().unwrap().is_empty() && s.ext_perms("net.t.a").unwrap().is_empty());
+    }
+
+    #[test]
+    fn extension_migrations_are_transactional_and_data_can_be_dropped() {
+        let mut s = Store::open_in_memory().unwrap();
+        let ns = "x_net_t_a__";
+        let m = |v: u32, sql: &[&str]| (v, format!("m{v}"), format!("sum{v}"), sql.iter().map(|x| x.to_string()).collect::<Vec<_>>());
+        s.ext_apply_migrations("net.t.a", 1, &[m(1, &["CREATE TABLE x_net_t_a__items (id INTEGER PRIMARY KEY, n TEXT)", "CREATE INDEX x_net_t_a__items_n ON x_net_t_a__items (n)"])]).unwrap();
+        assert_eq!(s.ext_applied_migrations("net.t.a").unwrap(), vec![(1, "sum1".to_string())]);
+        assert_eq!(s.ext_table_names(ns).unwrap(), vec!["x_net_t_a__items".to_string()]);
+        // Gagal di tengah batch: tidak ada yang berubah (tabel baru dan catatan sama-sama batal).
+        let bad = s.ext_apply_migrations("net.t.a", 2, &[m(2, &["CREATE TABLE x_net_t_a__other (id INTEGER)"]), m(3, &["CREATE TABLE x_net_t_a__items (id INTEGER)"])]);
+        assert!(bad.is_err());
+        assert_eq!(s.ext_table_names(ns).unwrap(), vec!["x_net_t_a__items".to_string()], "tabel other ikut dibatalkan");
+        assert_eq!(s.ext_applied_migrations("net.t.a").unwrap().len(), 1);
+        // Hapus data: hanya milik extension itu; tabel inti dan extension lain tetap.
+        s.ext_apply_migrations("net.t.b", 3, &[m(1, &["CREATE TABLE x_net_t_b__keep (id INTEGER)"])]).unwrap();
+        assert_eq!(s.ext_drop_data("net.t.a", ns).unwrap(), 1);
+        assert!(s.ext_table_names(ns).unwrap().is_empty() && s.ext_applied_migrations("net.t.a").unwrap().is_empty());
+        assert_eq!(s.ext_table_names("x_net_t_b__").unwrap().len(), 1);
+        assert!(s.ext_list().is_ok(), "tabel inti utuh");
+        assert!(s.ext_drop_data("net.t.a", "accounts").is_err() && s.ext_drop_data("net.t.a", "x_a'; DROP TABLE users;--__").is_err());
     }
 }

@@ -561,8 +561,8 @@ export class HttpApi implements TelemonApi {
   updateExtension(id: string, patch: { enabled?: boolean; perms?: Record<string, boolean> }) {
     return this.req<ExtensionInfo>("PATCH", `/api/extensions/${encodeURIComponent(id)}`, patch)
   }
-  async removeExtension(id: string) {
-    await this.req("DELETE", `/api/extensions/${encodeURIComponent(id)}`)
+  async removeExtension(id: string, opts: { deleteData?: boolean } = {}) {
+    await this.req("DELETE", `/api/extensions/${encodeURIComponent(id)}${opts.deleteData ? "?data=delete" : ""}`)
   }
   async getDashboard() {
     const r = await this.req<{ layout?: DashboardLayout | null }>("GET", "/api/dashboard", undefined, { keepNulls: true })
