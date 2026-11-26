@@ -230,7 +230,7 @@ impl RouterApi for DemoApi {
             "/ppp/profile" => w.profiles.lock().unwrap().clone(),
             "/ppp/active" => w.active.lock().unwrap().clone(),
             "/log" => w.log.lock().unwrap().clone(),
-            "/system/resource" => vec![row(&[("board-name", "RB4011iGS+ (demo)"), ("version", "7.15 (stable)")])],
+            "/system/resource" => vec![row(&[("board-name", "RB4011iGS+ (demo)"), ("version", "7.15 (stable)"), ("cpu-load", "17"), ("free-memory", "412000000"), ("total-memory", "1000000000"), ("uptime", "3d4h12m")])],
             "/interface" => w.interfaces(),
             "/user" => vec![row(&[("name", "api"), ("group", "demo")])],
             "/user/group" => vec![row(&[("name", "demo"), ("policy", "read,write,api,sensitive")])],
@@ -367,11 +367,14 @@ async fn main() -> std::io::Result<()> {
         auth.create_account(None, &NewAccount { username: user.into(), display_name: name.into(), password: "demo-telemon".into(), role_id: role }).expect("akun");
     }
 
-    let cfg = HttpConfig { static_dir: (!static_dir.is_empty()).then(|| static_dir.clone().into()), db_path: "(memori, demo)".into(), relax_update_2fa: true, ..Default::default() };
+    let cfg = HttpConfig { static_dir: (!static_dir.is_empty()).then(|| static_dir.clone().into()), db_path: "(memori, demo)".into(), relax_update_2fa: true, extensions: telemon_http::ExtConfig::from_env(std::env::temp_dir().join("telemon-demo-extensions"), true), ..Default::default() };
     eprintln!("[demo] menyiapkan server");
     let st = AppState::new(telemon.clone(), auth, cfg);
     // AI untuk mencoba UI tanpa kunci API: model offline berbasis kata kunci yang memakai alat baca asli.
     let ai = st.enable_ai(Arc::new(demo_llm::DemoLlm));
+    if st.cfg.extensions.is_some() {
+        telemon_http::spawn_scheduler(st.clone());
+    }
     ai.save_provider(None, telemon_ai::AiProviderInput { name: "Demo (offline)".into(), kind: telemon_ai::ProviderKind::Openai, model: "demo-offline".into(), base_url: None, api_key: Some("demo-tidak-dipakai".into()), price_in_per_mtok: Some(1.0), price_out_per_mtok: Some(2.0) }).expect("provider demo");
 
     // Dunia tiruan berubah tiap 2 detik.

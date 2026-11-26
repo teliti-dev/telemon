@@ -5,6 +5,14 @@ import type {
   AiBudgetInput,
   AiDashboard,
   AiUiContext,
+  ActiveExtension,
+  ExtensionStore,
+  ExtensionWorker,
+  ExtensionAccess,
+  ExtensionLevel,
+  ExtensionInfo,
+  ExtensionInspect,
+  ExtensionList,
   DashboardLayout,
   TrafficInterfaces,
   TrafficQuery,
@@ -149,6 +157,31 @@ export interface TelemonApi {
   getDashboard(): Promise<DashboardLayout | null>
   /** Simpan tata letak untuk semua akun (izin Ubah Ringkasan); null = kembali ke susunan bawaan. */
   saveDashboard(layout: DashboardLayout | null): Promise<DashboardLayout | null>
+  // Extension (ADR 0028)
+  /** Daftar extension terpasang (izin Admin Lihat). `available: false` = mati di server ini. */
+  getExtensions(): Promise<ExtensionList>
+  /** Extension aktif yang dimuat UI (semua akun yang masuk). */
+  getActiveExtensions(): Promise<ActiveExtension[]>
+  /** Periksa isi berkas .tmx tanpa memasang. */
+  inspectExtension(file: Blob): Promise<ExtensionInspect>
+  /** Pasang atau perbarui dari berkas .tmx; hasilnya mati sampai diaktifkan. */
+  installExtension(file: Blob): Promise<ExtensionInfo>
+  /** Nyalakan/matikan dan ubah izin satu extension. */
+  updateExtension(id: string, patch: { enabled?: boolean; perms?: Record<string, boolean> }): Promise<ExtensionInfo>
+  /** Akses per peran pada satu extension (izin Admin Lihat). */
+  getExtensionAccess(id: string): Promise<ExtensionAccess>
+  /** Tetapkan level dan aksi satu peran (izin Admin Ubah; aturan anti-kenaikan izin berlaku). */
+  setExtensionAccess(id: string, roleId: string, access: { level: ExtensionLevel; actions: string[] }): Promise<void>
+  /** Katalog toko official (izin Admin Lihat); galat 501 `store_off` bila toko mati. */
+  getExtensionStore(): Promise<ExtensionStore>
+  /** Pasang dari toko; dependensi yang belum ada ikut terpasang lebih dulu. Mengembalikan semua yang terpasang. */
+  installFromStore(id: string): Promise<ExtensionInfo[]>
+  /** Jalankan satu worker sekarang (izin Admin Ubah); membuka jeda otomatis. */
+  runExtensionWorker(id: string, worker: string): Promise<{ ok: boolean; error?: string; workers: ExtensionWorker[] }>
+  /** Log terakhir backend extension (izin Admin Lihat). */
+  getExtensionLogs(id: string): Promise<string[]>
+  /** Hapus extension; `deleteData` juga menghapus tabel dan catatan migrasinya (bawaan: data disimpan). */
+  removeExtension(id: string, opts?: { deleteData?: boolean }): Promise<void>
   /** Antarmuka yang pernah terbaca pada satu router (termasuk `@pppoe`). */
   getTrafficInterfaces(routerId: string): Promise<TrafficInterfaces>
   /** Deret waktu laju bandwidth; `router: "all"` hanya untuk `@pppoe`. */

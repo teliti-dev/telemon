@@ -1,5 +1,5 @@
 import * as React from "react"
-import { ChevronDownIcon, GlobeIcon, SettingsIcon, SparklesIcon, WifiIcon, ZapIcon } from "lucide-react"
+import { ChevronDownIcon, GlobeIcon, PuzzleIcon, SettingsIcon, SparklesIcon, WifiIcon, ZapIcon } from "lucide-react"
 
 import { AccountMenu } from "@/components/account-menu"
 import { AppearanceDrawer } from "@/components/appearance-drawer"
@@ -162,6 +162,7 @@ function SettingsMenu({ item, active, first }: { item: NavItem; active: boolean;
   const t = useT()
   const { segments } = useRoute()
   const onAi = segments[0] === "ai" || segments[0] === "ai-provider"
+  const onExt = segments[0] === "extension"
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -181,11 +182,14 @@ function SettingsMenu({ item, active, first }: { item: NavItem; active: boolean;
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-44">
-        <DropdownMenuItem className={cn(active && !onAi && "text-brand")} onSelect={() => navigate("pengaturan")}>
+        <DropdownMenuItem className={cn(active && !onAi && !onExt && "text-brand")} onSelect={() => navigate("pengaturan")}>
           <SettingsIcon /> {t("Umum")}
         </DropdownMenuItem>
         <DropdownMenuItem className={cn(onAi && "text-brand")} onSelect={() => navigatePath("pengaturan", ["ai"])}>
           <SparklesIcon /> {t("AI")}
+        </DropdownMenuItem>
+        <DropdownMenuItem className={cn(onExt && "text-brand")} onSelect={() => navigatePath("pengaturan", ["extension"])}>
+          <PuzzleIcon /> {t("Extension")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

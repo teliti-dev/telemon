@@ -143,6 +143,10 @@ impl Resp {
 }
 
 impl T {
+    fn st_workers(&self, key: &str) -> telemon_http::WorkerState {
+        self.st.worker_state(key)
+    }
+
     async fn call(&self, method: Method, uri: &str, body: Option<Value>, cookie: Option<&str>, extra: &[(&str, &str)], peer: &str) -> Resp {
         let mut b = Request::builder().method(method).uri(uri);
         if body.is_some() {
@@ -1150,6 +1154,13 @@ async fn tata_letak_dashboard_global_dengan_izin_dan_validasi() {
     // Jenis widget yang tak dikenal diterima: daftar jenis dikelola UI.
     let future = json!({ "version": 1, "widgets": [{ "id": "z", "type": "jenis-masa-depan", "x": 0, "y": 0, "w": 3, "h": 3 }] });
     assert_eq!(t.desk(Method::PUT, "/api/dashboard", Some(json!({ "layout": future })), Some(&c), LOOP).await.status, StatusCode::OK);
+    // Widget dari extension (ADR 0028): `ext:<id>:<jenis>`; bentuk lain dengan `:` atau `.` ditolak.
+    let ext = |ty: &str| json!({ "version": 1, "widgets": [{ "id": "e", "type": ty, "x": 0, "y": 0, "w": 3, "h": 3 }] });
+    assert_eq!(t.desk(Method::PUT, "/api/dashboard", Some(json!({ "layout": ext("ext:net.teliti.demo:hello") })), Some(&c), LOOP).await.status, StatusCode::OK);
+    for bad in ["ext:net.teliti.demo", "ext::hello", "ext:a:b:c", "ext:Net.Demo:hello", "ext:a b:c", "net.teliti.demo:hello", &format!("ext:{}:x", "a".repeat(140))] {
+        let r = t.desk(Method::PUT, "/api/dashboard", Some(json!({ "layout": ext(bad) })), Some(&c), LOOP).await;
+        assert_eq!(r.status, StatusCode::BAD_REQUEST, "{bad}");
+    }
     t.desk(Method::PUT, "/api/dashboard", Some(json!({ "layout": layout })), Some(&c), LOOP).await;
 
     // Akun jarak jauh: tata letak sama untuk semua (global). Viewer dan Operator hanya melihat; Administrator boleh mengubah.
@@ -1758,5 +1769,813 @@ mod ai_tests {
         let id = ok.body["id"].as_str().unwrap().to_string();
         let bad = t.call(Method::PUT, &format!("/api/ai/providers/{id}"), Some(json!({ "name": "X", "kind": "openai", "model": "m", "baseUrl": "http://169.254.169.254/" })), Some(&c), &[], LAN).await;
         assert_eq!(bad.status, StatusCode::FORBIDDEN, "SSRF ke alamat internal harus ditolak");
+    }
+}
+
+// ---------------- extension (ADR 0028, prototipe 1) ----------------
+
+mod extensions {
+    use super::*;
+    use telemon_ext::{TrustedKeys, pack, public_key_hex};
+
+    const OFFICIAL: &str = "0101010101010101010101010101010101010101010101010101010101010101";
+    const PUBLISHER: &str = "0202020202020202020202020202020202020202020202020202020202020202";
+
+    fn dir() -> std::path::PathBuf {
+        let n = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        std::env::temp_dir().join(format!("telemon-ext-test-{n}-{:?}", std::thread::current().id()).replace(['(', ')'], ""))
+    }
+
+    fn on(dir: &std::path::Path) -> HttpConfig {
+        let keys = TrustedKeys { official: vec![public_key_hex(OFFICIAL).unwrap()], publishers: vec![public_key_hex(PUBLISHER).unwrap()], allow_unsigned: false };
+        HttpConfig { extensions: Some(telemon_http::ExtConfig { dir: dir.into(), keys, store_url: Some("https://store.test/x/catalog.json".into()), fuel: 3_000_000 }), ..Default::default() }
+    }
+
+    fn manifest(version: &str, extra_perm: &str) -> String {
+        format!(
+            r#"{{"id":"net.teliti.demo","name":"Demo","version":"{version}","apiVersion":1,"publisher":"Teliti",
+            "ui":{{"entry":"ui/index.js"}},"contributes":{{"widgets":[{{"type":"hello","title":"Hello"}}]}},
+            "permissions":[{{"id":"data.events","required":true}},{{"id":"feature.ai","sensitive":true}}{extra_perm}]}}"#
+        )
+    }
+
+    fn pkg(version: &str, extra_perm: &str, key: Option<&str>) -> Vec<u8> {
+        pack(&[("manifest.json".into(), manifest(version, extra_perm).into_bytes()), ("ui/index.js".into(), b"export default { ok: true }".to_vec())], key).unwrap()
+    }
+
+    async fn send(t: &T, method: Method, uri: &str, body: Vec<u8>, cookie: &str, extra: &[(&str, &str)], peer: &str) -> Resp {
+        let mut b = Request::builder().method(method).uri(uri).header(header::COOKIE, format!("telemon_session={cookie}")).header(header::CONTENT_TYPE, "application/octet-stream");
+        for (k, v) in extra {
+            b = b.header(*k, *v);
+        }
+        let mut req = b.body(Body::from(body)).unwrap();
+        req.extensions_mut().insert(ConnectInfo(peer.parse::<SocketAddr>().unwrap()));
+        let res = t.app.clone().oneshot(req).await.unwrap();
+        let (parts, body) = res.into_parts();
+        let bytes = body.collect().await.unwrap().to_bytes();
+        let body = serde_json::from_slice(&bytes).unwrap_or_else(|_| Value::String(String::from_utf8_lossy(&bytes).into()));
+        Resp { status: parts.status, headers: parts.headers, body }
+    }
+
+    async fn install(t: &T, bytes: Vec<u8>, c: &str) -> Resp {
+        send(t, Method::POST, "/api/extensions", bytes, c, &[], LAN).await
+    }
+
+    async fn patch(t: &T, id: &str, body: Value, c: &str) -> Resp {
+        t.call(Method::PATCH, &format!("/api/extensions/{id}"), Some(body), Some(c), &[], LAN).await
+    }
+
+    #[tokio::test]
+    async fn mati_secara_bawaan() {
+        let t = harness();
+        t.account("admin", "role-admin");
+        let c = t.login("admin").await;
+        let r = t.get("/api/extensions", Some(&c)).await;
+        assert_eq!((r.status, r.body["available"].as_bool()), (StatusCode::OK, Some(false)));
+        assert!(t.get("/api/extensions/active", Some(&c)).await.body["extensions"].as_array().unwrap().is_empty());
+        let r = install(&t, pkg("1.0.0", "", Some(OFFICIAL)), &c).await;
+        assert_eq!((r.status, r.code()), (StatusCode::NOT_IMPLEMENTED, "extensions_off"));
+        assert_eq!(t.get("/ext/net.teliti.demo/ui/index.js", Some(&c)).await.status, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn pasang_aktifkan_sajikan_dan_hapus() {
+        let d = dir();
+        let t = harness_with(on(&d));
+        t.account("admin", "role-admin");
+        let c = t.login("admin").await;
+
+        let r = send(&t, Method::POST, "/api/extensions/inspect", pkg("1.0.0", "", Some(OFFICIAL)), &c, &[], LAN).await;
+        assert_eq!((r.status, r.body["package"]["tier"].as_str(), r.body["package"]["signed"].as_bool()), (StatusCode::OK, Some("official"), Some(true)), "{:?}", r.body);
+        assert!(t.get("/api/extensions", Some(&c)).await.body["extensions"].as_array().unwrap().is_empty(), "inspect tidak memasang");
+
+        let r = install(&t, pkg("1.0.0", "", Some(OFFICIAL)), &c).await;
+        assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+        assert_eq!((r.body["enabled"].as_bool(), r.body["status"].as_str()), (Some(false), Some("disabled")));
+        let perms = r.body["permissions"].as_array().unwrap();
+        let g = |id: &str| perms.iter().find(|p| p["id"] == id).unwrap()["granted"].as_bool().unwrap();
+        assert!(g("data.events") && !g("feature.ai"), "izin sensitif mulai mati, wajib menyala");
+
+        // Belum aktif: tidak disajikan dan tidak dimuat UI.
+        assert_eq!(t.get("/ext/net.teliti.demo/ui/index.js", Some(&c)).await.status, StatusCode::NOT_FOUND);
+        assert!(t.get("/api/extensions/active", Some(&c)).await.body["extensions"].as_array().unwrap().is_empty());
+
+        let r = patch(&t, "net.teliti.demo", json!({ "enabled": true }), &c).await;
+        assert_eq!((r.status, r.body["status"].as_str()), (StatusCode::OK, Some("ok")), "{:?}", r.body);
+        let a = t.get("/api/extensions/active", Some(&c)).await;
+        let e = &a.body["extensions"][0];
+        assert_eq!(e["id"], "net.teliti.demo");
+        assert_eq!(e["entry"], "/ext/net.teliti.demo/ui/index.js?v=1.0.0");
+        assert_eq!(e["permissions"], json!(["data.events"]));
+        assert_eq!(e["widgets"][0]["type"], "hello");
+
+        let f = t.get("/ext/net.teliti.demo/ui/index.js", Some(&c)).await;
+        assert_eq!(f.status, StatusCode::OK);
+        assert_eq!(f.body, Value::String("export default { ok: true }".into()));
+        assert_eq!(f.headers[header::CONTENT_TYPE], "text/javascript; charset=utf-8");
+        // Hanya ui/, tanpa manifest, tanpa jalur lolos.
+        for p in ["manifest.json", "ui/tidak-ada.js", "signature.json", "ui/../manifest.json"] {
+            assert_eq!(t.get(&format!("/ext/net.teliti.demo/{p}"), Some(&c)).await.status, StatusCode::NOT_FOUND, "{p}");
+        }
+        assert_eq!(t.get("/ext/net.teliti.demo/ui/index.js", None).await.status, StatusCode::UNAUTHORIZED);
+
+        let r = t.call(Method::DELETE, "/api/extensions/net.teliti.demo", None, Some(&c), &[], LAN).await;
+        assert_eq!(r.status, StatusCode::OK);
+        assert_eq!(t.get("/ext/net.teliti.demo/ui/index.js", Some(&c)).await.status, StatusCode::NOT_FOUND);
+        assert!(!d.join("net.teliti.demo.tmx").exists(), "berkas paket ikut terhapus");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[tokio::test]
+    async fn paket_tak_tepercaya_ditolak() {
+        let d = dir();
+        let t = harness_with(on(&d));
+        t.account("admin", "role-admin");
+        let c = t.login("admin").await;
+        // Tanpa tanda tangan, kunci asing, dan penerbit publik (non-official belum didukung).
+        assert_eq!(install(&t, pkg("1.0.0", "", None), &c).await.status, StatusCode::BAD_REQUEST);
+        let other = "0303030303030303030303030303030303030303030303030303030303030303";
+        assert_eq!(install(&t, pkg("1.0.0", "", Some(other)), &c).await.status, StatusCode::BAD_REQUEST);
+        let r = install(&t, pkg("1.0.0", "", Some(PUBLISHER)), &c).await;
+        assert_eq!(r.status, StatusCode::BAD_REQUEST);
+        assert!(r.body["error"]["message"].as_str().unwrap().contains("non-official"));
+        assert_eq!(install(&t, b"bukan zip".to_vec(), &c).await.status, StatusCode::BAD_REQUEST);
+        assert!(t.get("/api/extensions", Some(&c)).await.body["extensions"].as_array().unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[tokio::test]
+    async fn izin_dimatikan_membatasi_dan_perubahan_dicatat() {
+        let d = dir();
+        let t = harness_with(on(&d));
+        t.account("admin", "role-admin");
+        let c = t.login("admin").await;
+        install(&t, pkg("1.0.0", "", Some(OFFICIAL)), &c).await;
+        patch(&t, "net.teliti.demo", json!({ "enabled": true }), &c).await;
+
+        // Izin wajib dimatikan: terbatas dan tidak dimuat UI.
+        let r = patch(&t, "net.teliti.demo", json!({ "perms": { "data.events": false } }), &c).await;
+        assert_eq!(r.body["status"], "limited");
+        assert!(t.get("/api/extensions/active", Some(&c)).await.body["extensions"].as_array().unwrap().is_empty());
+        let r = patch(&t, "net.teliti.demo", json!({ "perms": { "data.events": true, "feature.ai": true } }), &c).await;
+        assert_eq!(r.body["status"], "ok");
+        assert_eq!(t.get("/api/extensions/active", Some(&c)).await.body["extensions"][0]["permissions"], json!(["data.events", "feature.ai"]));
+        // Izin yang tidak dideklarasikan ditolak; extension tak dikenal 404.
+        assert_eq!(patch(&t, "net.teliti.demo", json!({ "perms": { "feature.rahasia": true } }), &c).await.status, StatusCode::BAD_REQUEST);
+        assert_eq!(patch(&t, "net.lain.x", json!({ "enabled": true }), &c).await.status, StatusCode::NOT_FOUND);
+
+        let rows = t.telemon.with_store(|s| s.list_audit(&telemon_core::AuditQuery::default()).unwrap());
+        let actions: Vec<&str> = rows.iter().map(|r| r.entry.action.as_str()).collect();
+        assert!(actions.contains(&"extension.install") && actions.iter().filter(|a| **a == "extension.toggle").count() >= 3, "{actions:?}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[tokio::test]
+    async fn pembaruan_mempertahankan_status_dan_izin_baru_mati() {
+        let d = dir();
+        let t = harness_with(on(&d));
+        t.account("admin", "role-admin");
+        let c = t.login("admin").await;
+        install(&t, pkg("1.0.0", "", Some(OFFICIAL)), &c).await;
+        patch(&t, "net.teliti.demo", json!({ "enabled": true, "perms": { "feature.ai": true } }), &c).await;
+        let r = install(&t, pkg("1.1.0", r#",{"id":"data.traffic"}"#, Some(OFFICIAL)), &c).await;
+        assert_eq!((r.body["version"].as_str(), r.body["enabled"].as_bool()), (Some("1.1.0"), Some(true)));
+        let perms = r.body["permissions"].as_array().unwrap();
+        let g = |id: &str| perms.iter().find(|p| p["id"] == id).unwrap()["granted"].as_bool().unwrap();
+        assert!(g("data.events") && g("feature.ai"), "keputusan lama bertahan");
+        assert!(!g("data.traffic"), "izin baru mati sampai diputuskan admin");
+        let f = t.get("/ext/net.teliti.demo/ui/index.js", Some(&c)).await;
+        assert_eq!(f.status, StatusCode::OK);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    fn pkg_json(id: &str, version: &str, extra: &str) -> Vec<u8> {
+        let m = format!(r#"{{"id":"{id}","name":"{id}","version":"{version}","apiVersion":1,"publisher":"Teliti","ui":{{"entry":"ui/index.js"}}{extra}}}"#);
+        pack(&[("manifest.json".into(), m.into_bytes()), ("ui/index.js".into(), b"export default {}".to_vec())], Some(OFFICIAL)).unwrap()
+    }
+
+    #[tokio::test]
+    async fn kompatibilitas_telemon_dan_antar_extension() {
+        let d = dir();
+        let mut cfg = on(&d);
+        cfg.host_version = "0.3.0-rc.2".into();
+        let t = harness_with(cfg);
+        t.account("admin", "role-admin");
+        let c = t.login("admin").await;
+        let (a, b) = ("net.teliti.a", "net.teliti.b");
+
+        // Versi Telemon di luar rentang: ditolak, pesan menyebut keduanya.
+        let r = install(&t, pkg_json(a, "1.0.0", r#","telemon":">=0.4.0""#), &c).await;
+        assert_eq!((r.status, r.code()), (StatusCode::CONFLICT, "incompatible"));
+        let msg = r.body["error"]["message"].as_str().unwrap();
+        assert!(msg.contains(">=0.4.0") && msg.contains("0.3.0"), "{msg}");
+
+        // A butuh B: tanpa B ditolak; inspect menjelaskan lewat `problems` dan `requires`.
+        let need_b = format!(r#","telemon":">=0.2.0 <0.4.0","requires":[{{"id":"{b}","version":"^1.2.0"}}]"#);
+        let r = send(&t, Method::POST, "/api/extensions/inspect", pkg_json(a, "1.0.0", &need_b), &c, &[], LAN).await;
+        assert_eq!(r.body["problems"][0]["kind"], "missingDependency");
+        assert_eq!(r.body["requires"][0]["state"], "missing");
+        assert_eq!(install(&t, pkg_json(a, "1.0.0", &need_b), &c).await.status, StatusCode::CONFLICT);
+
+        // B versi terlalu lama: tidak cocok; B 1.3.0: A terpasang.
+        assert_eq!(install(&t, pkg_json(b, "1.0.0", ""), &c).await.status, StatusCode::OK);
+        let r = install(&t, pkg_json(a, "1.0.0", &need_b), &c).await;
+        assert_eq!((r.status, r.code()), (StatusCode::CONFLICT, "incompatible"), "B 1.0.0 di luar ^1.2.0");
+        assert_eq!(install(&t, pkg_json(b, "1.3.0", ""), &c).await.status, StatusCode::OK);
+        let r = install(&t, pkg_json(a, "1.0.0", &need_b), &c).await;
+        assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+        assert_eq!(r.body["requires"][0]["state"], "ok");
+
+        // Memperbarui B ke versi yang melanggar A ditolak; yang cocok boleh. B tahu siapa yang bergantung.
+        assert_eq!(install(&t, pkg_json(b, "2.0.0", ""), &c).await.status, StatusCode::CONFLICT);
+        assert_eq!(install(&t, pkg_json(b, "1.4.0", ""), &c).await.status, StatusCode::OK);
+        let list = t.get("/api/extensions", Some(&c)).await.body;
+        let bi = list["extensions"].as_array().unwrap().iter().find(|e| e["id"] == b).unwrap();
+        assert_eq!(bi["dependents"], json!([a]));
+
+        // Menghapus B selama A butuh B ditolak; menghapus A dulu lalu B boleh.
+        async fn del(t: &T, id: &str, c: &str) -> Resp {
+            t.call(Method::DELETE, &format!("/api/extensions/{id}"), None, Some(c), &[], LAN).await
+        }
+        let r = del(&t, b, &c).await;
+        assert_eq!((r.status, r.code()), (StatusCode::CONFLICT, "has_dependents"));
+        assert!(r.body["error"]["message"].as_str().unwrap().contains(a));
+
+        // A hanya dimuat bila B aktif: B mati = A terbatas dan keluar dari daftar aktif.
+        patch(&t, a, json!({ "enabled": true }), &c).await;
+        assert_eq!(t.get("/api/extensions/active", Some(&c)).await.body["extensions"].as_array().unwrap().len(), 0, "B belum aktif");
+        let r = patch(&t, a, json!({}), &c).await;
+        assert_eq!((r.body["status"].as_str(), r.body["blockedBy"].clone()), (Some("limited"), json!([b])));
+        patch(&t, b, json!({ "enabled": true }), &c).await;
+        let ids: Vec<String> = t.get("/api/extensions/active", Some(&c)).await.body["extensions"].as_array().unwrap().iter().map(|e| e["id"].as_str().unwrap().into()).collect();
+        assert_eq!(ids.len(), 2);
+        patch(&t, b, json!({ "enabled": false }), &c).await;
+        assert_eq!(t.get("/api/extensions/active", Some(&c)).await.body["extensions"].as_array().unwrap().len(), 0, "A ikut tidak dimuat saat B mati");
+
+        assert_eq!(del(&t, a, &c).await.status, StatusCode::OK);
+        assert_eq!(del(&t, b, &c).await.status, StatusCode::OK);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    fn pkg_migr(version: &str, migrations: &[(&str, &str)]) -> Vec<u8> {
+        let m = format!(r#"{{"id":"net.teliti.data","name":"Data","version":"{version}","apiVersion":1,"publisher":"Teliti"}}"#);
+        let mut files: Vec<(String, Vec<u8>)> = vec![("manifest.json".into(), m.into_bytes())];
+        for (n, body) in migrations {
+            files.push((format!("migrations/{n}"), body.as_bytes().to_vec()));
+        }
+        pack(&files, Some(OFFICIAL)).unwrap()
+    }
+
+    const M1: &str = r#"{"ops":[{"op":"create_table","table":"x_net_teliti_data__items","columns":[{"name":"id","type":"integer","primaryKey":true,"autoIncrement":true},{"name":"label","type":"text","notNull":true}]}]}"#;
+    const M2: &str = r#"{"ops":[{"op":"add_column","table":"x_net_teliti_data__items","column":{"name":"size","type":"integer","default":0}}]}"#;
+
+    #[tokio::test]
+    async fn migrasi_database_extension() {
+        let d = dir();
+        let t = harness_with(on(&d));
+        t.account("admin", "role-admin");
+        let c = t.login("admin").await;
+        let id = "net.teliti.data";
+        let tables = |t: &T| t.telemon.with_store(|s| s.ext_table_names("x_net_teliti_data__").unwrap());
+        let cols = |t: &T| t.telemon.with_store(|s| s.ext_table_names("x_net_teliti_data__").unwrap().len());
+
+        // Pasang: tabel dibuat, catatan migrasi ada, cadangan dibuat sebelum migrasi.
+        let r = install(&t, pkg_migr("1.0.0", &[("0001-init.json", M1)]), &c).await;
+        assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+        assert_eq!((tables(&t), r.body["hasData"].as_bool()), (vec!["x_net_teliti_data__items".to_string()], Some(true)));
+        let backups: Vec<_> = std::fs::read_dir(d.join("backups")).unwrap().collect();
+        assert_eq!(backups.len(), 1, "satu cadangan sebelum migrasi");
+
+        // Isi data, lalu perbarui dengan migrasi baru: data tetap, kolom bertambah.
+        t.telemon.with_store(|s| s.ext_apply_migrations(id, 1, &[]).unwrap());
+        let rows_before = t.telemon.with_store(|s| s.ext_applied_migrations(id).unwrap().len());
+        assert_eq!(rows_before, 1);
+        let r = install(&t, pkg_migr("1.1.0", &[("0001-init.json", M1), ("0002-size.json", M2)]), &c).await;
+        assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+        assert_eq!(t.telemon.with_store(|s| s.ext_applied_migrations(id).unwrap().len()), 2);
+        // Pasang ulang versi yang sama: tidak ada migrasi baru, tidak ada cadangan baru.
+        let n = std::fs::read_dir(d.join("backups")).unwrap().count();
+        install(&t, pkg_migr("1.1.0", &[("0001-init.json", M1), ("0002-size.json", M2)]), &c).await;
+        assert_eq!(std::fs::read_dir(d.join("backups")).unwrap().count(), n);
+
+        // Migrasi terapan diedit: ditolak. Paket lebih lama daripada data: ditolak. Tak ada yang berubah.
+        let edited = M1.replace("label", "title");
+        let r = install(&t, pkg_migr("1.2.0", &[("0001-init.json", &edited), ("0002-size.json", M2)]), &c).await;
+        assert_eq!((r.status, r.code()), (StatusCode::CONFLICT, "migration_conflict"));
+        assert!(r.body["error"]["message"].as_str().unwrap().contains("berubah"));
+        let r = install(&t, pkg_migr("1.0.0", &[("0001-init.json", M1)]), &c).await;
+        assert_eq!((r.status, r.code()), (StatusCode::CONFLICT, "migration_conflict"), "penurunan versi data");
+        let ver = t.get("/api/extensions", Some(&c)).await.body["extensions"][0]["version"].clone();
+        assert_eq!(ver, "1.1.0", "versi tidak berubah oleh pemasangan yang ditolak");
+
+        // Migrasi yang melanggar namespace ditolak sebelum menyentuh apa pun (di tingkat paket).
+        let evil = r#"{"ops":[{"op":"drop_table","table":"accounts"}]}"#;
+        let r = install(&t, pkg_migr("1.3.0", &[("0001-init.json", M1), ("0002-size.json", M2), ("0003-evil.json", evil)]), &c).await;
+        assert_eq!(r.status, StatusCode::BAD_REQUEST);
+        assert!(t.telemon.with_store(|s| s.ext_list().is_ok()));
+
+        // Migrasi yang gagal di database (kolom sudah ada): dibatalkan, tabel baru ikut batal, versi tetap.
+        let dup = r#"{"ops":[{"op":"create_table","table":"x_net_teliti_data__more","columns":[{"name":"id","type":"integer"}]},{"op":"add_column","table":"x_net_teliti_data__items","column":{"name":"size","type":"integer","default":0}}]}"#;
+        let r = install(&t, pkg_migr("1.3.0", &[("0001-init.json", M1), ("0002-size.json", M2), ("0003-dup.json", dup)]), &c).await;
+        assert_eq!((r.status, r.code()), (StatusCode::UNPROCESSABLE_ENTITY, "migration_failed"), "{:?}", r.body);
+        assert_eq!(cols(&t), 1, "tabel more tidak tersisa");
+        assert_eq!(t.get("/api/extensions", Some(&c)).await.body["extensions"][0]["version"], "1.1.0");
+
+        // Hapus tanpa data: tabel dan catatan tetap; pasang ulang tidak menjalankan migrasi lagi.
+        let r = t.call(Method::DELETE, &format!("/api/extensions/{id}"), None, Some(&c), &[], LAN).await;
+        assert_eq!((r.status, r.body["dataDeleted"].as_bool()), (StatusCode::OK, Some(false)));
+        assert_eq!(tables(&t).len(), 1);
+        let r = install(&t, pkg_migr("1.1.0", &[("0001-init.json", M1), ("0002-size.json", M2)]), &c).await;
+        assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+        assert_eq!(t.telemon.with_store(|s| s.ext_applied_migrations(id).unwrap().len()), 2);
+
+        // Hapus dengan data: tabel dan catatan hilang; tabel inti utuh.
+        let r = t.call(Method::DELETE, &format!("/api/extensions/{id}?data=delete"), None, Some(&c), &[], LAN).await;
+        assert_eq!((r.status, r.body["dataDeleted"].as_bool(), r.body["tablesDropped"].as_u64()), (StatusCode::OK, Some(true), Some(1)));
+        assert!(tables(&t).is_empty());
+        assert!(t.telemon.with_store(|s| s.ext_applied_migrations(id).unwrap().is_empty()));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    fn pkg_actions(version: &str) -> Vec<u8> {
+        let m = format!(
+            r#"{{"id":"net.teliti.acl","name":"Acl","version":"{version}","apiVersion":1,"publisher":"Teliti","ui":{{"entry":"ui/index.js"}},
+            "contributes":{{"pages":[{{"id":"home","title":"Beranda","kind":"dashboard"}}]}},
+            "actions":[{{"id":"view-report","label":"Lihat laporan"}},{{"id":"run","label":"Jalankan","level":"update"}}]}}"#
+        );
+        pack(&[("manifest.json".into(), m.into_bytes()), ("ui/index.js".into(), b"export default {}".to_vec())], Some(OFFICIAL)).unwrap()
+    }
+
+    #[tokio::test]
+    async fn halaman_akses_per_extension_dan_pengaman_kenaikan() {
+        let d = dir();
+        let t = harness_with(on(&d));
+        let sub = t.auth.create_role(None, &RoleInput { name: "sub-admin".into(), description: String::new(), permissions: Permissions::default().with(Resource::Admin, Level::Update) }).unwrap();
+        t.account("admin", "role-admin");
+        t.account("sub", &sub.id);
+        t.account("pantau", "role-monitor");
+        let (a, s, p) = (t.login("admin").await, t.login("sub").await, t.login("pantau").await);
+        let id = "net.teliti.acl";
+        let access = |role: &str| format!("/api/extensions/{id}/access/{role}");
+        let put = |ck: String, role: String, body: Value| {
+            let t = &t;
+            async move { t.call(Method::PUT, &access(&role), Some(body), Some(&ck), &[], LAN).await }
+        };
+        assert_eq!(install(&t, pkg_actions("1.0.0"), &a).await.status, StatusCode::OK);
+        patch(&t, id, json!({ "enabled": true }), &a).await;
+
+        // Bawaan: peran dengan Admin Ubah mendapat akses penuh; peran lain tidak.
+        let listed = t.get("/api/extensions", Some(&a)).await.body;
+        assert_eq!(listed["extensions"][0]["pages"][0]["id"], "home", "daftar memuat halaman");
+        assert_eq!(listed["extensions"][0]["actions"].as_array().unwrap().len(), 2);
+        let g = t.get(&format!("/api/extensions/{id}/access"), Some(&a)).await;
+        assert_eq!(g.status, StatusCode::OK, "{:?}", g.body);
+        let lvl = |g: &Resp, role: &str| g.body["roles"].as_array().unwrap().iter().find(|r| r["id"] == role).unwrap()["level"].as_str().unwrap().to_string();
+        assert_eq!((lvl(&g, "role-admin"), lvl(&g, &sub.id), lvl(&g, "role-monitor")), ("update".into(), "update".into(), "none".into()));
+        assert_eq!(g.body["actions"].as_array().unwrap().len(), 2);
+        assert_eq!(g.body["me"]["actions"], json!(["view-report", "run"]));
+        assert!(t.get("/api/extensions/active", Some(&p)).await.body["extensions"].as_array().unwrap().is_empty(), "pantau belum punya akses");
+
+        // Beri Lihat + satu aksi: aktif muncul dengan akses efektif; aksi level update tidak berlaku di level Lihat.
+        assert_eq!(put(a.clone(), "role-monitor".into(), json!({ "level": "read", "actions": ["view-report"] })).await.status, StatusCode::OK);
+        let act = t.get("/api/extensions/active", Some(&p)).await.body;
+        assert_eq!(act["extensions"][0]["access"], json!({ "level": "read", "actions": ["view-report"] }));
+        assert_eq!(act["extensions"][0]["pages"][0]["kind"], "dashboard");
+
+        // Validasi: level, aksi tak dikenal, aksi yang butuh level lebih tinggi, peran tak ada.
+        for (why, role, body, code) in [
+            ("level aneh", "role-monitor", json!({ "level": "owner" }), StatusCode::BAD_REQUEST),
+            ("aksi tak dikenal", "role-monitor", json!({ "level": "read", "actions": ["x"] }), StatusCode::BAD_REQUEST),
+            ("aksi butuh update", "role-monitor", json!({ "level": "read", "actions": ["run"] }), StatusCode::BAD_REQUEST),
+            ("peran tak ada", "role-hantu", json!({ "level": "read" }), StatusCode::NOT_FOUND),
+        ] {
+            assert_eq!(put(a.clone(), role.into(), body, ).await.status, code, "{why}");
+        }
+
+        // Pengaman: tidak mengubah peran sendiri; tidak memberi lebih daripada milik sendiri; tidak mengelola peran lebih tinggi.
+        assert_eq!(put(s.clone(), sub.id.clone(), json!({ "level": "none" })).await.status, StatusCode::FORBIDDEN, "peran sendiri");
+        // Turunkan sub-admin ke Lihat (oleh admin), lalu sub-admin mencoba memberi Ubah ke pantau.
+        assert_eq!(put(a.clone(), sub.id.clone(), json!({ "level": "read", "actions": ["view-report"] })).await.status, StatusCode::OK);
+        assert_eq!(put(s.clone(), "role-monitor".into(), json!({ "level": "update" })).await.status, StatusCode::FORBIDDEN, "melebihi akses sendiri");
+        assert_eq!(put(s.clone(), "role-monitor".into(), json!({ "level": "read", "actions": [] })).await.status, StatusCode::OK, "setara atau lebih rendah boleh");
+        assert_eq!(put(a.clone(), "role-monitor".into(), json!({ "level": "update", "actions": ["view-report", "run"] })).await.status, StatusCode::OK);
+        assert_eq!(put(s.clone(), "role-monitor".into(), json!({ "level": "none" })).await.status, StatusCode::FORBIDDEN, "peran yang aksesnya lebih tinggi");
+        // Sub-admin tidak punya aksi `run`: tidak bisa memberikannya.
+        assert_eq!(put(a.clone(), "role-monitor".into(), json!({ "level": "read", "actions": [] })).await.status, StatusCode::OK);
+        assert_eq!(put(s.clone(), "role-monitor".into(), json!({ "level": "read", "actions": ["view-report"] })).await.status, StatusCode::OK);
+
+        // Peran tanpa Admin tidak bisa melihat atau mengubah; lewat Publik pun tidak.
+        assert_eq!(t.get(&format!("/api/extensions/{id}/access"), Some(&p)).await.status, StatusCode::FORBIDDEN);
+        assert_eq!(put(p.clone(), "role-monitor".into(), json!({ "level": "update" })).await.status, StatusCode::FORBIDDEN);
+        let r = t.call(Method::PUT, &access("role-monitor"), Some(json!({ "level": "none" })), Some(&a), &[("cf-connecting-ip", "203.0.113.9")], LOOP).await;
+        assert_eq!(r.status, StatusCode::FORBIDDEN);
+
+        // Perubahan tercatat; menghapus extension menghapus aksesnya.
+        let rows = t.telemon.with_store(|s| s.list_audit(&telemon_core::AuditQuery::default()).unwrap());
+        assert!(rows.iter().filter(|r| r.entry.action == "extension.access").count() >= 4);
+        t.call(Method::DELETE, &format!("/api/extensions/{id}"), None, Some(&a), &[], LAN).await;
+        assert!(t.telemon.with_store(|s| s.ext_access_list(id).unwrap().is_empty()));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    struct FakeFetch(Mutex<std::collections::HashMap<String, Vec<u8>>>);
+
+    impl telemon_http::ExtFetch for FakeFetch {
+        fn get(&self, url: &str, max: usize) -> Result<Vec<u8>, String> {
+            let b = self.0.lock().unwrap().get(url).cloned().ok_or_else(|| format!("404 {url}"))?;
+            if b.len() > max { Err("terlalu besar".into()) } else { Ok(b) }
+        }
+    }
+
+    /// Katalog bertanda tangan dengan paket: (id, versi, tambahan manifest).
+    fn store(items: &[(&str, &str, &str)], sign_with: &str) -> FakeFetch {
+        let mut files = std::collections::HashMap::new();
+        let mut entries = Vec::new();
+        for (id, version, extra) in items {
+            let manifest = format!(r#"{{"id":"{id}","name":"{id}","version":"{version}","apiVersion":1,"publisher":"Teliti","ui":{{"entry":"ui/index.js"}}{extra}}}"#);
+            let bytes = pack(&[("manifest.json".into(), manifest.clone().into_bytes()), ("ui/index.js".into(), b"export default {}".to_vec())], Some(OFFICIAL)).unwrap();
+            let file = format!("{id}-{version}.tmx");
+            entries.push(format!(r#"{{"manifest":{manifest},"file":"{file}","sha256":"{}","size":{}}}"#, telemon_ext::sha256_hex(&bytes), bytes.len()));
+            files.insert(format!("https://store.test/x/{file}"), bytes);
+        }
+        let cat = format!(r#"{{"version":1,"generated":"2026-11-26","extensions":[{}]}}"#, entries.join(",")).into_bytes();
+        files.insert("https://store.test/x/catalog.json.sig".into(), telemon_ext::sign_bytes(sign_with, &cat).unwrap().into_bytes());
+        files.insert("https://store.test/x/catalog.json".into(), cat);
+        FakeFetch(Mutex::new(files))
+    }
+
+    #[tokio::test]
+    async fn toko_official_memasang_dependensi_lebih_dulu() {
+        let d = dir();
+        let t = harness_with(on(&d));
+        t.account("admin", "role-admin");
+        let c = t.login("admin").await;
+        // Tanpa pengunduh: toko 501.
+        let r = t.get("/api/extensions/store", Some(&c)).await;
+        assert_eq!((r.status, r.code()), (StatusCode::NOT_IMPLEMENTED, "store_off"));
+
+        let req_b = r#","requires":[{"id":"net.teliti.b","version":"^1.0.0"}]"#;
+        let req_c = r#","requires":[{"id":"net.teliti.c","version":"^1.0.0"}]"#;
+        t.st.set_ext_fetcher(Arc::new(store(&[("net.teliti.a", "1.0.0", &format!("{req_b}")), ("net.teliti.b", "1.2.0", req_c), ("net.teliti.c", "1.0.0", ""), ("net.teliti.alone", "1.0.0", "")], OFFICIAL)));
+        let list = t.get("/api/extensions/store", Some(&c)).await;
+        assert_eq!(list.status, StatusCode::OK, "{:?}", list.body);
+        let a = list.body["extensions"].as_array().unwrap().iter().find(|e| e["id"] == "net.teliti.a").unwrap();
+        assert_eq!(a["alsoInstalls"], json!(["net.teliti.c", "net.teliti.b"]), "urutan: dependensi dulu");
+
+        // Pasang A: B dan C ikut, urut, semuanya mati dan siap diatur.
+        let r = t.post("/api/extensions/store/install", json!({ "id": "net.teliti.a" }), Some(&c)).await;
+        assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+        let ids: Vec<&str> = r.body["installed"].as_array().unwrap().iter().map(|e| e["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, vec!["net.teliti.c", "net.teliti.b", "net.teliti.a"]);
+        let l = t.get("/api/extensions", Some(&c)).await.body;
+        assert_eq!(l["extensions"].as_array().unwrap().len(), 3);
+
+        // Sudah ada dan cocok: tidak dipasang ulang; daftar toko menandai yang terpasang.
+        let list = t.get("/api/extensions/store", Some(&c)).await.body;
+        let a = list["extensions"].as_array().unwrap().iter().find(|e| e["id"] == "net.teliti.a").unwrap();
+        assert_eq!((a["upToDate"].as_bool(), a["alsoInstalls"].clone()), (Some(true), json!([])));
+        let r = t.post("/api/extensions/store/install", json!({ "id": "net.teliti.alone" }), Some(&c)).await;
+        assert_eq!(r.body["installed"].as_array().unwrap().len(), 1);
+
+        // Id tak ada di katalog.
+        let r = t.post("/api/extensions/store/install", json!({ "id": "net.teliti.hantu" }), Some(&c)).await;
+        assert_eq!(r.status, StatusCode::NOT_FOUND);
+        // Peran tanpa Admin Ubah ditolak.
+        t.account("pantau", "role-monitor");
+        let p = t.login("pantau").await;
+        assert_eq!(t.post("/api/extensions/store/install", json!({ "id": "net.teliti.alone" }), Some(&p)).await.status, StatusCode::FORBIDDEN);
+        assert_eq!(t.get("/api/extensions/store", Some(&p)).await.status, StatusCode::FORBIDDEN);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[tokio::test]
+    async fn toko_menolak_katalog_dan_unduhan_yang_tidak_sah() {
+        let d = dir();
+        let t = harness_with(on(&d));
+        t.account("admin", "role-admin");
+        let c = t.login("admin").await;
+
+        // Katalog bertanda tangan kunci lain: ditolak.
+        let other = "0303030303030303030303030303030303030303030303030303030303030303";
+        t.st.set_ext_fetcher(Arc::new(store(&[("net.teliti.a", "1.0.0", "")], other)));
+        let r = t.get("/api/extensions/store", Some(&c)).await;
+        assert_eq!((r.status, r.code()), (StatusCode::BAD_GATEWAY, "store_unreachable"));
+        assert_eq!(t.post("/api/extensions/store/install", json!({ "id": "net.teliti.a" }), Some(&c)).await.status, StatusCode::BAD_GATEWAY);
+
+        // Unduhan diubah setelah katalog dibuat: SHA-256 tidak cocok, tidak ada yang terpasang.
+        let f = store(&[("net.teliti.a", "1.0.0", "")], OFFICIAL);
+        f.0.lock().unwrap().insert("https://store.test/x/net.teliti.a-1.0.0.tmx".into(), pkg_json("net.teliti.a", "1.0.1", ""));
+        t.st.set_ext_fetcher(Arc::new(f));
+        let r = t.post("/api/extensions/store/install", json!({ "id": "net.teliti.a" }), Some(&c)).await;
+        assert_eq!((r.status, r.code()), (StatusCode::BAD_GATEWAY, "store_corrupt"), "{:?}", r.body);
+        assert!(t.get("/api/extensions", Some(&c)).await.body["extensions"].as_array().unwrap().is_empty());
+
+        // Katalog menyebut Telemon yang tidak cocok: ditolak dengan alasan.
+        let f = store(&[("net.teliti.n", "1.0.0", r#","telemon":">=9.0.0""#)], OFFICIAL);
+        t.st.set_ext_fetcher(Arc::new(f));
+        let r = t.post("/api/extensions/store/install", json!({ "id": "net.teliti.n" }), Some(&c)).await;
+        assert_eq!((r.status, r.code()), (StatusCode::CONFLICT, "incompatible"));
+        let l = t.get("/api/extensions/store", Some(&c)).await.body;
+        assert!(l["extensions"][0]["problem"].as_str().unwrap().contains("9.0.0"));
+
+        // Dependensi hilang dari katalog: ditolak, tidak ada yang terpasang sebagian.
+        let f = store(&[("net.teliti.a", "1.0.0", r#","requires":[{"id":"net.teliti.b","version":"*"}]"#)], OFFICIAL);
+        t.st.set_ext_fetcher(Arc::new(f));
+        let r = t.post("/api/extensions/store/install", json!({ "id": "net.teliti.a" }), Some(&c)).await;
+        assert_eq!(r.status, StatusCode::CONFLICT);
+        assert!(t.get("/api/extensions", Some(&c)).await.body["extensions"].as_array().unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    // ---------------- backend WASM (ADR 0028) ----------------
+
+    fn wat_str(s: &str) -> String {
+        s.replace('\\', "\\\\").replace('"', "\\\"")
+    }
+
+    /// Modul yang memanggil satu operasi host dengan masukan tetap dan menjawab `{"status":200,"body":<jawaban host>}`.
+    fn guest(op: &str, input: &str) -> Vec<u8> {
+        wat::parse_str(format!(
+            r#"(module
+  (import "telemon" "call" (func $call (param i32 i32 i32 i32 i32 i32) (result i32)))
+  (memory (export "memory") 2)
+  (global $bump (mut i32) (i32.const 65536))
+  (data (i32.const 0) "{op}")
+  (data (i32.const 100) "{input}")
+  (data (i32.const 2048) "{{\"status\":200,\"body\":")
+  (func (export "telemon_alloc") (param $n i32) (result i32)
+    (local $p i32) (local.set $p (global.get $bump)) (global.set $bump (i32.add (global.get $bump) (local.get $n))) (local.get $p))
+  (func (export "telemon_handle") (param $ptr i32) (param $len i32) (result i64)
+    (local $n i32)
+    (local.set $n (call $call (i32.const 0) (i32.const {oplen}) (i32.const 100) (i32.const {inlen}) (i32.const 2069) (i32.const 60000)))
+    (i32.store8 (i32.add (i32.const 2069) (local.get $n)) (i32.const 125))
+    (i64.or (i64.shl (i64.const 2048) (i64.const 32)) (i64.extend_i32_u (i32.add (local.get $n) (i32.const 22))))))"#,
+            op = wat_str(op),
+            input = wat_str(input),
+            oplen = op.len(),
+            inlen = input.len()
+        ))
+        .unwrap()
+    }
+
+    fn guest_raw(body: &str) -> Vec<u8> {
+        wat::parse_str(format!(
+            r#"(module
+  (import "telemon" "call" (func $call (param i32 i32 i32 i32 i32 i32) (result i32)))
+  (memory (export "memory") 2)
+  (func (export "telemon_alloc") (param i32) (result i32) (i32.const 65536))
+  (func (export "telemon_handle") (param i32 i32) (result i64) {body}))"#
+        ))
+        .unwrap()
+    }
+
+    fn pkg_backend(id: &str, extra: &str, wasm: Vec<u8>, files: &[(&str, &str)]) -> Vec<u8> {
+        let m = format!(r#"{{"id":"{id}","name":"{id}","version":"1.0.0","apiVersion":1,"publisher":"Teliti","backend":{{"entry":"backend.wasm"}}{extra}}}"#);
+        let mut f: Vec<(String, Vec<u8>)> = vec![("manifest.json".into(), m.into_bytes()), ("backend.wasm".into(), wasm)];
+        for (p, b) in files {
+            f.push((p.to_string(), b.as_bytes().to_vec()));
+        }
+        pack(&f, Some(OFFICIAL)).unwrap()
+    }
+
+    async fn setup(t: &T, c: &str, id: &str, extra: &str, wasm: Vec<u8>, files: &[(&str, &str)]) {
+        let r = install(t, pkg_backend(id, extra, wasm, files), c).await;
+        assert_eq!(r.status, StatusCode::OK, "{id}: {:?}", r.body);
+        patch(t, id, json!({ "enabled": true }), c).await;
+    }
+
+    const GO: &str = r#","contributes":{"routes":[{"id":"go","method":"GET","path":"/go"}]}"#;
+
+    #[tokio::test]
+    async fn backend_kv_dan_rute_dengan_akses_dan_aksi() {
+        let d = dir();
+        let t = harness_with(on(&d));
+        t.account("admin", "role-admin");
+        t.account("pantau", "role-monitor");
+        let (a, p) = (t.login("admin").await, t.login("pantau").await);
+        let id = "net.teliti.kv";
+        let extra = r#","actions":[{"id":"write","label":"Tulis","level":"update"}],"contributes":{"routes":[
+            {"id":"go","method":"GET","path":"/go"},
+            {"id":"save","method":"POST","path":"/save","level":"update","action":"write"}]}"#;
+        setup(&t, &a, id, extra, guest("kv.set", r#"{"key":"a","value":"1"}"#), &[]).await;
+
+        let r = t.get(&format!("/api/ext/{id}/go"), Some(&a)).await;
+        assert_eq!((r.status, r.body.clone()), (StatusCode::OK, json!({ "ok": null })), "{:?}", r.body);
+        assert_eq!(t.telemon.with_store(|s| s.ext_kv_get(id, "a").unwrap()).as_deref(), Some("1"), "modul menulis lewat host API");
+
+        // Rute tak dikenal, metode salah, dan jalur lain: 404.
+        assert_eq!(t.get(&format!("/api/ext/{id}/tidak-ada"), Some(&a)).await.status, StatusCode::NOT_FOUND);
+        assert_eq!(t.call(Method::POST, &format!("/api/ext/{id}/go"), Some(json!({})), Some(&a), &[], LAN).await.status, StatusCode::NOT_FOUND);
+        assert_eq!(t.get("/api/ext/net.teliti.hantu/go", Some(&a)).await.status, StatusCode::NOT_FOUND);
+        assert_eq!(t.get(&format!("/api/ext/{id}/go"), None).await.status, StatusCode::UNAUTHORIZED);
+
+        // Peran tanpa akses ke extension: ditolak; dengan Lihat boleh GET; rute update butuh Ubah dan aksi.
+        assert_eq!(t.get(&format!("/api/ext/{id}/go"), Some(&p)).await.status, StatusCode::FORBIDDEN);
+        t.call(Method::PUT, &format!("/api/extensions/{id}/access/role-monitor"), Some(json!({ "level": "read" })), Some(&a), &[], LAN).await;
+        assert_eq!(t.get(&format!("/api/ext/{id}/go"), Some(&p)).await.status, StatusCode::OK);
+        let post = |ck: &str, extra: &[(&str, &str)], peer: &str| {
+            let ck = ck.to_string();
+            let extra: Vec<(String, String)> = extra.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect();
+            let peer = peer.to_string();
+            let t = &t;
+            async move {
+                let ex: Vec<(&str, &str)> = extra.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
+                t.call(Method::POST, &format!("/api/ext/{id}/save"), Some(json!({ "x": 1 })), Some(&ck), &ex, &peer).await
+            }
+        };
+        assert_eq!(post(&p, &[], LAN).await.status, StatusCode::FORBIDDEN, "level Lihat tidak cukup untuk rute update");
+        t.call(Method::PUT, &format!("/api/extensions/{id}/access/role-monitor"), Some(json!({ "level": "update", "actions": [] })), Some(&a), &[], LAN).await;
+        assert_eq!(post(&p, &[], LAN).await.status, StatusCode::FORBIDDEN, "tanpa aksi write");
+        t.call(Method::PUT, &format!("/api/extensions/{id}/access/role-monitor"), Some(json!({ "level": "update", "actions": ["write"] })), Some(&a), &[], LAN).await;
+        assert_eq!(post(&p, &[], LAN).await.status, StatusCode::OK);
+        // Lewat akses Publik rute update ditolak walau punya aksi.
+        assert_eq!(post(&a, &[("cf-connecting-ip", "203.0.113.9")], LOOP).await.status, StatusCode::FORBIDDEN);
+        // Panggilan update tercatat; yang dimatikan tidak melayani.
+        let rows = t.telemon.with_store(|s| s.list_audit(&telemon_core::AuditQuery::default()).unwrap());
+        assert!(rows.iter().any(|r| r.entry.action == "extension.call" && r.entry.actor == "pantau"));
+        patch(&t, id, json!({ "enabled": false }), &a).await;
+        assert_eq!(t.get(&format!("/api/ext/{id}/go"), Some(&a)).await.status, StatusCode::NOT_FOUND);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[tokio::test]
+    async fn host_api_menegakkan_izin_extension_dan_peran_pengguna() {
+        let d = dir();
+        let t = harness_with(on(&d));
+        t.account("admin", "role-admin");
+        let a = t.login("admin").await;
+        let id = "net.teliti.ev";
+        let extra = r#","permissions":[{"id":"data.events"},{"id":"data.routers","sensitive":true}],"contributes":{"routes":[{"id":"go","method":"GET","path":"/go"}]}"#;
+        setup(&t, &a, id, extra, guest("events.list", r#"{"limit":5}"#), &[]).await;
+        let go = |ck: &str| {
+            let ck = ck.to_string();
+            let t = &t;
+            async move { t.get(&format!("/api/ext/{id}/go"), Some(&ck)).await }
+        };
+        // Toggle events menyala bawaan: jawaban `ok` (daftar kosong).
+        assert_eq!(go(&a).await.body, json!({ "ok": [] }));
+        // Toggle dimatikan: modul menerima permission_denied, tidak ada data.
+        patch(&t, id, json!({ "perms": { "data.events": false } }), &a).await;
+        assert_eq!(go(&a).await.body["error"]["code"], "permission_denied");
+        patch(&t, id, json!({ "perms": { "data.events": true } }), &a).await;
+        assert_eq!(go(&a).await.body, json!({ "ok": [] }));
+        // Peran punya akses ke extension tetapi tidak punya izin Event: modul ditolak walau toggle menyala.
+        let role = t.auth.create_role(None, &RoleInput { name: "tanpa-event".into(), description: String::new(), permissions: Permissions::default().with(Resource::Ringkasan, Level::Read) }).unwrap();
+        t.account("buta", &role.id);
+        let b = t.login("buta").await;
+        t.call(Method::PUT, &format!("/api/extensions/{id}/access/{}", role.id), Some(json!({ "level": "read" })), Some(&a), &[], LAN).await;
+        assert_eq!(go(&b).await.body["error"]["code"], "permission_denied");
+
+        // Router: izin sensitif mati bawaan, daftar putih jalur, kata sandi tidak pernah keluar.
+        let rid = t.router(false);
+        let print = |path: &str| guest("router.print", &format!(r#"{{"router":"{rid}","path":"{path}"}}"#));
+        setup(&t, &a, "net.teliti.rt", r#","permissions":[{"id":"data.routers","sensitive":true}],"contributes":{"routes":[{"id":"go","method":"GET","path":"/go"}]}"#, print("/system/resource"), &[]).await;
+        let rt = |ck: &str| {
+            let ck = ck.to_string();
+            let t = &t;
+            async move { t.get("/api/ext/net.teliti.rt/go", Some(&ck)).await }
+        };
+        assert_eq!(rt(&a).await.body["error"]["code"], "permission_denied", "izin sensitif mulai mati");
+        patch(&t, "net.teliti.rt", json!({ "perms": { "data.routers": true } }), &a).await;
+        let r = rt(&a).await;
+        assert_eq!(r.body["ok"][0]["board-name"], "RB4011", "{:?}", r.body);
+        setup(&t, &a, "net.teliti.rt2", r#","permissions":[{"id":"data.routers","sensitive":true}],"contributes":{"routes":[{"id":"go","method":"GET","path":"/go"}]}"#, print("/ppp/secret"), &[]).await;
+        patch(&t, "net.teliti.rt2", json!({ "perms": { "data.routers": true } }), &a).await;
+        let r = t.get("/api/ext/net.teliti.rt2/go", Some(&a)).await;
+        assert_eq!(r.body["error"]["code"], "path_not_allowed", "kata sandi pelanggan tidak bisa dibaca: {:?}", r.body);
+        assert!(!r.body.to_string().contains("rahasia123"));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[tokio::test]
+    async fn host_api_sql_dan_batas_namespace() {
+        let d = dir();
+        let t = harness_with(on(&d));
+        t.account("admin", "role-admin");
+        let a = t.login("admin").await;
+        let mig = r#"{"ops":[{"op":"create_table","table":"x_net_teliti_sql__notes","columns":[{"name":"id","type":"integer","primaryKey":true,"autoIncrement":true},{"name":"text","type":"text"}]}]}"#;
+        // Tulis lalu baca lewat dua extension berbagi namespace? Tidak: tiap extension punya namespace sendiri.
+        setup(&t, &a, "net.teliti.sql", GO, guest("db.exec", r#"{"sql":"INSERT INTO x_net_teliti_sql__notes (text) VALUES (?1)","params":["halo"]}"#), &[("migrations/0001-init.json", mig)]).await;
+        let r = t.get("/api/ext/net.teliti.sql/go", Some(&a)).await;
+        assert_eq!(r.body, json!({ "ok": { "changes": 1 } }), "{:?}", r.body);
+        let rows = t.telemon.with_store(|s| s.ext_db_query("x_net_teliti_sql__", "SELECT text FROM x_net_teliti_sql__notes", &[], 10).unwrap());
+        assert_eq!(rows.rows[0][0], telemon_core::DbValue::Text("halo".into()));
+        // Mencoba membaca tabel inti: ditolak oleh authorizer.
+        setup(&t, &a, "net.teliti.evil", GO, guest("db.query", r#"{"sql":"SELECT * FROM accounts"}"#), &[]).await;
+        let r = t.get("/api/ext/net.teliti.evil/go", Some(&a)).await;
+        assert_eq!(r.body["error"]["code"], "db", "{:?}", r.body);
+        // Tabel milik extension lain juga tidak terbaca.
+        setup(&t, &a, "net.teliti.evil2", GO, guest("db.query", r#"{"sql":"SELECT * FROM x_net_teliti_sql__notes"}"#), &[]).await;
+        assert_eq!(t.get("/api/ext/net.teliti.evil2/go", Some(&a)).await.body["error"]["code"], "db");
+        // Operasi host tak dikenal.
+        setup(&t, &a, "net.teliti.unk", GO, guest("fs.read", r#"{}"#), &[]).await;
+        assert_eq!(t.get("/api/ext/net.teliti.unk/go", Some(&a)).await.body["error"]["code"], "unknown_op");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[tokio::test]
+    async fn backend_yang_rusak_tidak_menjatuhkan_server() {
+        let d = dir();
+        let t = harness_with(on(&d));
+        t.account("admin", "role-admin");
+        let a = t.login("admin").await;
+        // Trap: 502 dan baris log; loop tanpa akhir: 504 (habis bahan bakar); jawaban bukan JSON: 502.
+        setup(&t, &a, "net.teliti.trap", GO, guest_raw("unreachable"), &[]).await;
+        let r = t.get("/api/ext/net.teliti.trap/go", Some(&a)).await;
+        assert_eq!((r.status, r.code()), (StatusCode::BAD_GATEWAY, "backend_error"));
+        let logs = t.get("/api/extensions/net.teliti.trap/logs", Some(&a)).await.body;
+        assert!(logs["lines"][0].as_str().unwrap().contains("galat backend"), "{logs:?}");
+        setup(&t, &a, "net.teliti.loop", GO, guest_raw("(loop $l (br $l)) (i64.const 0)"), &[]).await;
+        let r = t.get("/api/ext/net.teliti.loop/go", Some(&a)).await;
+        assert_eq!((r.status, r.code()), (StatusCode::GATEWAY_TIMEOUT, "backend_timeout"));
+        setup(&t, &a, "net.teliti.junk", GO, guest_raw("(i64.or (i64.shl (i64.const 100) (i64.const 32)) (i64.const 4))"), &[]).await;
+        assert_eq!(t.get("/api/ext/net.teliti.junk/go", Some(&a)).await.status, StatusCode::BAD_GATEWAY);
+        // Server tetap melayani.
+        assert_eq!(t.get("/api/extensions", Some(&a)).await.status, StatusCode::OK);
+        // Modul tidak valid atau memakai impor terlarang ditolak saat pasang.
+        let bad = pkg_backend("net.teliti.bad", "", b"bukan wasm".to_vec(), &[]);
+        assert_eq!(install(&t, bad, &a).await.status, StatusCode::BAD_REQUEST);
+        let wasi = wat::parse_str(r#"(module (import "wasi_snapshot_preview1" "fd_write" (func (param i32 i32 i32 i32) (result i32))) (memory (export "memory") 1) (func (export "telemon_alloc") (param i32) (result i32) (i32.const 0)) (func (export "telemon_handle") (param i32 i32) (result i64) (i64.const 0)))"#).unwrap();
+        assert_eq!(install(&t, pkg_backend("net.teliti.wasi", "", wasi, &[]), &a).await.status, StatusCode::BAD_REQUEST);
+        // Rute atau worker tanpa backend ditolak di manifest.
+        let m = r#"{"id":"net.teliti.nob","name":"n","version":"1.0.0","apiVersion":1,"publisher":"T","contributes":{"routes":[{"id":"go","method":"GET","path":"/go"}]}}"#;
+        let nob = pack(&[("manifest.json".into(), m.as_bytes().to_vec())], Some(OFFICIAL)).unwrap();
+        assert_eq!(install(&t, nob, &a).await.status, StatusCode::BAD_REQUEST);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[tokio::test]
+    async fn worker_terjadwal_berjalan_dijeda_dan_dibuka_manual() {
+        let d = dir();
+        let t = harness_with(on(&d));
+        t.account("admin", "role-admin");
+        let a = t.login("admin").await;
+        let wk = r#","contributes":{"workers":[{"id":"tick","everySeconds":10}]}"#;
+        setup(&t, &a, "net.teliti.wk", wk, guest("kv.set", r#"{"key":"ran","value":"yes"}"#), &[]).await;
+        let state = |t: &T| t.st_workers("net.teliti.wk/tick");
+        telemon_http::run_due_workers(&t.st).await;
+        assert_eq!(t.telemon.with_store(|s| s.ext_kv_get("net.teliti.wk", "ran").unwrap()).as_deref(), Some("yes"), "worker menjalankan modul");
+        let first = state(&t).last_run;
+        // Belum jatuh tempo: tidak berjalan lagi. Setelah 10 detik: berjalan.
+        telemon_http::run_due_workers(&t.st).await;
+        assert_eq!(state(&t).last_run, first);
+        t.clock.fetch_add(10_000, Ordering::SeqCst);
+        telemon_http::run_due_workers(&t.st).await;
+        assert_ne!(state(&t).last_run, first);
+        assert_eq!(t.get("/api/extensions", Some(&a)).await.body["extensions"][0]["workers"][0]["state"]["lastOk"], true);
+
+        // Worker yang gagal terus dijeda setelah 5 kali; menjalankan manual membuka jeda.
+        setup(&t, &a, "net.teliti.bad", wk, guest_raw("unreachable"), &[]).await;
+        for _ in 0..8 {
+            t.clock.fetch_add(70_000, Ordering::SeqCst);
+            telemon_http::run_due_workers(&t.st).await;
+        }
+        let s = t.st_workers("net.teliti.bad/tick");
+        assert!(s.paused && s.failures == 5 && s.last_ok == Some(false), "{s:?}");
+        let logs = t.get("/api/extensions/net.teliti.bad/logs", Some(&a)).await.body;
+        assert!(logs["lines"].as_array().map_or(0, |l| l.len()) >= 5, "{logs:?}");
+        let r = t.call(Method::POST, "/api/extensions/net.teliti.bad/workers/tick/run", Some(json!({})), Some(&a), &[], LAN).await;
+        assert_eq!((r.status, r.body["ok"].as_bool()), (StatusCode::OK, Some(false)));
+        assert!(!t.st_workers("net.teliti.bad/tick").paused || t.st_workers("net.teliti.bad/tick").failures == 1, "jeda dibuka lalu hitung ulang");
+        // Worker extension yang dimatikan tidak berjalan; peran tanpa Ubah tidak boleh memicu.
+        patch(&t, "net.teliti.wk", json!({ "enabled": false }), &a).await;
+        let before = state(&t).last_run;
+        t.clock.fetch_add(60_000, Ordering::SeqCst);
+        telemon_http::run_due_workers(&t.st).await;
+        assert_eq!(state(&t).last_run, before);
+        t.account("pantau", "role-monitor");
+        let p = t.login("pantau").await;
+        assert_eq!(t.call(Method::POST, "/api/extensions/net.teliti.wk/workers/tick/run", Some(json!({})), Some(&p), &[], LAN).await.status, StatusCode::FORBIDDEN);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[tokio::test]
+    async fn izin_akun_dan_akses_publik() {
+        let d = dir();
+        let t = harness_with(on(&d));
+        t.account("admin", "role-admin");
+        t.account("pantau", "role-monitor");
+        let (a, p) = (t.login("admin").await, t.login("pantau").await);
+        install(&t, pkg("1.0.0", "", Some(OFFICIAL)), &a).await;
+        patch(&t, "net.teliti.demo", json!({ "enabled": true }), &a).await;
+        // Tanpa akses di halaman Akses: extension tidak terlihat dan berkas UI-nya 404. Setelah diberi Lihat: terlihat.
+        assert!(t.get("/api/extensions/active", Some(&p)).await.body["extensions"].as_array().unwrap().is_empty());
+        assert_eq!(t.get("/ext/net.teliti.demo/ui/index.js", Some(&p)).await.status, StatusCode::NOT_FOUND);
+        let g = t.call(Method::PUT, "/api/extensions/net.teliti.demo/access/role-monitor", Some(json!({ "level": "read" })), Some(&a), &[], LAN).await;
+        assert_eq!(g.status, StatusCode::OK, "{:?}", g.body);
+        // Peran tanpa izin Admin: tidak bisa mengelola, tetapi UI tetap memuat extension aktif.
+        assert_eq!(t.get("/api/extensions", Some(&p)).await.status, StatusCode::FORBIDDEN);
+        assert_eq!(install(&t, pkg("1.0.0", "", Some(OFFICIAL)), &p).await.status, StatusCode::FORBIDDEN);
+        assert_eq!(patch(&t, "net.teliti.demo", json!({ "enabled": false }), &p).await.status, StatusCode::FORBIDDEN);
+        assert_eq!(t.call(Method::DELETE, "/api/extensions/net.teliti.demo", None, Some(&p), &[], LAN).await.status, StatusCode::FORBIDDEN);
+        assert_eq!(t.get("/api/extensions/active", Some(&p)).await.body["extensions"].as_array().unwrap().len(), 1);
+        assert_eq!(t.get("/ext/net.teliti.demo/ui/index.js", Some(&p)).await.status, StatusCode::OK);
+        // Lewat akses Publik, admin pun tidak boleh mengelola.
+        let pub_hdr = [("cf-connecting-ip", "203.0.113.9")];
+        let r = send(&t, Method::POST, "/api/extensions", pkg("1.1.0", "", Some(OFFICIAL)), &a, &pub_hdr, LOOP).await;
+        assert_eq!(r.status, StatusCode::FORBIDDEN, "{:?}", r.body);
+        let r = t.call(Method::PATCH, "/api/extensions/net.teliti.demo", Some(json!({ "enabled": false })), Some(&a), &pub_hdr, LOOP).await;
+        assert_eq!(r.status, StatusCode::FORBIDDEN);
+        let _ = std::fs::remove_dir_all(&d);
     }
 }

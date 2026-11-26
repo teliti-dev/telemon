@@ -1,5 +1,5 @@
 import * as React from "react"
-import { LogOutIcon, SparklesIcon, UserRoundIcon } from "lucide-react"
+import { LogOutIcon, PuzzleIcon, SparklesIcon, UserRoundIcon } from "lucide-react"
 
 import { isNavActive } from "@/components/nav-items"
 import { Button } from "@/components/ui/button"
@@ -39,6 +39,7 @@ export function AccountMenu() {
   const manageItems = useNavItems().filter((i) => i.more)
   const [open, setOpen] = React.useState(false)
   const onAi = page === "pengaturan" && (segments[0] === "ai" || segments[0] === "ai-provider")
+  const onExt = page === "pengaturan" && segments[0] === "extension"
 
   const initials = session
     ? session.displayName
@@ -131,7 +132,7 @@ export function AccountMenu() {
                 <li>
                   <Button
                     variant="ghost"
-                    className={cn(row, isNavActive(item.page, page) && !(item.page === "pengaturan" && onAi) && "text-brand")}
+                    className={cn(row, isNavActive(item.page, page) && !(item.page === "pengaturan" && (onAi || onExt)) && "text-brand")}
                     onClick={() => go(item.page)}
                   >
                     <item.icon /> {t(item.label /* i18n-ignore: label bertanda tk() */)}
@@ -148,6 +149,20 @@ export function AccountMenu() {
                       }}
                     >
                       <SparklesIcon /> {t("Pengaturan AI")}
+                    </Button>
+                  </li>
+                )}
+                {item.page === "pengaturan" && (
+                  <li>
+                    <Button
+                      variant="ghost"
+                      className={cn(row, onExt && "text-brand")}
+                      onClick={() => {
+                        setOpen(false)
+                        navigatePath("pengaturan", ["extension"])
+                      }}
+                    >
+                      <PuzzleIcon /> {t("Extension")}
                     </Button>
                   </li>
                 )}

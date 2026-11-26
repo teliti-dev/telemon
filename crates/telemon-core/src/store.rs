@@ -216,6 +216,49 @@ CREATE TABLE traffic_ifaces (
   last_seen INTEGER NOT NULL,
   PRIMARY KEY (router_id, name)
 );
+", "
+CREATE TABLE extensions (
+  id TEXT PRIMARY KEY,
+  version TEXT NOT NULL,
+  tier TEXT NOT NULL,
+  key_id TEXT,
+  signed INTEGER NOT NULL,
+  manifest TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 0,
+  installed_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE extension_perms (
+  ext_id TEXT NOT NULL,
+  perm TEXT NOT NULL,
+  granted INTEGER NOT NULL,
+  PRIMARY KEY (ext_id, perm)
+);
+", "
+CREATE TABLE extension_migrations (
+  ext_id TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  checksum TEXT NOT NULL,
+  applied_at INTEGER NOT NULL,
+  PRIMARY KEY (ext_id, version)
+);
+", "
+CREATE TABLE extension_access (
+  ext_id TEXT NOT NULL,
+  role_id TEXT NOT NULL,
+  level TEXT NOT NULL,
+  actions TEXT NOT NULL,
+  PRIMARY KEY (ext_id, role_id)
+);
+", "
+CREATE TABLE extension_kv (
+  ext_id TEXT NOT NULL,
+  key TEXT NOT NULL,
+  value TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (ext_id, key)
+);
 "];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -329,6 +372,48 @@ pub struct AuditEntry {
     pub title: String,
     pub changes: Vec<Change>,
     pub outcome: AuditOutcome,
+}
+
+/// Nilai SQL untuk host API `db.*` (blob hanya dilaporkan ukurannya).
+#[derive(Debug, Clone, PartialEq)]
+pub enum DbValue {
+    Null,
+    Int(i64),
+    Real(f64),
+    Text(String),
+    Blob(usize),
+}
+
+impl DbValue {
+    fn to_sql(&self) -> rusqlite::types::Value {
+        match self {
+            DbValue::Null | DbValue::Blob(_) => rusqlite::types::Value::Null,
+            DbValue::Int(v) => rusqlite::types::Value::Integer(*v),
+            DbValue::Real(v) => rusqlite::types::Value::Real(*v),
+            DbValue::Text(v) => rusqlite::types::Value::Text(v.clone()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DbRows {
+    pub columns: Vec<String>,
+    pub rows: Vec<Vec<DbValue>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredExtension {
+    pub id: String,
+    pub version: String,
+    /// `official` atau `public`.
+    pub tier: String,
+    pub key_id: Option<String>,
+    pub signed: bool,
+    /// Manifest asli (JSON); diurai oleh `telemon-ext`.
+    pub manifest: String,
+    pub enabled: bool,
+    pub installed_at: i64,
+    pub updated_at: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1065,6 +1150,240 @@ impl Store {
         tx.commit()?;
         self.vault = Some(new);
         Ok(())
+    }
+
+    // ---------------- extension (ADR 0028) ----------------
+
+    /// Pasang atau perbarui. Pembaruan mempertahankan `enabled` dan izin yang sudah diputuskan;
+    /// izin baru ditambahkan lewat `ext_set_perm` oleh pemanggil.
+    #[allow(clippy::too_many_arguments)]
+    pub fn ext_upsert(&mut self, id: &str, version: &str, tier: &str, key_id: Option<&str>, signed: bool, manifest: &str, now: i64) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO extensions (id, version, tier, key_id, signed, manifest, enabled, installed_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,0,?7,?7)
+             ON CONFLICT(id) DO UPDATE SET version=?2, tier=?3, key_id=?4, signed=?5, manifest=?6, updated_at=?7",
+            params![id, version, tier, key_id, signed as i64, manifest, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn ext_list(&self) -> Result<Vec<StoredExtension>> {
+        let mut st = self.conn.prepare("SELECT id, version, tier, key_id, signed, manifest, enabled, installed_at, updated_at FROM extensions ORDER BY id")?;
+        let rows = st.query_map([], |r| {
+            Ok(StoredExtension {
+                id: r.get(0)?,
+                version: r.get(1)?,
+                tier: r.get(2)?,
+                key_id: r.get(3)?,
+                signed: r.get::<_, i64>(4)? != 0,
+                manifest: r.get(5)?,
+                enabled: r.get::<_, i64>(6)? != 0,
+                installed_at: r.get(7)?,
+                updated_at: r.get(8)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn ext_get(&self, id: &str) -> Result<Option<StoredExtension>> {
+        Ok(self.ext_list()?.into_iter().find(|e| e.id == id))
+    }
+
+    /// `false` bila id tidak ada.
+    pub fn ext_set_enabled(&mut self, id: &str, enabled: bool, now: i64) -> Result<bool> {
+        Ok(self.conn.execute("UPDATE extensions SET enabled=?2, updated_at=?3 WHERE id=?1", params![id, enabled as i64, now])? > 0)
+    }
+
+    pub fn ext_set_perm(&mut self, id: &str, perm: &str, granted: bool) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO extension_perms (ext_id, perm, granted) VALUES (?1,?2,?3) ON CONFLICT(ext_id, perm) DO UPDATE SET granted=?3",
+            params![id, perm, granted as i64],
+        )?;
+        Ok(())
+    }
+
+    /// Izin yang sudah diputuskan (izin tanpa baris = belum diputuskan = mati).
+    pub fn ext_perms(&self, id: &str) -> Result<Vec<(String, bool)>> {
+        let mut st = self.conn.prepare("SELECT perm, granted FROM extension_perms WHERE ext_id=?1 ORDER BY perm")?;
+        let rows = st.query_map(params![id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? != 0)))?;
+        rows.collect()
+    }
+
+    /// Hapus extension dan semua izinnya.
+    pub fn ext_delete(&mut self, id: &str) -> Result<bool> {
+        self.conn.execute("DELETE FROM extension_perms WHERE ext_id=?1", params![id])?;
+        self.conn.execute("DELETE FROM extension_access WHERE ext_id=?1", params![id])?;
+        Ok(self.conn.execute("DELETE FROM extensions WHERE id=?1", params![id])? > 0)
+    }
+
+    /// Akses per peran untuk satu extension: (peran, level `none|read|update`, aksi yang diberikan).
+    pub fn ext_access_list(&self, id: &str) -> Result<Vec<(String, String, Vec<String>)>> {
+        let mut st = self.conn.prepare("SELECT role_id, level, actions FROM extension_access WHERE ext_id=?1 ORDER BY role_id")?;
+        let rows = st.query_map(params![id], |r| {
+            let actions: String = r.get(2)?;
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, actions.split(',').filter(|a| !a.is_empty()).map(str::to_string).collect()))
+        })?;
+        rows.collect()
+    }
+
+    /// Tetapkan akses satu peran (`none` menghapus barisnya). Id aksi tidak boleh memuat koma.
+    pub fn ext_access_set(&mut self, id: &str, role_id: &str, level: &str, actions: &[String]) -> Result<()> {
+        if level == "none" {
+            self.conn.execute("DELETE FROM extension_access WHERE ext_id=?1 AND role_id=?2", params![id, role_id])?;
+            return Ok(());
+        }
+        self.conn.execute(
+            "INSERT INTO extension_access (ext_id, role_id, level, actions) VALUES (?1,?2,?3,?4) ON CONFLICT(ext_id, role_id) DO UPDATE SET level=?3, actions=?4",
+            params![id, role_id, level, actions.join(",")],
+        )?;
+        Ok(())
+    }
+
+    // ---- penyimpanan kunci-nilai milik extension (host API `kv.*`) ----
+
+    pub fn ext_kv_get(&self, id: &str, key: &str) -> Result<Option<String>> {
+        self.conn.query_row("SELECT value FROM extension_kv WHERE ext_id=?1 AND key=?2", params![id, key], |r| r.get(0)).optional()
+    }
+
+    /// Simpan nilai. Kuota: kunci 200 karakter, nilai 256 KB, 10.000 kunci, 16 MB total per extension.
+    pub fn ext_kv_set(&mut self, id: &str, key: &str, value: &str, now: i64) -> std::result::Result<(), String> {
+        if key.is_empty() || key.len() > 200 {
+            return Err("Kunci kosong atau lebih dari 200 karakter".into());
+        }
+        if value.len() > 256 << 10 {
+            return Err("Nilai lebih dari 256 KB".into());
+        }
+        let (rows, bytes): (i64, i64) = self.conn.query_row("SELECT COUNT(*), COALESCE(SUM(length(value)),0) FROM extension_kv WHERE ext_id=?1 AND key<>?2", params![id, key], |r| Ok((r.get(0)?, r.get(1)?))).map_err(|e| e.to_string())?;
+        if rows >= 10_000 || bytes + value.len() as i64 > 16 << 20 {
+            return Err("Kuota penyimpanan extension terlampaui".into());
+        }
+        self.conn
+            .execute("INSERT INTO extension_kv (ext_id, key, value, updated_at) VALUES (?1,?2,?3,?4) ON CONFLICT(ext_id, key) DO UPDATE SET value=?3, updated_at=?4", params![id, key, value, now])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    pub fn ext_kv_delete(&mut self, id: &str, key: &str) -> Result<bool> {
+        Ok(self.conn.execute("DELETE FROM extension_kv WHERE ext_id=?1 AND key=?2", params![id, key])? > 0)
+    }
+
+    /// Kunci berawalan `prefix`, urut abjad, paling banyak `limit` (maks 1000).
+    pub fn ext_kv_list(&self, id: &str, prefix: &str, limit: usize) -> Result<Vec<String>> {
+        let mut st = self.conn.prepare("SELECT key FROM extension_kv WHERE ext_id=?1 AND substr(key, 1, length(?2)) = ?2 ORDER BY key LIMIT ?3")?;
+        let rows = st.query_map(params![id, prefix, limit.clamp(1, 1000) as i64], |r| r.get::<_, String>(0))?;
+        rows.collect()
+    }
+
+    // ---- SQL milik extension (host API `db.*`), dibatasi ke namespace-nya lewat authorizer SQLite ----
+
+    /// Pasang authorizer yang hanya mengizinkan baca/tulis tabel berawalan `ns`, `SELECT`, dan fungsi aman; semuanya
+    /// selain itu (DDL, PRAGMA, ATTACH, trigger, transaksi, tabel inti, `sqlite_master`) ditolak. Dipasang hanya selama
+    /// satu pernyataan, dan penghentian paksa bila melewati 2 detik.
+    fn with_ext_sql<R>(&mut self, ns: &str, f: impl FnOnce(&Connection) -> Result<R>) -> Result<R> {
+        use rusqlite::hooks::{AuthAction, Authorization};
+        const SAFE_FN: &[&str] = &["count", "sum", "total", "min", "max", "avg", "abs", "round", "length", "lower", "upper", "substr", "substring", "coalesce", "ifnull", "nullif", "typeof", "instr", "replace", "trim", "ltrim", "rtrim", "like", "glob", "date", "time", "datetime", "strftime", "julianday", "unixepoch", "group_concat", "hex", "printf", "iif", "random", "randomblob"];
+        let prefix = ns.to_string();
+        let ok = move |t: &str| t.starts_with(&prefix);
+        self.conn.authorizer(Some(move |ctx: rusqlite::hooks::AuthContext<'_>| match ctx.action {
+            AuthAction::Select | AuthAction::Recursive => Authorization::Allow,
+            AuthAction::Read { table_name, .. } | AuthAction::Update { table_name, .. } | AuthAction::Insert { table_name } | AuthAction::Delete { table_name } => {
+                if ok(table_name) { Authorization::Allow } else { Authorization::Deny }
+            }
+            AuthAction::Function { function_name } => {
+                if SAFE_FN.contains(&function_name.to_ascii_lowercase().as_str()) { Authorization::Allow } else { Authorization::Deny }
+            }
+            _ => Authorization::Deny,
+        }))?;
+        let started = std::time::Instant::now();
+        self.conn.progress_handler(1000, Some(move || started.elapsed() > std::time::Duration::from_secs(2)))?;
+        let r = f(&self.conn);
+        let _ = self.conn.authorizer(None::<fn(rusqlite::hooks::AuthContext<'_>) -> Authorization>);
+        let _ = self.conn.progress_handler(0, None::<fn() -> bool>);
+        r
+    }
+
+    /// `SELECT` bernamespace. Hanya pernyataan baca-saja; paling banyak `max_rows` baris.
+    pub fn ext_db_query(&mut self, ns: &str, sql: &str, args: &[DbValue], max_rows: usize) -> Result<DbRows> {
+        self.with_ext_sql(ns, |c| {
+            let mut st = c.prepare(sql)?;
+            if !st.readonly() {
+                return Err(rusqlite::Error::InvalidQuery);
+            }
+            let columns: Vec<String> = st.column_names().map(|s| s.to_string()).collect();
+            let n = columns.len();
+            let mut rows = st.query(rusqlite::params_from_iter(args.iter().map(DbValue::to_sql)))?;
+            let mut out = Vec::new();
+            while let Some(r) = rows.next()? {
+                if out.len() >= max_rows {
+                    break;
+                }
+                let mut row = Vec::with_capacity(n);
+                for i in 0..n {
+                    row.push(match r.get_ref(i)? {
+                        rusqlite::types::ValueRef::Null => DbValue::Null,
+                        rusqlite::types::ValueRef::Integer(v) => DbValue::Int(v),
+                        rusqlite::types::ValueRef::Real(v) => DbValue::Real(v),
+                        rusqlite::types::ValueRef::Text(t) => DbValue::Text(String::from_utf8_lossy(t).into_owned()),
+                        rusqlite::types::ValueRef::Blob(b) => DbValue::Blob(b.len()),
+                    });
+                }
+                out.push(row);
+            }
+            Ok(DbRows { columns, rows: out })
+        })
+    }
+
+    /// `INSERT`/`UPDATE`/`DELETE` bernamespace; mengembalikan jumlah baris terdampak.
+    pub fn ext_db_exec(&mut self, ns: &str, sql: &str, args: &[DbValue]) -> Result<usize> {
+        self.with_ext_sql(ns, |c| {
+            let mut st = c.prepare(sql)?;
+            if st.readonly() {
+                return Err(rusqlite::Error::ExecuteReturnedResults);
+            }
+            st.execute(rusqlite::params_from_iter(args.iter().map(DbValue::to_sql)))
+        })
+    }
+
+    /// Migrasi extension yang sudah terapan: (versi, checksum), urut versi.
+    pub fn ext_applied_migrations(&self, id: &str) -> Result<Vec<(u32, String)>> {
+        let mut st = self.conn.prepare("SELECT version, checksum FROM extension_migrations WHERE ext_id=?1 ORDER BY version")?;
+        let rows = st.query_map(params![id], |r| Ok((r.get::<_, i64>(0)? as u32, r.get::<_, String>(1)?)))?;
+        rows.collect()
+    }
+
+    /// Terapkan migrasi `(versi, nama, checksum, pernyataan SQL)` dalam **satu transaksi**: gagal di mana pun
+    /// berarti tidak ada yang berubah. SQL berasal dari `telemon-ext` yang sudah memvalidasi namespace.
+    pub fn ext_apply_migrations(&mut self, id: &str, now: i64, items: &[(u32, String, String, Vec<String>)]) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        for (version, name, checksum, sql) in items {
+            for stmt in sql {
+                tx.execute_batch(stmt)?;
+            }
+            tx.execute("INSERT INTO extension_migrations (ext_id, version, name, checksum, applied_at) VALUES (?1,?2,?3,?4,?5)", params![id, *version as i64, name, checksum, now])?;
+        }
+        tx.commit()
+    }
+
+    /// Tabel milik extension (berawalan `ns`, mis. `x_net_teliti_backup__`).
+    pub fn ext_table_names(&self, ns: &str) -> Result<Vec<String>> {
+        let mut st = self.conn.prepare("SELECT name FROM sqlite_master WHERE type='table' AND substr(name, 1, length(?1)) = ?1 ORDER BY name")?;
+        let rows = st.query_map(params![ns], |r| r.get::<_, String>(0))?;
+        rows.collect()
+    }
+
+    /// Hapus semua tabel extension dan catatan migrasinya. `ns` harus berbentuk `x_...__`.
+    pub fn ext_drop_data(&mut self, id: &str, ns: &str) -> Result<usize> {
+        if !(ns.starts_with("x_") && ns.ends_with("__") && ns.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')) {
+            return Err(rusqlite::Error::InvalidParameterName(format!("namespace tidak valid: {ns}")));
+        }
+        let tables = self.ext_table_names(ns)?;
+        let tx = self.conn.transaction()?;
+        for t in &tables {
+            tx.execute_batch(&format!("DROP TABLE IF EXISTS {t}"))?;
+        }
+        tx.execute("DELETE FROM extension_migrations WHERE ext_id=?1", params![id])?;
+        tx.execute("DELETE FROM extension_kv WHERE ext_id=?1", params![id])?;
+        tx.commit()?;
+        Ok(tables.len())
     }
 
     // ---------------- riwayat perubahan ----------------
@@ -1908,5 +2227,157 @@ mod tests {
         let c = s.event_counts_by_router(base, base + 3 * hour).unwrap();
         let cnt = |r: &str, k: &str| c.iter().find(|(a, b, _)| a == r && b == k).map(|x| x.2).unwrap_or(0);
         assert_eq!((cnt("r1", "auth_failed"), cnt("r1", "router_down"), cnt("r2", "auth_failed"), cnt("r2", "router_down")), (3, 1, 1, 0));
+    }
+}
+
+#[cfg(test)]
+mod ext_tests {
+    use super::*;
+
+    #[test]
+    fn extension_rows_keep_state_across_updates_and_delete_cleanly() {
+        let mut s = Store::open_in_memory().unwrap();
+        s.ext_upsert("net.t.a", "1.0.0", "official", Some("k"), true, "{}", 10).unwrap();
+        assert!(!s.ext_get("net.t.a").unwrap().unwrap().enabled, "pasang = mati");
+        s.ext_set_perm("net.t.a", "data.events", true).unwrap();
+        assert!(s.ext_set_enabled("net.t.a", true, 11).unwrap());
+        assert!(!s.ext_set_enabled("tidak.ada", true, 11).unwrap());
+        // Pembaruan versi mempertahankan enabled dan izin.
+        s.ext_upsert("net.t.a", "1.1.0", "official", Some("k"), true, "{}", 20).unwrap();
+        let e = s.ext_get("net.t.a").unwrap().unwrap();
+        assert_eq!((e.version.as_str(), e.enabled, e.installed_at, e.updated_at), ("1.1.0", true, 10, 20));
+        assert_eq!(s.ext_perms("net.t.a").unwrap(), vec![("data.events".to_string(), true)]);
+        s.ext_set_perm("net.t.a", "data.events", false).unwrap();
+        assert_eq!(s.ext_perms("net.t.a").unwrap(), vec![("data.events".to_string(), false)]);
+        assert!(s.ext_delete("net.t.a").unwrap());
+        assert!(s.ext_list().unwrap().is_empty() && s.ext_perms("net.t.a").unwrap().is_empty());
+    }
+
+    #[test]
+    fn extension_kv_has_quotas_and_prefix_listing() {
+        let mut s = Store::open_in_memory().unwrap();
+        s.ext_kv_set("net.t.a", "cfg/a", "1", 1).unwrap();
+        s.ext_kv_set("net.t.a", "cfg/b", "2", 1).unwrap();
+        s.ext_kv_set("net.t.a", "log/x", "3", 1).unwrap();
+        s.ext_kv_set("net.t.b", "cfg/a", "lain", 1).unwrap();
+        assert_eq!(s.ext_kv_get("net.t.a", "cfg/a").unwrap().as_deref(), Some("1"));
+        assert_eq!(s.ext_kv_get("net.t.a", "tidak-ada").unwrap(), None);
+        assert_eq!(s.ext_kv_list("net.t.a", "cfg/", 10).unwrap(), vec!["cfg/a".to_string(), "cfg/b".to_string()]);
+        assert_eq!(s.ext_kv_list("net.t.a", "", 2).unwrap().len(), 2, "batas jumlah");
+        s.ext_kv_set("net.t.a", "cfg/a", "baru", 2).unwrap();
+        assert_eq!(s.ext_kv_get("net.t.a", "cfg/a").unwrap().as_deref(), Some("baru"));
+        assert_eq!(s.ext_kv_get("net.t.b", "cfg/a").unwrap().as_deref(), Some("lain"), "terpisah per extension");
+        assert!(s.ext_kv_set("net.t.a", "", "x", 1).is_err() && s.ext_kv_set("net.t.a", &"k".repeat(201), "x", 1).is_err());
+        assert!(s.ext_kv_set("net.t.a", "besar", &"v".repeat(256 * 1024 + 1), 1).is_err());
+        assert!(s.ext_kv_delete("net.t.a", "cfg/a").unwrap() && !s.ext_kv_delete("net.t.a", "cfg/a").unwrap());
+        // Kuota total 16 MB (63 nilai 256 KB sudah melewati 16 MB).
+        let v = "v".repeat(256 * 1024);
+        let mut failed = false;
+        for i in 0..80 {
+            if s.ext_kv_set("net.t.q", &format!("k{i}"), &v, 1).is_err() {
+                failed = true;
+                break;
+            }
+        }
+        assert!(failed, "kuota total harus menolak");
+        s.ext_apply_migrations("net.t.a", 1, &[]).unwrap();
+        s.ext_drop_data("net.t.a", "x_net_t_a__").unwrap();
+        assert!(s.ext_kv_list("net.t.a", "", 10).unwrap().is_empty(), "hapus data ikut menghapus kv");
+        assert_eq!(s.ext_kv_get("net.t.b", "cfg/a").unwrap().as_deref(), Some("lain"));
+    }
+
+    #[test]
+    fn extension_sql_is_confined_to_its_namespace() {
+        let mut s = Store::open_in_memory().unwrap();
+        let ns = "x_net_t_a__";
+        let m = |sql: &[&str]| vec![(1u32, "init".to_string(), "sum".to_string(), sql.iter().map(|x| x.to_string()).collect::<Vec<_>>())];
+        s.ext_apply_migrations("net.t.a", 1, &m(&["CREATE TABLE x_net_t_a__notes (id INTEGER PRIMARY KEY, text TEXT, n INTEGER)", "CREATE TABLE x_net_t_b__other (id INTEGER)"])).unwrap();
+        let t = |v: &str| DbValue::Text(v.into());
+        assert_eq!(s.ext_db_exec(ns, "INSERT INTO x_net_t_a__notes (text, n) VALUES (?1, ?2)", &[t("halo"), DbValue::Int(7)]).unwrap(), 1);
+        s.ext_db_exec(ns, "INSERT INTO x_net_t_a__notes (text, n) VALUES (?1, ?2)", &[t("dua"), DbValue::Int(3)]).unwrap();
+        let r = s.ext_db_query(ns, "SELECT text, n FROM x_net_t_a__notes WHERE n > ?1 ORDER BY n", &[DbValue::Int(1)], 100).unwrap();
+        assert_eq!(r.columns, vec!["text".to_string(), "n".to_string()]);
+        assert_eq!(r.rows, vec![vec![t("dua"), DbValue::Int(3)], vec![t("halo"), DbValue::Int(7)]]);
+        let r = s.ext_db_query(ns, "SELECT COUNT(*), SUM(n), upper(MIN(text)) FROM x_net_t_a__notes", &[], 100).unwrap();
+        assert_eq!(r.rows[0], vec![DbValue::Int(2), DbValue::Int(10), t("DUA")], "fungsi agregat aman diizinkan");
+        assert_eq!(s.ext_db_query(ns, "SELECT * FROM x_net_t_a__notes", &[], 1).unwrap().rows.len(), 1, "batas baris");
+        assert_eq!(s.ext_db_exec(ns, "UPDATE x_net_t_a__notes SET n = n + 1 WHERE text = ?1", &[t("dua")]).unwrap(), 1);
+        assert_eq!(s.ext_db_exec(ns, "DELETE FROM x_net_t_a__notes WHERE n > ?1", &[DbValue::Int(100)]).unwrap(), 0);
+
+        // Semua yang di luar namespace atau berbahaya ditolak, dan tidak ada efek samping.
+        let bad_q = [
+            "SELECT * FROM users",
+            "SELECT * FROM accounts",
+            "SELECT name FROM sqlite_master",
+            "SELECT * FROM x_net_t_b__other",
+            "SELECT * FROM x_net_t_a__notes, accounts",
+            "SELECT load_extension('x')",
+            "SELECT readfile('/etc/passwd')",
+            "PRAGMA table_info(x_net_t_a__notes)",
+            "SELECT 1; SELECT 2",
+            "ATTACH DATABASE ':memory:' AS x",
+        ];
+        for q in bad_q {
+            assert!(s.ext_db_query(ns, q, &[], 10).is_err(), "harus ditolak: {q}");
+        }
+        let bad_e = [
+            "DELETE FROM accounts",
+            "INSERT INTO accounts (id) VALUES ('x')",
+            "UPDATE x_net_t_b__other SET id = 1",
+            "DROP TABLE x_net_t_a__notes",
+            "CREATE TABLE x_net_t_a__new (id INTEGER)",
+            "ALTER TABLE x_net_t_a__notes ADD COLUMN z TEXT",
+            "CREATE TRIGGER x_net_t_a__tr AFTER INSERT ON x_net_t_a__notes BEGIN DELETE FROM accounts; END",
+            "CREATE INDEX x_net_t_a__i ON x_net_t_a__notes (n)",
+            "VACUUM",
+            "BEGIN",
+            "SELECT 1",
+        ];
+        for q in bad_e {
+            assert!(s.ext_db_exec(ns, q, &[]).is_err(), "harus ditolak: {q}");
+        }
+        assert!(s.ext_db_query(ns, "INSERT INTO x_net_t_a__notes (text) VALUES ('x')", &[], 10).is_err(), "query hanya baca");
+        // Penolakan tidak meninggalkan authorizer terpasang: pemakaian inti tetap normal.
+        assert!(s.ext_list().is_ok());
+        assert_eq!(s.ext_db_query(ns, "SELECT COUNT(*) FROM x_net_t_a__notes", &[], 1).unwrap().rows[0][0], DbValue::Int(2));
+        // Namespace lain bisa membaca tabelnya sendiri saja.
+        assert!(s.ext_db_query("x_net_t_b__", "SELECT * FROM x_net_t_a__notes", &[], 1).is_err());
+        assert!(s.ext_db_query("x_net_t_b__", "SELECT * FROM x_net_t_b__other", &[], 1).is_ok());
+    }
+
+    #[test]
+    fn extension_access_per_role() {
+        let mut s = Store::open_in_memory().unwrap();
+        s.ext_access_set("net.t.a", "role-x", "update", &["export".into(), "run".into()]).unwrap();
+        s.ext_access_set("net.t.a", "role-y", "read", &[]).unwrap();
+        assert_eq!(s.ext_access_list("net.t.a").unwrap(), vec![("role-x".into(), "update".into(), vec!["export".to_string(), "run".to_string()]), ("role-y".into(), "read".into(), vec![])]);
+        s.ext_access_set("net.t.a", "role-x", "read", &["run".into()]).unwrap();
+        s.ext_access_set("net.t.a", "role-y", "none", &[]).unwrap();
+        assert_eq!(s.ext_access_list("net.t.a").unwrap(), vec![("role-x".into(), "read".into(), vec!["run".to_string()])]);
+        s.ext_upsert("net.t.a", "1.0.0", "official", None, true, "{}", 1).unwrap();
+        s.ext_delete("net.t.a").unwrap();
+        assert!(s.ext_access_list("net.t.a").unwrap().is_empty(), "hapus extension menghapus aksesnya");
+    }
+
+    #[test]
+    fn extension_migrations_are_transactional_and_data_can_be_dropped() {
+        let mut s = Store::open_in_memory().unwrap();
+        let ns = "x_net_t_a__";
+        let m = |v: u32, sql: &[&str]| (v, format!("m{v}"), format!("sum{v}"), sql.iter().map(|x| x.to_string()).collect::<Vec<_>>());
+        s.ext_apply_migrations("net.t.a", 1, &[m(1, &["CREATE TABLE x_net_t_a__items (id INTEGER PRIMARY KEY, n TEXT)", "CREATE INDEX x_net_t_a__items_n ON x_net_t_a__items (n)"])]).unwrap();
+        assert_eq!(s.ext_applied_migrations("net.t.a").unwrap(), vec![(1, "sum1".to_string())]);
+        assert_eq!(s.ext_table_names(ns).unwrap(), vec!["x_net_t_a__items".to_string()]);
+        // Gagal di tengah batch: tidak ada yang berubah (tabel baru dan catatan sama-sama batal).
+        let bad = s.ext_apply_migrations("net.t.a", 2, &[m(2, &["CREATE TABLE x_net_t_a__other (id INTEGER)"]), m(3, &["CREATE TABLE x_net_t_a__items (id INTEGER)"])]);
+        assert!(bad.is_err());
+        assert_eq!(s.ext_table_names(ns).unwrap(), vec!["x_net_t_a__items".to_string()], "tabel other ikut dibatalkan");
+        assert_eq!(s.ext_applied_migrations("net.t.a").unwrap().len(), 1);
+        // Hapus data: hanya milik extension itu; tabel inti dan extension lain tetap.
+        s.ext_apply_migrations("net.t.b", 3, &[m(1, &["CREATE TABLE x_net_t_b__keep (id INTEGER)"])]).unwrap();
+        assert_eq!(s.ext_drop_data("net.t.a", ns).unwrap(), 1);
+        assert!(s.ext_table_names(ns).unwrap().is_empty() && s.ext_applied_migrations("net.t.a").unwrap().is_empty());
+        assert_eq!(s.ext_table_names("x_net_t_b__").unwrap().len(), 1);
+        assert!(s.ext_list().is_ok(), "tabel inti utuh");
+        assert!(s.ext_drop_data("net.t.a", "accounts").is_err() && s.ext_drop_data("net.t.a", "x_a'; DROP TABLE users;--__").is_err());
     }
 }

@@ -35,7 +35,10 @@ export function rowsForHeight(px: number) {
 
 export function newWidgetId(type: string) {
   const rand = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID().slice(0, 8) : Math.random().toString(36).slice(2, 10)
-  return `${type}-${rand}`.slice(0, 40)
+  // Id hanya huruf, angka, `-` dan `_` (maks 40, divalidasi server). Jenis extension (`ext:id:jenis`) memuat `:` dan `.`;
+  // awalan dipangkas supaya bagian acak tidak ikut terpotong.
+  const prefix = type.replace(/[^A-Za-z0-9_-]+/g, "-").slice(0, 30)
+  return `${prefix}-${rand}`
 }
 
 /** Baris pertama di bawah semua widget (untuk widget yang baru ditambahkan). */

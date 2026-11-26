@@ -20,7 +20,7 @@ export default defineConfig({
     strictPort: true,
     // Dev terhadap server Telemon (mis. server demo): VITE_TELEMON_URL=http://127.0.0.1:7878 bun run dev.
     // Di bawah `bun run tauri dev` (TAURI_ENV_PLATFORM terisi) otomatis ke server loopback aplikasi desktop.
-    proxy: devTarget ? { "/api": { target: devTarget, ws: true }, "/desktop-entry": { target: devTarget } } : undefined,
+    proxy: devTarget ? { "/api": { target: devTarget, ws: true }, "/desktop-entry": { target: devTarget }, "/ext": { target: devTarget } } : undefined,
   },
   resolve: {
     alias: {

@@ -56,6 +56,16 @@ fn ident(s: &str, max: usize, allow_upper: bool) -> bool {
     !s.is_empty() && s.len() <= max && s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_' || (allow_upper && c.is_ascii_uppercase()))
 }
 
+/// Jenis bawaan: huruf kecil, angka, `-`, `_` (maks 40). Jenis dari extension (ADR 0028):
+/// `ext:<id>:<jenis>` dengan `.` dan `:` tambahan (maks 140). Server tidak tahu extension mana yang ada;
+/// UI mengabaikan jenis yang tidak dikenalnya.
+fn widget_type_ok(t: &str) -> bool {
+    if let Some(rest) = t.strip_prefix("ext:") {
+        return t.len() <= 140 && rest.matches(':').count() == 1 && rest.split(':').all(|p| !p.is_empty()) && rest.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '-' | '_' | '.' | ':'));
+    }
+    ident(t, 40, false)
+}
+
 fn int(v: &Value, key: &str, min: i64, max: i64) -> Result<i64, String> {
     match v.get(key).and_then(Value::as_i64) {
         Some(n) if (min..=max).contains(&n) => Ok(n),
@@ -81,7 +91,7 @@ pub(crate) fn validate(v: &Value) -> Result<(), String> {
         if !ids.insert(id.to_string()) {
             return Err("Id widget ganda".into());
         }
-        if !ident(w.get("type").and_then(Value::as_str).unwrap_or(""), 40, false) {
+        if !widget_type_ok(w.get("type").and_then(Value::as_str).unwrap_or("")) {
             return Err("Jenis widget tidak valid".into());
         }
         int(w, "x", 0, 200)?;

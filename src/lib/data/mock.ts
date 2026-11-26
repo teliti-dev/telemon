@@ -7,6 +7,13 @@ import type {
   AiBudgetInput,
   AiDashboard,
   AiUiContext,
+  ActiveExtension,
+  ExtensionStore,
+  ExtensionWorker,
+  ExtensionAccess,
+  ExtensionInfo,
+  ExtensionInspect,
+  ExtensionList,
   DashboardLayout,
   TrafficInterfaces,
   TrafficPoint,
@@ -1207,6 +1214,47 @@ export class MockApi implements TelemonApi {
       }
     }
     return { points, from, to, bucketSeconds: Math.round(bucket / 1000), intervalSeconds, enabled }
+  }
+
+  // Extension: data contoh tidak memuat extension (butuh server, ADR 0028).
+  async getExtensions(): Promise<ExtensionList> {
+    return { available: false, extensions: [] }
+  }
+  async getActiveExtensions(): Promise<ActiveExtension[]> {
+    return []
+  }
+  private noExtensions(): never {
+    throw new Error(t("Extension tidak tersedia pada data contoh"))
+  }
+  async inspectExtension(): Promise<ExtensionInspect> {
+    return this.noExtensions()
+  }
+  async installExtension(): Promise<ExtensionInfo> {
+    return this.noExtensions()
+  }
+  async updateExtension(): Promise<ExtensionInfo> {
+    return this.noExtensions()
+  }
+  async getExtensionStore(): Promise<ExtensionStore> {
+    return this.noExtensions()
+  }
+  async installFromStore(): Promise<ExtensionInfo[]> {
+    return this.noExtensions()
+  }
+  async runExtensionWorker(): Promise<{ ok: boolean; error?: string; workers: ExtensionWorker[] }> {
+    return this.noExtensions()
+  }
+  async getExtensionLogs(): Promise<string[]> {
+    return this.noExtensions()
+  }
+  async getExtensionAccess(): Promise<ExtensionAccess> {
+    return this.noExtensions()
+  }
+  async setExtensionAccess(): Promise<void> {
+    return this.noExtensions()
+  }
+  async removeExtension(): Promise<void> {
+    return this.noExtensions()
   }
 
   async getDashboard(): Promise<DashboardLayout | null> {

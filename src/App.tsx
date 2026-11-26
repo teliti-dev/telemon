@@ -14,6 +14,8 @@ import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { useAiChat } from "@/lib/ai-context"
 import { AiChatProvider } from "@/lib/ai-provider"
+import { ExtensionPage } from "@/components/extension-page"
+import { ExtensionsLoader } from "@/lib/extensions/loader"
 import { ApiProvider } from "@/lib/api-provider"
 import { PAGE_CONTAINER } from "@/lib/layout"
 import { useNavItems } from "@/hooks/use-nav-items"
@@ -34,6 +36,7 @@ import { OverviewPage } from "@/pages/overview"
 import { ProfilesPage } from "@/pages/profiles"
 import { RoutersPage } from "@/pages/routers"
 import { SettingsPage } from "@/pages/settings"
+import { SettingsExtensionsPage } from "@/pages/settings-extensions"
 import { SettingsAiPage } from "@/pages/settings-ai"
 import { SharePage } from "@/pages/share"
 import { AccountFormPage, AiProviderFormPage, ImportPage, ProfileFormPage, RoleFormPage, RouterFormPage, UserFormPage } from "@/pages/subpages"
@@ -49,6 +52,7 @@ const TITLES: Record<Page, string> = {
   berbagi: tk("Berbagi"),
   admin: tk("Admin"),
   pengaturan: tk("Pengaturan"),
+  ext: tk("Extension"),
   tentang: tk("Tentang"),
   akun: tk("Akun saya"),
   import: tk("Import dari Mikrotik"),
@@ -97,6 +101,7 @@ function Content() {
     const [s0, s1, s2] = segments
     if (page === "appearance") return <AppearancePage />
     if (page === "ai") return isDesktop ? <OverviewPage onOpenUser={openUserFn} /> : <AiChatPage />
+    if (page === "ext") return s0 ? <ExtensionPage extId={s0} pageId={s1} /> : <OverviewPage onOpenUser={openUserFn} />
     if (page === "import") return <ImportPage router={params.get("router") ?? undefined} />
     if (page === "user") {
       if (s0 === "new") return <UserFormPage mode="create" router={params.get("router") ?? undefined} />
@@ -129,6 +134,7 @@ function Content() {
       case "tentang": return <AboutPage />
       case "pengaturan":
         if (s0 === "ai") return <SettingsAiPage />
+        if (s0 === "extension") return <SettingsExtensionsPage />
         if (s0 === "ai-provider" && s1 === "new") return <AiProviderFormPage />
         if (s0 === "ai-provider" && s1 && s2 === "edit") return <AiProviderFormPage providerId={s1} />
         return <SettingsPage />
@@ -183,6 +189,7 @@ export function App() {
         <AuthGate>
           <StoreProvider>
             <AiChatProvider>
+              <ExtensionsLoader />
               <Content />
               <Toaster position="top-center" />
             </AiChatProvider>

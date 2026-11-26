@@ -543,3 +543,160 @@ export interface UpdateStatus {
   available?: { version: string; notes?: string; date?: string }
   error?: string
 }
+
+// ---- Extension (ADR 0028) ----
+export interface ExtensionPermission {
+  id: string
+  required: boolean
+  sensitive: boolean
+  description: string
+  granted: boolean
+}
+
+export interface ExtensionWidgetDecl {
+  type: string
+  title: string
+  description: string
+}
+
+export interface ExtensionRequirement {
+  id: string
+  /** Rentang versi yang dibutuhkan, mis. ^1.2.0. */
+  needs: string
+  optional: boolean
+  state: "ok" | "missing" | "incompatible"
+  installed?: string
+}
+
+export interface ExtensionWorker {
+  id: string
+  everySeconds: number
+  state: { nextRun: number; lastRun?: number; lastOk?: boolean; lastError?: string; failures: number; paused: boolean }
+}
+
+export interface ExtensionInfo {
+  id: string
+  name: string
+  version: string
+  publisher: string
+  description: string
+  tier: "official" | "public"
+  signed: boolean
+  enabled: boolean
+  /** disabled (mati), limited (izin wajib dimatikan), ok, broken (manifest rusak). */
+  status: "disabled" | "limited" | "incompatible" | "ok" | "broken"
+  widgets: ExtensionWidgetDecl[]
+  pages: ExtensionPageDecl[]
+  permissions: ExtensionPermission[]
+  /** Rentang versi Telemon yang didukung (kosong = tidak dibatasi). */
+  telemon?: string
+  requires: ExtensionRequirement[]
+  /** Syarat wajib yang belum terpenuhi (id extension): tidak dimuat. */
+  blockedBy: string[]
+  /** Extension lain yang membutuhkan ini. */
+  dependents: string[]
+  /** Punya data sendiri (migrasi database sudah terapan). */
+  hasData: boolean
+  hasBackend: boolean
+  routes: { id: string; method: string; path: string; level: string; action?: string }[]
+  workers: ExtensionWorker[]
+  installedAt: number
+  updatedAt: number
+}
+
+export interface ExtensionList {
+  /** false = extension mati di server ini (belum dinyalakan lewat TELEMON_EXTENSIONS). */
+  available: boolean
+  extensions: ExtensionInfo[]
+}
+
+/** Isi paket sebelum dipasang (hasil periksa). */
+export interface ExtensionPackageSummary {
+  id: string
+  name: string
+  version: string
+  publisher: string
+  description: string
+  tier: "official" | "public"
+  signed: boolean
+  widgets: ExtensionWidgetDecl[]
+  permissions: Omit<ExtensionPermission, "granted">[]
+}
+
+export interface ExtensionInspect {
+  package: ExtensionPackageSummary
+  installedVersion?: string
+  requires: ExtensionRequirement[]
+  /** Penjelasan masalah kompatibilitas; kosong = boleh dipasang. */
+  problemTexts: string[]
+}
+
+export interface ExtensionPageDecl {
+  id: string
+  title: string
+  /** dashboard = halaman utama extension; page = halaman biasa. */
+  kind: "dashboard" | "page"
+}
+
+export interface ExtensionActionDecl {
+  id: string
+  label: string
+  /** Level menu minimal peran agar aksi ini bisa diberikan. */
+  level: "read" | "update"
+  description: string
+}
+
+export type ExtensionLevel = "none" | "read" | "update"
+
+/** Extension aktif yang dimuat UI (hanya yang boleh dilihat akun ini). */
+export interface ActiveExtension {
+  id: string
+  name: string
+  version: string
+  entry: string
+  widgets: ExtensionWidgetDecl[]
+  pages: ExtensionPageDecl[]
+  /** Izin (toggle) yang diberikan admin. */
+  permissions: string[]
+  /** Akses efektif akun ini pada extension. */
+  access: { level: ExtensionLevel; actions: string[] }
+}
+
+export interface ExtensionRoleAccess {
+  id: string
+  name: string
+  builtin: boolean
+  level: ExtensionLevel
+  actions: string[]
+  /** Peran akun yang sedang masuk: tidak bisa diubah sendiri. */
+  own: boolean
+}
+
+export interface ExtensionAccess {
+  actions: ExtensionActionDecl[]
+  roles: ExtensionRoleAccess[]
+  me: { level: ExtensionLevel; actions: string[] }
+}
+
+/** Satu entri toko extension official (katalog bertanda tangan). */
+export interface ExtensionStoreItem {
+  id: string
+  name: string
+  version: string
+  publisher: string
+  description: string
+  telemon?: string
+  requires: { id: string; version: string; optional: boolean }[]
+  size: number
+  installedVersion?: string
+  upToDate: boolean
+  /** Extension yang ikut terpasang (dependensi), berurutan. */
+  alsoInstalls: string[]
+  /** Alasan tidak bisa dipasang; kosong = bisa. */
+  problem?: string
+}
+
+export interface ExtensionStore {
+  generated: string
+  extensions: ExtensionStoreItem[]
+}
